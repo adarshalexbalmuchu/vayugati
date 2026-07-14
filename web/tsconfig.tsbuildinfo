@@ -1,1 +1,0 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/MapView.tsx","./src/components/RequireRole.tsx","./src/components/ViewShell.tsx","./src/components/WardCard.tsx","./src/lib/auth.tsx","./src/lib/supabase.ts","./src/pages/CitizenView.tsx","./src/pages/CommandView.tsx","./src/pages/FieldView.tsx","./src/pages/Login.tsx"],"version":"5.9.3"}
