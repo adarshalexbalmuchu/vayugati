@@ -162,19 +162,33 @@ generated file, `make db-push`. The linked project ref is stored in
 
 This lets Claude read/inspect your database directly during a session — verify
 the schema landed, confirm `readings` is filling once ingestion runs, run
-ad-hoc queries. It's a **read-oriented** connection you authorize on claude.ai;
-it does not touch the repo.
+ad-hoc queries. Configured project-scoped in `.mcp.json` (committed, so it
+travels with the repo) and pinned to **read-only**.
 
-1. Create a Supabase **personal access token**: Account → Access Tokens
-   (https://supabase.com/dashboard/account/tokens).
-2. In Claude → Settings → Connectors → add the **Supabase** connector, and
-   authorize it with that token. Scope it to this project if prompted.
-3. (In Claude Code, if you prefer a local server instead of the connector, the
-   official server is `@supabase/mcp-server-supabase` — pass the token via env,
-   never inline, and use `--read-only` unless you intend writes.)
+The server is already in `.mcp.json`:
 
-Once connected, tell Claude to check the DB and it can query it directly.
-Revoke the token from the Supabase dashboard to disconnect.
+```json
+{ "mcpServers": { "supabase": {
+  "type": "http",
+  "url": "https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true"
+} } }
+```
+
+To use it, authenticate **in a local terminal** (not the IDE extension or a web
+session — the OAuth flow needs a real terminal):
+
+```bash
+claude          # start Claude Code in the repo
+/mcp            # select the supabase server → Authenticate
+```
+
+- `read_only=true` is deliberate: schema changes go through CLI migrations, not
+  ad-hoc through Claude. Drop that param from `.mcp.json` only if you actually
+  want Claude to be able to write.
+- `project_ref` is not a secret (it's the subdomain of your project URL), so
+  committing `.mcp.json` is safe. No token is stored in the repo — auth is
+  per-user via the OAuth flow above.
+- Optional Supabase agent skills: `npx skills add supabase/agent-skills`.
 
 ## Notes
 
