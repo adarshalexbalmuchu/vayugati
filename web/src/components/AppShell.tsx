@@ -57,7 +57,7 @@ export function railItemsForRole(role: string | undefined, homePath: string): Ra
       to: isCommand ? '/incidents' : undefined,
       comingSoon: isCommand ? undefined : 'The incident queue is a command-centre surface',
     },
-    { key: 'map', label: 'Map', icon: '⚲', comingSoon: 'Standalone map view - embedded in Overview for now' },
+    { key: 'map', label: 'Map', icon: '⚲', to: isCommand ? '/map' : undefined },
     {
       key: 'tasks',
       label: 'Tasks',

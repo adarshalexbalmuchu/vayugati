@@ -94,6 +94,44 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   )
 }
 
+export interface StationMarker {
+  id: number
+  name: string
+  lat: number
+  lng: number
+  aqi: number | null
+}
+
+/** Station-level counterpart to fetchAllWardsAqi — same {id,name,lat,lng,aqi}
+ *  shape MapView already renders, just one marker per station instead of per
+ *  ward. Two queries total (stations, readings), never one per station. */
+export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
+  const { data: stations } = await supabase.from('stations').select('id, name, lat, lng').order('name')
+  if (!stations) return []
+
+  const ids = stations.map((s) => s.id)
+  const { data: readings } = await supabase
+    .from('readings')
+    .select('station_id, aqi, ts')
+    .in('station_id', ids)
+    .order('ts', { ascending: false })
+
+  const latestAqiByStation = new Map<number, number | null>()
+  for (const r of readings ?? []) {
+    if (!latestAqiByStation.has(r.station_id)) latestAqiByStation.set(r.station_id, r.aqi) // first hit per station = newest
+  }
+
+  return stations
+    .filter((s) => s.lat != null && s.lng != null)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      lat: s.lat as number,
+      lng: s.lng as number,
+      aqi: latestAqiByStation.get(s.id) ?? null,
+    }))
+}
+
 export async function fetchOpenReports(wardId: number): Promise<Report[]> {
   const { data } = await supabase
     .from('reports')

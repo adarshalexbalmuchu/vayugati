@@ -7,6 +7,7 @@ import CommandView from './pages/CommandView'
 import FieldView from './pages/FieldView'
 import IncidentsView from './pages/IncidentsView'
 import Login from './pages/Login'
+import MapPage from './pages/MapPage'
 import MissionsView from './pages/MissionsView'
 import OpsView from './pages/OpsView'
 import SensorsView from './pages/SensorsView'
@@ -85,6 +86,14 @@ export default function App() {
               element={
                 <RequireRole allow={['commander', 'admin']}>
                   <SensorsView />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/map"
+              element={
+                <RequireRole allow={['commander', 'admin']}>
+                  <MapPage />
                 </RequireRole>
               }
             />
