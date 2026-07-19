@@ -352,8 +352,11 @@ system's own design or correctness.
    or `mapping_confidence = 'verified'` yet - that needs a real Delhi ops
    lead to confirm the correct unit per ward, which cannot be sourced
    from a web search.
-5. Create real field-officer accounts for at least the pilot wards.
-   **Still open — zero exist today.**
+5. ~~Create real field-officer accounts for at least the pilot wards.~~
+   **DONE — one real pilot field officer (Adarsh, Anand Vihar ward)
+   elevated live on hosted, with an `admin_audit_events` row recording
+   the action.** `supabase/scripts/onboard_field_officer.py` remains the
+   path for onboarding additional real officers going forward.
 6. ~~Widen `requires_approval_types` so every routine dispatch (not just
    enforcement-sensitive ones) requires command confirmation until
    condition 4 is substantially complete.~~ **DONE — Delhi's live
