@@ -67,7 +67,7 @@ export function railItemsForRole(role: string | undefined, homePath: string): Ra
     },
     { key: 'citizens', label: 'Citizens', icon: '☺', comingSoon: 'Citizen operations view arrives in Phase 3/5' },
     { key: 'sensors', label: 'Sensors', icon: '◈', to: isCommand ? '/sensors' : undefined },
-    { key: 'analytics', label: 'Analytics', icon: '▤', comingSoon: 'Outcome analytics arrive in Phase 6' },
+    { key: 'analytics', label: 'Analytics', icon: '▤', to: isCommand ? '/analytics' : undefined },
     {
       key: 'settings',
       label: 'Settings',

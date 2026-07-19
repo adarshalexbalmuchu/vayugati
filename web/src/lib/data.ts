@@ -484,6 +484,65 @@ export function allocateTeams(
     .sort((a, b) => b.teams - a.teams)
 }
 
+// ── Analytics (commander-wide outcome/forecast rollups) ──────────────────────
+
+export interface ImpactOutcomeSummary {
+  outcome: string
+  count: number
+}
+
+/** impact_evaluations has no ward/city column of its own (only a
+ *  method-specific comparison_ward_id) — this is a city-wide rollup by
+ *  `outcome`, not scoped per ward. RLS lets commander/admin read every row
+ *  unconditionally (see impact_evaluations_read policy). */
+export async function fetchImpactOutcomeSummary(): Promise<ImpactOutcomeSummary[]> {
+  const { data } = await supabase.from('impact_evaluations').select('outcome').limit(2000)
+  const counts = new Map<string, number>()
+  for (const row of data ?? []) counts.set(row.outcome, (counts.get(row.outcome) ?? 0) + 1)
+  return [...counts.entries()]
+    .map(([outcome, count]) => ({ outcome, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+export interface ForecastAccuracySummary {
+  totalWardPollutantPairs: number
+  beatsPersistenceCount: number
+  wardsWithAnyValidatedHorizon: number
+}
+
+/** Latest forecast_runs row per (ward_id, pollutant) — a ward/pollutant pair
+ *  can have many historical runs, so "latest" means highest generated_at,
+ *  matching fetchLatestForecastRun's own ordering. beats_persistence and
+ *  max_validated_horizon_hours are exactly the two honest trust signals
+ *  docs/HISTORICAL_REPLAY_REPORT.md establishes - never fabricate an
+ *  accuracy percentage beyond what those two columns already say. */
+export async function fetchForecastAccuracySummary(): Promise<ForecastAccuracySummary> {
+  const { data } = await supabase
+    .from('forecast_runs')
+    .select('ward_id, pollutant, beats_persistence, max_validated_horizon_hours, generated_at')
+    .order('generated_at', { ascending: false })
+    .limit(2000)
+
+  const latestByPair = new Map<string, { beats_persistence: boolean; max_validated_horizon_hours: number | null }>()
+  for (const row of data ?? []) {
+    const key = `${row.ward_id}:${row.pollutant}`
+    if (!latestByPair.has(key)) latestByPair.set(key, row) // first hit per pair = newest, thanks to the order() above
+  }
+
+  let beatsPersistenceCount = 0
+  let wardsWithAnyValidatedHorizon = 0
+  for (const entry of latestByPair.values()) {
+    if (entry.beats_persistence) beatsPersistenceCount++
+    if (entry.max_validated_horizon_hours != null) wardsWithAnyValidatedHorizon++
+  }
+
+  return {
+    totalWardPollutantPairs: latestByPair.size,
+    beatsPersistenceCount,
+    wardsWithAnyValidatedHorizon,
+  }
+}
+
 const INGEST_URL = (import.meta.env.VITE_INGEST_URL as string) || 'http://localhost:8000'
 
 /** How long to wait for classification before giving up on it. */

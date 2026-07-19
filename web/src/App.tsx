@@ -5,6 +5,7 @@ import { AuthProvider, roleHome, useAuth } from './lib/auth'
 import CitizenView from './pages/CitizenView'
 import CommandView from './pages/CommandView'
 import FieldView from './pages/FieldView'
+import AnalyticsView from './pages/AnalyticsView'
 import IncidentsView from './pages/IncidentsView'
 import Login from './pages/Login'
 import MapPage from './pages/MapPage'
@@ -94,6 +95,14 @@ export default function App() {
               element={
                 <RequireRole allow={['commander', 'admin']}>
                   <MapPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <RequireRole allow={['commander', 'admin']}>
+                  <AnalyticsView />
                 </RequireRole>
               }
             />
