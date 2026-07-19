@@ -34,6 +34,18 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")
 
+# CORS (Phase 2 hardening) — who's allowed to call this API from a browser.
+# Defaults to the Vite dev/preview ports only; never falls back to "*". A
+# real staging/production deployment has no concrete domain configured yet
+# (no Vercel project provisioned as of this phase — see docs/DEPLOYMENT.md),
+# so this is deliberately env-driven rather than a guessed hardcoded URL.
+DEFAULT_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:4173"]
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", ",".join(DEFAULT_ALLOWED_ORIGINS)).split(",")
+    if origin.strip()
+]
+
 STATIONS_FILE = Path(__file__).resolve().parent.parent / "stations.yaml"
 
 

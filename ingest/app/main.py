@@ -138,9 +138,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Vayu Gati ingest", lifespan=lifespan)
 
+if config.ENVIRONMENT == "production" and config.ALLOWED_ORIGINS == config.DEFAULT_ALLOWED_ORIGINS:
+    logging.warning(
+        "ENVIRONMENT=production but ALLOWED_ORIGINS is still the localhost dev default — "
+        "set ALLOWED_ORIGINS to the real deployed frontend domain(s)."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten to Vercel domain in production
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
