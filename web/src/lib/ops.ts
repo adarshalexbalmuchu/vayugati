@@ -90,6 +90,72 @@ export async function fetchStations(cityId?: number): Promise<StationRow[]> {
   return (data ?? []) as StationRow[]
 }
 
+/** Same 180-minute staleness cutoff the ingest service's own
+ *  /health -> compute_health() -> _reading_freshness() uses
+ *  (ingest/app/health_checks.py) — kept as one shared constant here rather
+ *  than reinvented, so "stale" means the same thing on this page as it
+ *  does on the System Health rollup. */
+export const STATION_STALE_MINUTES = 180
+
+export interface StationHealthRow {
+  id: number
+  name: string
+  ward_id: number | null
+  ward_name: string | null
+  sensor_type: string
+  is_active: boolean
+  latest_reading_at: string | null
+  latest_reading_age_minutes: number | null
+  is_stale: boolean
+}
+
+/** Every station + its ward name + the age of its own latest reading —
+ *  one query per table (stations, wards, readings), never one query per
+ *  station, so this stays cheap regardless of station count. Station-level
+ *  freshness has never been computed anywhere in this codebase before
+ *  (only the city-wide "any reading at all" check in health_checks.py) —
+ *  this is new, but built entirely from the same readings table that
+ *  check already reads, not a new data source. */
+export async function fetchStationHealth(cityId?: number): Promise<StationHealthRow[]> {
+  const stations = await fetchStations(cityId)
+  if (stations.length === 0) return []
+
+  const wardIds = [...new Set(stations.map((s) => s.ward_id).filter((id): id is number => id != null))]
+  const { data: wards, error: wardsError } = await supabase.from('wards').select('id, name').in('id', wardIds)
+  if (wardsError) fail('Could not load ward names', wardsError)
+  const wardNameById = new Map((wards ?? []).map((w) => [w.id, w.name]))
+
+  const stationIds = stations.map((s) => s.id)
+  const { data: readings, error: readingsError } = await supabase
+    .from('readings')
+    .select('station_id, ts')
+    .in('station_id', stationIds)
+    .order('ts', { ascending: false })
+  if (readingsError) fail('Could not load station readings', readingsError)
+
+  const latestTsByStation = new Map<number, string>()
+  for (const r of readings ?? []) {
+    if (!latestTsByStation.has(r.station_id)) latestTsByStation.set(r.station_id, r.ts) // first hit per station = newest, thanks to the order() above
+  }
+
+  const now = Date.now()
+  return stations.map((s) => {
+    const latestTs = latestTsByStation.get(s.id) ?? null
+    const ageMinutes = latestTs ? Math.round((now - new Date(latestTs).getTime()) / 60_000) : null
+    return {
+      id: s.id,
+      name: s.name,
+      ward_id: s.ward_id,
+      ward_name: s.ward_id != null ? (wardNameById.get(s.ward_id) ?? null) : null,
+      sensor_type: s.sensor_type,
+      is_active: s.is_active,
+      latest_reading_at: latestTs,
+      latest_reading_age_minutes: ageMinutes,
+      is_stale: ageMinutes == null || ageMinutes > STATION_STALE_MINUTES,
+    }
+  })
+}
+
 /** stations has no authenticated write policy at all (only the ingest
  *  service's service_role connection writes it) — goes through the
  *  narrow set_station_active RPC, matching this codebase's own

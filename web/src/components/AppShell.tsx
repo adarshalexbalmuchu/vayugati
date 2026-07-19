@@ -66,7 +66,7 @@ export function railItemsForRole(role: string | undefined, homePath: string): Ra
       comingSoon: isField ? undefined : 'Task queue arrives in Phase 3',
     },
     { key: 'citizens', label: 'Citizens', icon: '☺', comingSoon: 'Citizen operations view arrives in Phase 3/5' },
-    { key: 'sensors', label: 'Sensors', icon: '◈', comingSoon: 'Sensor/data-quality view arrives in Phase 4' },
+    { key: 'sensors', label: 'Sensors', icon: '◈', to: isCommand ? '/sensors' : undefined },
     { key: 'analytics', label: 'Analytics', icon: '▤', comingSoon: 'Outcome analytics arrive in Phase 6' },
     {
       key: 'settings',
