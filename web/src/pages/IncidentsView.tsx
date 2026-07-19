@@ -23,16 +23,18 @@ import SourceAttributionPanel from '../components/SourceAttributionPanel'
 import TaskDispatchPanel from '../components/TaskDispatchPanel'
 import {
   createEvidenceMission,
-  fetchPendingRecurrenceCounts,
   getIncidentDetail,
   listAssignableOfficers,
+  listClosedIncidents,
   listLinkedReports,
   listIncidents,
+  listRecurrenceQueueIncidents,
   reopenIncident,
   updateIncidentAssignment,
   updateIncidentStatus,
   type AssignableOfficer,
   type Incident,
+  type IncidentsPage,
 } from '../lib/incidents'
 import { useAsync } from '../lib/useAsync'
 
@@ -52,6 +54,26 @@ import { useAsync } from '../lib/useAsync'
  */
 
 const QUEUE_ORDER: QueueKey[] = ['active', 'predicted', 'verification', 'assigned', 'escalated', 'recurrence', 'closed']
+// The 5 "open" queues are loaded in full (an incomplete view of what's
+// currently unresolved is dangerous, not just cosmetically wrong) - only
+// `closed` and `recurrence` are paginated, since closed incidents are the
+// one historical record that grows unboundedly. See listClosedIncidents'
+// own comment in incidents.ts for the offset-vs-keyset trade-off.
+const OPEN_QUEUE_ORDER: QueueKey[] = ['active', 'predicted', 'verification', 'assigned', 'escalated']
+const PAGE_SIZE = 50
+// Comfortably above the project's own forward-looking target (~5,000
+// incidents, most of which are closed and excluded here) - if this is ever
+// hit, the banner below says so explicitly rather than silently truncating.
+const OPEN_QUEUE_CAP = 1000
+
+interface PaginatedQueueState {
+  rows: Incident[]
+  totalCount: number
+  hasMore: boolean
+  loading: boolean
+  error: string | null
+}
+const EMPTY_PAGE: PaginatedQueueState = { rows: [], totalCount: 0, hasMore: false, loading: false, error: null }
 
 const DETAIL_TABS: TabItem[] = [
   { key: 'overview', label: 'Overview' },
@@ -589,60 +611,95 @@ export default function IncidentsView() {
   const [searchParams] = useSearchParams()
   const appliedDeepLinkRef = useRef(false)
 
-  const list = useAsync(() => listIncidents({ limit: 200 }), [], { staleAfterMs: 120_000 })
-
-  const rawIncidents = useMemo(() => list.data ?? [], [list.data])
-  const closedIds = useMemo(() => rawIncidents.filter((i) => i.status === 'closed').map((i) => i.id), [rawIncidents])
-
-  // Populates the 'recurrence' queue tab (plan §6): a separate, batched fetch
-  // rather than joining it into listIncidents, so the primary incident list
-  // stays a single simple query — mirrors fetchPlaybookUsageBatch's role.
-  const recurrenceCounts = useAsync(() => fetchPendingRecurrenceCounts(closedIds), [closedIds.join(',')], {
-    enabled: closedIds.length > 0,
+  // The 5 open queues, loaded in full (capped defensively - see OPEN_QUEUE_CAP).
+  const list = useAsync(() => listIncidents({ limit: OPEN_QUEUE_CAP, excludeClosed: true }), [], {
+    staleAfterMs: 120_000,
   })
+  const openIncidents = useMemo(() => list.data ?? [], [list.data])
 
-  const incidents = useMemo(() => {
-    const counts = recurrenceCounts.data
-    if (!counts) return rawIncidents
-    return rawIncidents.map((i) => ({ ...i, pending_recurrence_count: counts.get(i.id) ?? 0 }))
-  }, [rawIncidents, recurrenceCounts.data])
+  // `closed` and `recurrence` are paginated independently of each other and
+  // of the open set — see listClosedIncidents/listRecurrenceQueueIncidents
+  // in incidents.ts. Lazy-loaded: only fetched once the commander actually
+  // opens that tab, not on every page load.
+  const [closedState, setClosedState] = useState<PaginatedQueueState>(EMPTY_PAGE)
+  const [recurrenceState, setRecurrenceState] = useState<PaginatedQueueState>(EMPTY_PAGE)
+
+  const loadPaginatedQueue = useCallback(
+    async (kind: 'closed' | 'recurrence', reset: boolean) => {
+      const setState = kind === 'closed' ? setClosedState : setRecurrenceState
+      const fetcher = kind === 'closed' ? listClosedIncidents : listRecurrenceQueueIncidents
+      const currentRows = kind === 'closed' ? closedState.rows : recurrenceState.rows
+      setState((s) => ({ ...s, loading: true, error: null }))
+      try {
+        const offset = reset ? 0 : currentRows.length
+        const page: IncidentsPage = await fetcher({ offset, pageSize: PAGE_SIZE })
+        setState({
+          rows: reset ? page.rows : [...currentRows, ...page.rows],
+          totalCount: page.totalCount,
+          hasMore: page.hasMore,
+          loading: false,
+          error: null,
+        })
+      } catch (err) {
+        setState((s) => ({ ...s, loading: false, error: err instanceof Error ? err.message : 'Could not load' }))
+      }
+    },
+    [closedState.rows, recurrenceState.rows],
+  )
+
+  useEffect(() => {
+    if (queue === 'closed' && closedState.rows.length === 0 && !closedState.loading) loadPaginatedQueue('closed', true)
+    if (queue === 'recurrence' && recurrenceState.rows.length === 0 && !recurrenceState.loading) {
+      loadPaginatedQueue('recurrence', true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue])
 
   const counts = useMemo(() => {
     const c = {} as Record<QueueKey, number>
-    for (const q of QUEUE_ORDER) c[q] = incidents.filter((i) => inQueue(i, q)).length
+    for (const q of OPEN_QUEUE_ORDER) c[q] = openIncidents.filter((i) => inQueue(i, q)).length
+    c.closed = closedState.totalCount
+    c.recurrence = recurrenceState.totalCount
     return c
-  }, [incidents])
+  }, [openIncidents, closedState.totalCount, recurrenceState.totalCount])
 
-  const filtered = useMemo(() => {
-    return incidents
+  const visibleRows = useMemo(() => {
+    if (queue === 'closed') return closedState.rows
+    if (queue === 'recurrence') return recurrenceState.rows
+    return openIncidents
       .filter((i) => inQueue(i, queue))
       .sort((a, b) => {
         // Worst first, then oldest — the queue is a work order, not a feed.
+        // (closed/recurrence are already resolved, so they stay in the
+        // server's detected_at-desc order instead - most recently closed first.)
         const sa = SEVERITY_RANK[(a.severity ?? 'low') as Severity] ?? 0
         const sb = SEVERITY_RANK[(b.severity ?? 'low') as Severity] ?? 0
         if (sa !== sb) return sb - sa
         return new Date(a.detected_at).getTime() - new Date(b.detected_at).getTime()
       })
-  }, [incidents, queue])
+  }, [openIncidents, queue, closedState.rows, recurrenceState.rows])
 
   // Deep-link support (?incident=<id>) — e.g. a Tasks-page row linking
   // straight into this incident's detail workspace instead of the bare
   // queue. Applied once list.data is loaded, and only once per page load:
   // switches to whichever queue actually contains the incident (it may not
-  // be in the default 'active' queue), then selects it.
+  // be in the default 'active' queue), then selects it. Scoped to the open
+  // set only — in practice every real deep-link source (the Tasks page)
+  // only ever links to incidents with an active dispatch, which are never
+  // closed, so this scoping is not a real limitation today.
   useEffect(() => {
     if (appliedDeepLinkRef.current || list.loading) return
     const raw = searchParams.get('incident')
     if (raw == null) return
     const id = Number(raw)
-    const target = incidents.find((i) => i.id === id)
+    const target = openIncidents.find((i) => i.id === id)
     if (!target) return
     appliedDeepLinkRef.current = true
-    setQueue(QUEUE_ORDER.find((q) => inQueue(target, q)) ?? 'active')
+    setQueue(OPEN_QUEUE_ORDER.find((q) => inQueue(target, q)) ?? 'active')
     setSelectedId(id)
-  }, [searchParams, list.loading, incidents])
+  }, [searchParams, list.loading, openIncidents])
 
-  const detailId = selectedId != null && filtered.some((i) => i.id === selectedId) ? selectedId : null
+  const detailId = selectedId != null && visibleRows.some((i) => i.id === selectedId) ? selectedId : null
 
   const detail = useAsync(
     () => (detailId == null ? Promise.resolve(null) : getIncidentDetail(detailId)),
@@ -662,6 +719,11 @@ export default function IncidentsView() {
     detail.refresh()
   }, [list, detail])
 
+  const paginatedState = queue === 'closed' ? closedState : queue === 'recurrence' ? recurrenceState : null
+  const activeLoading = paginatedState ? paginatedState.loading && visibleRows.length === 0 : list.loading
+  const activeError = paginatedState ? paginatedState.error : list.error
+  const refreshActiveQueue = () => (paginatedState ? loadPaginatedQueue(queue as 'closed' | 'recurrence', true) : list.refresh())
+
   return (
     <AppShell
       subtitle="Incidents"
@@ -676,27 +738,35 @@ export default function IncidentsView() {
         >
           <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{QUEUE_LABELS[queue]}</h2>
-            <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">{filtered.length}</span>
-            {list.stale && <StaleBadge />}
+            <span className="rounded bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">
+              {paginatedState ? `${visibleRows.length} of ${paginatedState.totalCount}` : visibleRows.length}
+            </span>
+            {!paginatedState && list.stale && <StaleBadge />}
             <button
               type="button"
-              onClick={() => list.refresh()}
+              onClick={refreshActiveQueue}
               className="focus-ring ml-auto rounded px-1.5 py-0.5 text-[11px] font-semibold text-accent-700 hover:bg-slate-50"
             >
-              {list.refreshing ? '…' : 'Refresh'}
+              {(paginatedState ? paginatedState.loading : list.refreshing) ? '…' : 'Refresh'}
             </button>
           </div>
 
+          {!paginatedState && openIncidents.length >= OPEN_QUEUE_CAP && (
+            <p className="border-b border-status-warning/30 bg-status-warning/10 px-3 py-1.5 text-[11px] text-slate-700">
+              Showing the {OPEN_QUEUE_CAP} highest-priority open incidents — more may exist.
+            </p>
+          )}
+
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {list.loading ? (
+            {activeLoading ? (
               <div className="space-y-2 p-3">
                 {[0, 1, 2].map((i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
-            ) : list.error ? (
-              <ErrorState message={list.error} onRetry={() => list.refresh()} />
-            ) : filtered.length === 0 ? (
+            ) : activeError ? (
+              <ErrorState message={activeError} onRetry={refreshActiveQueue} />
+            ) : visibleRows.length === 0 ? (
               <EmptyState icon="✅">
                 {queue === 'escalated'
                   ? `No incident has been open longer than ${ESCALATION_SLA_HOURS}h without action.`
@@ -705,22 +775,38 @@ export default function IncidentsView() {
                     : `Nothing in ${QUEUE_LABELS[queue].toLowerCase()}.`}
               </EmptyState>
             ) : (
-              <ul>
-                {filtered.map((i) => (
-                  <IncidentRow
-                    key={i.id}
-                    incident={i}
-                    selected={i.id === detailId}
-                    onSelect={() => setSelectedId(i.id)}
-                  />
-                ))}
-              </ul>
+              <>
+                <ul>
+                  {visibleRows.map((i) => (
+                    <IncidentRow
+                      key={i.id}
+                      incident={i}
+                      selected={i.id === detailId}
+                      onSelect={() => setSelectedId(i.id)}
+                    />
+                  ))}
+                </ul>
+                {paginatedState?.hasMore && (
+                  <div className="p-2">
+                    <button
+                      type="button"
+                      disabled={paginatedState.loading}
+                      onClick={() => loadPaginatedQueue(queue as 'closed' | 'recurrence', false)}
+                      className="focus-ring w-full rounded-lg border border-slate-200 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {paginatedState.loading
+                        ? 'Loading…'
+                        : `Load more (${paginatedState.totalCount - paginatedState.rows.length} remaining)`}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {/* The list is the primary surface; say so about stale data rather than
               quietly showing old rows as current. */}
-          {list.error && !list.loading && (list.data?.length ?? 0) > 0 && (
+          {!paginatedState && list.error && !list.loading && (list.data?.length ?? 0) > 0 && (
             <p className="border-t border-slate-100 bg-status-warning/10 px-3 py-1.5 text-[11px] text-slate-600">
               Showing the last data loaded - refresh failed.
             </p>

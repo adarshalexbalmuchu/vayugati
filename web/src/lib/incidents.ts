@@ -92,6 +92,11 @@ export interface ListIncidentsOptions {
   wardId?: number
   status?: IncidentStatus[]
   limit?: number
+  /** Excludes `status='closed'` — used for the "open" queues (active/predicted/
+   *  verification/assigned/escalated), which are loaded in full (see
+   *  listClosedIncidents/listRecurrenceQueueIncidents below for the paginated,
+   *  unboundedly-growing closed set). */
+  excludeClosed?: boolean
 }
 
 /**
@@ -102,11 +107,77 @@ export async function listIncidents(opts: ListIncidentsOptions = {}): Promise<In
   let q = supabase.from('incidents').select(INCIDENT_SELECT).order('detected_at', { ascending: false })
   if (opts.wardId != null) q = q.eq('ward_id', opts.wardId)
   if (opts.status?.length) q = q.in('status', opts.status)
+  if (opts.excludeClosed) q = q.neq('status', 'closed')
   q = q.limit(opts.limit ?? 200)
 
   const { data, error } = await q
   if (error) fail('Could not load incidents', error)
   return (data ?? []).map((r) => shapeIncident(r as never))
+}
+
+export interface IncidentsPage {
+  rows: Incident[]
+  totalCount: number
+  hasMore: boolean
+}
+
+/**
+ * The `closed` queue, paginated — unlike the open queues, closed incidents
+ * are a historical record that grows unboundedly, so this is the one queue
+ * safe (and necessary) to page rather than load in full. Offset-based
+ * (`.range()`), not keyset: at this dataset's real size (~5k incidents at
+ * the project's own forward-looking target), OFFSET scan cost isn't a real
+ * problem, and a keyset cursor over `detected_at` (non-unique) would need a
+ * composite (detected_at, id) cursor for no real benefit yet — revisit if
+ * volume ever grows past the point that trade-off flips.
+ */
+export async function listClosedIncidents(opts: { wardId?: number; offset: number; pageSize?: number }): Promise<IncidentsPage> {
+  const pageSize = opts.pageSize ?? 50
+  let q = supabase
+    .from('incidents')
+    .select(INCIDENT_SELECT, { count: 'exact' })
+    .eq('status', 'closed')
+    .order('detected_at', { ascending: false })
+    .range(opts.offset, opts.offset + pageSize - 1)
+  if (opts.wardId != null) q = q.eq('ward_id', opts.wardId)
+
+  const { data, error, count } = await q
+  if (error) fail('Could not load closed incidents', error)
+  const rows = (data ?? []).map((r) => shapeIncident(r as never))
+  const totalCount = count ?? rows.length
+  return { rows, totalCount, hasMore: opts.offset + rows.length < totalCount }
+}
+
+/**
+ * The `recurrence` queue (closed incidents with at least one pending citizen
+ * recurrence report), paginated independently of listClosedIncidents rather
+ * than derived from whatever page of `closed` happens to be loaded — a
+ * closed-queue "load more" must never silently make this queue's count or
+ * contents wrong. Uses a PostgREST inner-join embed + filter on the embedded
+ * table rather than a new SQL function: RLS already scopes
+ * incident_recurrence_reports the same way it scopes the parent incident, so
+ * this needs no new grant/policy.
+ */
+export async function listRecurrenceQueueIncidents(opts: {
+  wardId?: number
+  offset: number
+  pageSize?: number
+}): Promise<IncidentsPage> {
+  const pageSize = opts.pageSize ?? 50
+  let q = supabase
+    .from('incidents')
+    .select(`${INCIDENT_SELECT}, incident_recurrence_reports!inner(review_status)`, { count: 'exact' })
+    .eq('status', 'closed')
+    .eq('incident_recurrence_reports.review_status', 'pending')
+    .order('detected_at', { ascending: false })
+    .range(opts.offset, opts.offset + pageSize - 1)
+  if (opts.wardId != null) q = q.eq('ward_id', opts.wardId)
+
+  const { data, error, count } = await q
+  if (error) fail('Could not load the recurrence queue', error)
+  const rows = (data ?? []).map((r) => shapeIncident(r as never))
+  const totalCount = count ?? rows.length
+  return { rows, totalCount, hasMore: opts.offset + rows.length < totalCount }
 }
 
 // ── read one ─────────────────────────────────────────────────────────────────
@@ -2348,16 +2419,29 @@ function shapeActiveDispatch(
  *  no incident/ward join since that page never needed it). RLS already
  *  returns every row unconditionally for commander/admin (task_dispatches_read),
  *  so this needs no server-side ward filter. */
-export async function listActiveTaskDispatches(): Promise<ActiveTaskDispatch[]> {
-  const { data, error } = await supabase
+export interface ActiveTaskDispatchesPage {
+  rows: ActiveTaskDispatch[]
+  totalCount: number
+  hasMore: boolean
+}
+
+/** Offset-based, same trade-off/reasoning as listClosedIncidents above.
+ *  Note: the status/ward filter options TasksView.tsx builds from this
+ *  page's rows only reflect what's currently loaded — a status/ward that
+ *  only exists on a later page won't yet appear as a filter option. */
+export async function listActiveTaskDispatches(opts: { offset: number; pageSize?: number }): Promise<ActiveTaskDispatchesPage> {
+  const pageSize = opts.pageSize ?? 100
+  const { data, error, count } = await supabase
     .from('task_dispatches')
-    .select(ACTIVE_DISPATCH_SELECT)
+    .select(ACTIVE_DISPATCH_SELECT, { count: 'exact' })
     .eq('is_current', true)
     .not('status', 'in', '(completed,verification_pending,cancelled,rejected)')
     .order('sla_ack_due_at', { ascending: true, nullsFirst: false })
-    .limit(300)
+    .range(opts.offset, opts.offset + pageSize - 1)
   if (error) fail('Could not load active dispatches', error)
-  return (data ?? []).map((r) => shapeActiveDispatch(r as never))
+  const rows = (data ?? []).map((r) => shapeActiveDispatch(r as never))
+  const totalCount = count ?? rows.length
+  return { rows, totalCount, hasMore: opts.offset + rows.length < totalCount }
 }
 
 /** Notifications queued/sent for one dispatch — the Operations panel's

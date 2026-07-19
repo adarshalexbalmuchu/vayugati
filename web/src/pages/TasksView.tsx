@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppShell from '../components/AppShell'
 import { Card, CardHeader, EmptyState, ErrorState, Skeleton } from '../components/ui'
 import { listActiveTaskDispatches, type ActiveTaskDispatch } from '../lib/incidents'
 import { TASK_DISPATCH_STATUS_LABEL, slaCountdownLabel } from '../lib/incidentRules'
-import { useAsync } from '../lib/useAsync'
 
 /**
  * Tasks — every active task_dispatches row city-wide (one of the 5 commander
@@ -13,9 +12,14 @@ import { useAsync } from '../lib/useAsync'
  * personal queue: same underlying table, but no ward/officer scoping and a
  * read-only row (no Acknowledge/Accept/Complete buttons - those mutations
  * stay officer-facing, matching task_dispatches' own write-policy discipline).
+ *
+ * Paginated (100/page): status/ward filters are built from currently-loaded
+ * rows only - a status/ward that only exists on a later page won't yet
+ * appear as a filter option (see listActiveTaskDispatches' own comment).
  */
 
 const ALL = '__all__'
+const PAGE_SIZE = 100
 
 // Same "first populated checkpoint column" convention already used by
 // FieldTaskDispatchCard.tsx / TaskDispatchPanel.tsx - the DB only ever
@@ -49,10 +53,41 @@ function DispatchRow({ d }: { d: ActiveTaskDispatch }) {
 }
 
 export default function TasksView() {
-  const state = useAsync(listActiveTaskDispatches, [])
-  const rows = state.data ?? []
+  const [rows, setRows] = useState<ActiveTaskDispatch[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState(ALL)
   const [wardFilter, setWardFilter] = useState(ALL)
+
+  const loadPage = useCallback(
+    async (reset: boolean) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const offset = reset ? 0 : rows.length
+        const page = await listActiveTaskDispatches({ offset, pageSize: PAGE_SIZE })
+        setRows((prev) => (reset ? page.rows : [...prev, ...page.rows]))
+        setTotalCount(page.totalCount)
+        setHasMore(page.hasMore)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load active dispatches')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [rows.length],
+  )
+
+  // Load once on mount only - loadPage itself is intentionally excluded from
+  // these deps (it's recreated every time rows.length changes, for "load
+  // more" to see fresh state; re-running this effect on that change would
+  // refetch from scratch on every page load).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadPage(true)
+  }, [])
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
   const wards = useMemo(
@@ -70,11 +105,11 @@ export default function TasksView() {
         <Card>
           <CardHeader
             title="Tasks"
-            subtitle={`${filtered.length} of ${rows.length} active dispatch(es) shown`}
+            subtitle={`${filtered.length} of ${totalCount} active dispatch(es) shown`}
             right={
               <button
                 type="button"
-                onClick={() => state.refresh()}
+                onClick={() => loadPage(true)}
                 className="focus-ring rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Refresh
@@ -107,22 +142,36 @@ export default function TasksView() {
               ))}
             </select>
           </div>
-          {state.loading ? (
+          {loading && rows.length === 0 ? (
             <div className="space-y-2 p-4">
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : state.error ? (
-            <ErrorState message={state.error} onRetry={() => state.refresh()} />
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => loadPage(true)} />
           ) : filtered.length === 0 ? (
             <EmptyState icon="☑">No active dispatches match this filter.</EmptyState>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {filtered.map((d) => (
-                <DispatchRow key={d.id} d={d} />
-              ))}
-            </ul>
+            <>
+              <ul className="divide-y divide-slate-100">
+                {filtered.map((d) => (
+                  <DispatchRow key={d.id} d={d} />
+                ))}
+              </ul>
+              {hasMore && (
+                <div className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => loadPage(false)}
+                    disabled={loading}
+                    className="focus-ring w-full rounded-lg border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {loading ? 'Loading…' : `Load more (${totalCount - rows.length} remaining)`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </Card>
       </div>
