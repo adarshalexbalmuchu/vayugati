@@ -1039,10 +1039,24 @@ new [PILOT_READINESS_REPORT.md](PILOT_READINESS_REPORT.md).
   passed 13/13 checks clean on re-run. See
   [DEPLOYMENT.md](DEPLOYMENT.md)'s "Known hosted-push issue" section and
   [PILOT_READINESS_REPORT.md](PILOT_READINESS_REPORT.md) section 10a.
-  `database.types.ts` regenerated from the real hosted project (via the
-  project owner's linked CLI), verified byte-equivalent in every real
-  domain object to the earlier local-Postgres approximation, `tsc
-  --noEmit` and `npm run build` both pass clean.
+  `database.types.ts` was first regenerated from the real hosted project
+  (via the project owner's linked CLI) and verified byte-equivalent in
+  every real domain object to the local-Postgres approximation — but this
+  broke CI's own type-drift check, which specifically regenerates from
+  the disposable local Postgres and diffs against the committed file (by
+  this file's own documented convention, so hosted's extra
+  `graphql_public`/`PostgrestVersion` metadata reads as drift). Reverted
+  to generating from local Postgres, matching CI exactly; `tsc --noEmit`
+  and `npm run build` both still pass clean.
+- **A real CI failure, found only because CI does a genuinely fresh
+  install**: `ingest/requirements.txt` had four invalid pip version
+  specifiers (`anthropic>=0.40.*`, `pandas>=2.*`, `lightgbm>=4.*`,
+  `pytest>=8.*` — mixing `>=` with a `.*` wildcard, which pip rejects
+  outright). This had been silently masked all session because every
+  local pytest run reused an already-installed `.venv`, never a true
+  `pip install -r requirements.txt` from scratch. Fixed by dropping the
+  invalid `.*` suffixes; verified against a genuinely fresh virtualenv
+  this time (not the pre-existing one) — clean install, 37/37 tests pass.
 - **Critical finding, found and fixed live against the real hosted
   project after manually testing the deployed Vercel frontend**: any
   self-registered citizen could elevate their own `role` to `admin` (or
