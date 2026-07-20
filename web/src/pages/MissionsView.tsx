@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import AppShell from '../components/AppShell'
 import FieldTaskDispatchCard from '../components/FieldTaskDispatchCard'
+import OfflineQueueStatus from '../components/OfflineQueueStatus'
 import { Card, CardHeader, EmptyState, ErrorState, Label, Skeleton } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import {
@@ -20,14 +21,12 @@ import {
   getPlaybook,
   listInterventionsForOfficer,
   listMissionsForUser,
-  submitFieldCompletion,
-  submitMissionResult,
   updateIncidentStatus,
   updateSourceConfidence,
   type InterventionWithIncident,
   type MissionWithIncident,
 } from '../lib/incidents'
-import { uploadReportPhoto } from '../lib/data'
+import { runOrQueueSubmitFieldCompletion, runOrQueueSubmitMissionResult } from '../lib/offlineSync'
 import { useAsync } from '../lib/useAsync'
 
 /**
@@ -36,9 +35,13 @@ import { useAsync } from '../lib/useAsync'
  * Mobile-first and camera/GPS-first, reusing the existing report-photos upload
  * path rather than introducing a second storage mechanism.
  *
- * Offline drafts are NOT implemented here — that is Phase 3's remaining half
- * per ROLE_WORKFLOWS.md, and pretending to support it would be worse than the
- * honest online-only flow, so the form states its requirement plainly instead.
+ * Offline support (Phase 12): a mission result or intervention completion
+ * submitted with no connection (or that fails on a network-level error) is
+ * queued in IndexedDB and replayed in order once back online - see
+ * lib/offlineSync.ts for exactly what is and isn't guaranteed (in short: no
+ * protection against a genuine double-write if the tab is killed mid-replay,
+ * since neither mutation has a server-side idempotency key yet). The
+ * "Offline queue" card below surfaces what's pending/failed/conflicting.
  */
 
 const OUTCOME_STYLE: Record<MissionOutcome, string> = {
@@ -138,49 +141,52 @@ function MissionForm({ m, onDone }: { m: MissionWithIncident; onDone: () => void
     setBusy(true)
     setError(null)
     try {
-      let photoUrl: string | null = null
-      if (photo) {
-        try {
-          photoUrl = await uploadReportPhoto(photo, session.user.id)
-        } catch {
-          setError('Photo upload failed - submitting the result without it.')
+      const { queued } = await runOrQueueSubmitMissionResult(
+        {
+          missionId: m.mission.id,
+          incidentId: m.mission.incident_id,
+          outcome,
+          checklistResponse: responses,
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+          notes: typeof responses.notes === 'string' ? responses.notes : null,
+          actorId: session.user.id,
+          // A field officer IS an authorised officer — their confirmation is what
+          // makes a source officially verified (plan §9).
+          isAuthorisedOfficer: profile?.role === 'field_officer' || profile?.role === 'admin',
+        },
+        photo,
+        `Mission result - Incident #${m.mission.incident_id}`,
+      )
+
+      // Queued for later sync: the incident-level follow-on writes below
+      // depend on the mission result actually having landed, so they only
+      // run for the immediate (online) path - the sync engine doesn't chain
+      // them, since a queued mission result may itself still be pending or
+      // rejected by the time it eventually replays.
+      if (!queued) {
+        const incident = m.incident
+        if (incident) {
+          const nextLevel = evidenceLevelAfterFieldOutcome(incident.source_confidence, outcome)
+          if (nextLevel !== incident.source_confidence) {
+            await updateSourceConfidence(
+              incident.id,
+              nextLevel,
+              session.user.id,
+              outcome === 'confirmed'
+                ? 'An authorised officer confirmed the source on site.'
+                : 'An officer visited and did not find the suspected source; the hypothesis returns to suspected.',
+            )
+          }
+          const nextStatus = incidentStatusAfterFieldOutcome(incident.status, outcome)
+          if (nextStatus !== incident.status) {
+            await updateIncidentStatus(incident.id, nextStatus, session.user.id)
+          }
         }
       }
-
-      await submitMissionResult({
-        missionId: m.mission.id,
-        incidentId: m.mission.incident_id,
-        outcome,
-        checklistResponse: responses,
-        proofPhotoUrl: photoUrl,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
-        notes: typeof responses.notes === 'string' ? responses.notes : null,
-        actorId: session.user.id,
-        // A field officer IS an authorised officer — their confirmation is what
-        // makes a source officially verified (plan §9).
-        isAuthorisedOfficer: profile?.role === 'field_officer' || profile?.role === 'admin',
-      })
-
-      // Apply the field-outcome rule to the incident itself.
-      const incident = m.incident
-      if (incident) {
-        const nextLevel = evidenceLevelAfterFieldOutcome(incident.source_confidence, outcome)
-        if (nextLevel !== incident.source_confidence) {
-          await updateSourceConfidence(
-            incident.id,
-            nextLevel,
-            session.user.id,
-            outcome === 'confirmed'
-              ? 'An authorised officer confirmed the source on site.'
-              : 'An officer visited and did not find the suspected source; the hypothesis returns to suspected.',
-          )
-        }
-        const nextStatus = incidentStatusAfterFieldOutcome(incident.status, outcome)
-        if (nextStatus !== incident.status) {
-          await updateIncidentStatus(incident.id, nextStatus, session.user.id)
-        }
-      }
+      // The "Offline queue" card (rendered persistently above) picks up the
+      // queued item immediately - no transient message here, since this
+      // form collapses (via onDone) right after submitting either way.
       onDone()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not submit the mission.')
@@ -337,29 +343,26 @@ function InterventionCompletionForm({ item, onDone }: { item: InterventionWithIn
     setBusy(true)
     setError(null)
     try {
-      const photoUrls: string[] = []
-      for (const f of photos) {
-        try {
-          photoUrls.push(await uploadReportPhoto(f, session.user.id))
-        } catch {
-          setError((e) => e ?? 'One or more photos failed to upload - continuing without them.')
-        }
-      }
-
-      await submitFieldCompletion({
-        actionId: item.action.id,
-        incidentId: item.action.incident_id!,
-        actorId: session.user.id,
-        sourceConfirmed,
-        actionPerformed,
-        startedAt,
-        completedAt: couldNotComplete ? null : (completedAt ?? new Date().toISOString()),
-        photoUrls,
-        checklistResponse: responses,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
-        notCompletedReason: couldNotComplete ? notCompletedReason.trim() : null,
-      })
+      await runOrQueueSubmitFieldCompletion(
+        {
+          actionId: item.action.id,
+          incidentId: item.action.incident_id!,
+          actorId: session.user.id,
+          sourceConfirmed,
+          actionPerformed,
+          startedAt,
+          completedAt: couldNotComplete ? null : (completedAt ?? new Date().toISOString()),
+          checklistResponse: responses,
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+          notCompletedReason: couldNotComplete ? notCompletedReason.trim() : null,
+        },
+        photos,
+        `Intervention completion - Incident #${item.action.incident_id}`,
+      )
+      // The "Offline queue" card (rendered persistently in MissionsView)
+      // picks up a queued item immediately - no transient message needed
+      // here, since this form collapses (via onDone) right after either way.
       onDone()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not submit the completion.')
@@ -639,6 +642,8 @@ export default function MissionsView() {
   return (
     <AppShell subtitle="Evidence missions">
       <div className="mx-auto w-full max-w-2xl flex-1 space-y-3 overflow-y-auto p-4">
+        <OfflineQueueStatus />
+
         {/* Dispatch tasks (Phase 9) are the routing/lifecycle WRAPPER around an
             intervention - acknowledge/accept/reject/start before the
             evidence/outcome capture below even becomes relevant. */}

@@ -10,9 +10,9 @@ import {
   listMyTaskDispatches,
   reportTaskResourceUnavailable,
   requestTaskReroute,
-  transitionTaskDispatch,
   type TaskDispatchRow,
 } from '../lib/incidents'
+import { runOrQueueTransitionTaskDispatch } from '../lib/offlineSync'
 import { useAsync } from '../lib/useAsync'
 
 /**
@@ -62,7 +62,10 @@ function DispatchCard({ d, onDone }: { d: TaskDispatchRow; onDone: () => void })
   const handleAdvance = () => {
     if (!next) return
     void act(async () => {
-      await transitionTaskDispatch(d.id, next.to, session.user.id)
+      await runOrQueueTransitionTaskDispatch(
+        { dispatchId: d.id, newStatus: next.to, actorId: session.user.id },
+        `${next.label} - ${d.physical_location ?? d.asset_description ?? `Task #${d.id}`}`,
+      )
     })
   }
 
@@ -70,7 +73,10 @@ function DispatchCard({ d, onDone }: { d: TaskDispatchRow; onDone: () => void })
     const reason = window.prompt('Why are you rejecting this task?')
     if (!reason?.trim()) return
     void act(async () => {
-      await transitionTaskDispatch(d.id, 'rejected', session.user.id, reason.trim())
+      await runOrQueueTransitionTaskDispatch(
+        { dispatchId: d.id, newStatus: 'rejected', actorId: session.user.id, reason: reason.trim() },
+        `Reject - ${d.physical_location ?? d.asset_description ?? `Task #${d.id}`}`,
+      )
     })
   }
 

@@ -2303,6 +2303,17 @@ export async function transitionTaskDispatch(
   if (error) fail('Could not update this task', error)
 }
 
+/** Just the current status, for the offline-sync engine's conflict check
+ *  (offlineSync.ts): after a queued transition is rejected on replay, this
+ *  tells it whether the target was already reached by someone else
+ *  (benign - drop silently) or moved to a genuinely different state while
+ *  offline (a real conflict - surface it, never auto-resolve). */
+export async function getTaskDispatchStatus(dispatchId: number): Promise<TaskDispatchStatus | null> {
+  const { data, error } = await supabase.from('task_dispatches').select('status').eq('id', dispatchId).maybeSingle()
+  if (error) fail('Could not check this task', error)
+  return data?.status ?? null
+}
+
 /** Field officer reports equipment/team/officer unavailability (plan §9) —
  *  never invents availability, only records what was actually reported. */
 export async function reportTaskResourceUnavailable(dispatchId: number, actorId: string, note: string): Promise<void> {

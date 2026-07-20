@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { BUILD_INFO, IS_PRODUCTION } from '../lib/env'
+import { initOfflineSync } from '../lib/offlineSync'
 import MobileBottomNav from './MobileNav'
 import { OfflineBanner } from './ui'
 
@@ -250,6 +251,12 @@ export default function AppShell({
         : '/citizen'
     : '/'
   const railItems = railItemsForRole(profile?.role, homePath)
+
+  // Field-officer offline queue (Phase 12) - wired once at the shell level,
+  // next to useOnlineStatus/OfflineBanner below, per ui.tsx's own extension-
+  // point comment. Harmless for every other role: the queue is only ever
+  // populated by MissionsView.tsx's own mutation sites.
+  useEffect(() => initOfflineSync(), [])
 
   return (
     <div className="flex h-[100dvh]">
