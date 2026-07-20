@@ -66,11 +66,46 @@ def upsert_reading(row: dict) -> None:
     client().table("readings").upsert(row, on_conflict="station_id,ts").execute()
 
 
+def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
+    """Upsert many readings in batched requests (one REST call per `chunk`
+    rows) rather than one call per row — the historical backfill writes
+    thousands of rows at once, where per-row upserts are impractically slow.
+    Same on_conflict target as `upsert_reading`, so a re-run or an overlap
+    with the live hourly feed merges rather than duplicates."""
+    if not rows:
+        return 0
+    written = 0
+    for i in range(0, len(rows), chunk):
+        batch = rows[i : i + chunk]
+        client().table("readings").upsert(batch, on_conflict="station_id,ts").execute()
+        written += len(batch)
+    return written
+
+
 def upsert_weather(row: dict) -> None:
     client().table("weather").upsert(row, on_conflict="ward_id,ts").execute()
 
 
 # ── history reads (for forecast + attribution) ───────────────────────────────
+
+def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
+    """Fetch every row of a PostgREST query, page by page. PostgREST caps a
+    single response at its server-configured max (1000 rows on Supabase by
+    default), silently, regardless of any larger `.limit()` — so a plain
+    `.limit(50000)` returns at most 1000 rows. This walks `.range()` windows
+    until a short page signals the end. Matters now that a ward can have
+    thousands of hourly readings in the forecast window (historical backfill);
+    with only a few dozen readings it never surfaced."""
+    out: list[dict] = []
+    start = 0
+    while True:
+        page = query_builder.range(start, start + page_size - 1).execute().data
+        out.extend(page)
+        if len(page) < page_size:
+            break
+        start += page_size
+    return out
+
 
 def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     """Flattened readings joined to their ward: [{ts, ward_id, pm25, pm10, no2, aqi}].
@@ -80,15 +115,12 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     attribution.py caller (which only reads pm25/wind_dir) is unaffected.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    rows = (
+    rows = _fetch_all(
         client()
         .table("readings")
         .select("ts, pm25, pm10, no2, aqi, stations(ward_id)")
         .gte("ts", cutoff)
         .order("ts")
-        .limit(50000)
-        .execute()
-        .data
     )
     out = []
     for r in rows:
@@ -112,15 +144,12 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
 def get_weather_history(hours: int = 24 * 30) -> list[dict]:
     """[{ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation}]."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    return (
+    return _fetch_all(
         client()
         .table("weather")
         .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation")
         .gte("ts", cutoff)
         .order("ts")
-        .limit(50000)
-        .execute()
-        .data
     )
 
 
