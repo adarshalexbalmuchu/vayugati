@@ -15,6 +15,7 @@ key in a committed `.env.example`, treat it as compromised — see
 | `VITE_SUPABASE_ANON_KEY` | Yes | The **anon** key only — safe for a browser bundle by Supabase's own design (RLS is the real boundary). **Never** put the service_role key here; `web/src/lib/supabase.ts` never imports it and there is no code path in this app that could use it even if it were present. |
 | `VITE_INGEST_URL` | No | Defaults to `http://localhost:8000`. The deployed ingest service's public URL in staging/production. |
 | `VITE_ENVIRONMENT` | No | `local` \| `test` \| `staging` \| `production`. Defaults to `local`. Display/log-verbosity only — see `web/src/lib/env.ts`. Does **not** select which Supabase project is used; that's `VITE_SUPABASE_URL` alone. |
+| `VITE_MAPTILER_KEY` | No | https://cloud.maptiler.com/account/keys/. Powers 4 of the Map page's 5 basemap modes (Operational Dark, Satellite Hybrid, Terrain, Minimal Grey GIS) via MapTiler's hosted vector styles. Unset → only "Operational Light" is selectable (the free MapLibre demo style, unchanged from before this key existed); the other modes show disabled with an explanatory tooltip rather than silently failing or faking a style. |
 
 ## `ingest/.env` (copy from `ingest/.env.example`)
 

@@ -10,6 +10,7 @@ export interface Reading {
   aqi: number | null
   pm25: number | null
   pm10: number | null
+  no2: number | null
   ts: string | null
 }
 
@@ -30,6 +31,8 @@ export interface WardSummary {
   lng: number | null
   aqi: number | null
   pm25: number | null
+  pm10: number | null
+  no2: number | null
   ts: string | null
 }
 
@@ -55,7 +58,7 @@ export async function fetchLatestReading(wardId: number): Promise<Reading | null
   if (!ids.length) return null
   const { data } = await supabase
     .from('readings')
-    .select('aqi, pm25, pm10, ts')
+    .select('aqi, pm25, pm10, no2, ts')
     .in('station_id', ids)
     .order('ts', { ascending: false })
     .limit(1)
@@ -88,6 +91,8 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
         ...ward,
         aqi: reading?.aqi ?? null,
         pm25: reading?.pm25 ?? null,
+        pm10: reading?.pm10 ?? null,
+        no2: reading?.no2 ?? null,
         ts: reading?.ts ?? null,
       }
     }),
@@ -100,11 +105,14 @@ export interface StationMarker {
   lat: number
   lng: number
   aqi: number | null
+  pm25: number | null
+  pm10: number | null
+  no2: number | null
 }
 
-/** Station-level counterpart to fetchAllWardsAqi — same {id,name,lat,lng,aqi}
- *  shape MapView already renders, just one marker per station instead of per
- *  ward. Two queries total (stations, readings), never one per station. */
+/** Station-level counterpart to fetchAllWardsAqi — same shape MapView
+ *  already renders, just one marker per station instead of per ward. Two
+ *  queries total (stations, readings), never one per station. */
 export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
   const { data: stations } = await supabase.from('stations').select('id, name, lat, lng').order('name')
   if (!stations) return []
@@ -112,24 +120,30 @@ export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
   const ids = stations.map((s) => s.id)
   const { data: readings } = await supabase
     .from('readings')
-    .select('station_id, aqi, ts')
+    .select('station_id, aqi, pm25, pm10, no2, ts')
     .in('station_id', ids)
     .order('ts', { ascending: false })
 
-  const latestAqiByStation = new Map<number, number | null>()
+  const latestByStation = new Map<number, { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null }>()
   for (const r of readings ?? []) {
-    if (!latestAqiByStation.has(r.station_id)) latestAqiByStation.set(r.station_id, r.aqi) // first hit per station = newest
+    if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r) // first hit per station = newest
   }
 
   return stations
     .filter((s) => s.lat != null && s.lng != null)
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      lat: s.lat as number,
-      lng: s.lng as number,
-      aqi: latestAqiByStation.get(s.id) ?? null,
-    }))
+    .map((s) => {
+      const reading = latestByStation.get(s.id)
+      return {
+        id: s.id,
+        name: s.name,
+        lat: s.lat as number,
+        lng: s.lng as number,
+        aqi: reading?.aqi ?? null,
+        pm25: reading?.pm25 ?? null,
+        pm10: reading?.pm10 ?? null,
+        no2: reading?.no2 ?? null,
+      }
+    })
 }
 
 export async function fetchOpenReports(wardId: number): Promise<Report[]> {
@@ -140,6 +154,18 @@ export async function fetchOpenReports(wardId: number): Promise<Report[]> {
     .in('status', ['submitted', 'verified', 'assigned'])
     .order('created_at', { ascending: false })
     .limit(20)
+  return (data ?? []) as Report[]
+}
+
+/** City-wide counterpart to fetchOpenReports - same real table/status filter,
+ *  without the ward scope, for the Map page's citizen-reports layer. */
+export async function fetchAllOpenReports(): Promise<Report[]> {
+  const { data } = await supabase
+    .from('reports')
+    .select('id, description, ai_category, ai_meta, photo_url, status, created_at, lat, lng')
+    .in('status', ['submitted', 'verified', 'assigned'])
+    .order('created_at', { ascending: false })
+    .limit(200)
   return (data ?? []) as Report[]
 }
 

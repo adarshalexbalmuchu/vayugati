@@ -21,6 +21,8 @@ function ward(overrides: Partial<WardSummary> = {}): WardSummary {
     lng: null,
     aqi: null,
     pm25: null,
+    pm10: null,
+    no2: null,
     ts: null,
     ...overrides,
   }
