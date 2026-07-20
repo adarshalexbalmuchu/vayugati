@@ -144,6 +144,8 @@ function teardropElement(colorHex: string, hollow: boolean): HTMLDivElement {
 
 export function createMarkerElement(marker: MapMarker): HTMLDivElement {
   const el = wrapper()
+  el.dataset.markerKind = marker.kind
+  el.dataset.markerId = marker.id
 
   if (marker.kind === 'ward' || marker.kind === 'station') {
     const color = marker.colorOverride ?? aqiLevel(marker.aqi ?? null).hex

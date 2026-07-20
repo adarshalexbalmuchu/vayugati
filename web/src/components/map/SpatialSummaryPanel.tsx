@@ -38,10 +38,16 @@ export default function SpatialSummaryPanel({
         <Stat value={activeIncidents} label="Active incidents" accent={activeIncidents > 0 ? 'text-status-critical' : 'text-slate-900'} />
         <Stat value={predictedHotspots} label="Predicted hotspots" accent={predictedHotspots > 0 ? 'text-status-warning' : 'text-slate-900'} />
         <Stat value={staleSensors} label="Stale sensors" accent={staleSensors > 0 ? 'text-status-warning' : 'text-slate-900'} />
-        <Stat
-          value={dominantSource ? dominantSource.source.replace(/_/g, ' ') : '—'}
-          label="Dominant source signal"
-        />
+      </div>
+
+      {/* Full-width, smaller type - this value is a word ("construction
+          dust"), not a short number like the tiles above, so it needs more
+          room than the shared Stat component's text-2xl numeric sizing. */}
+      <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2.5 text-center">
+        <p className="truncate text-base font-bold capitalize text-slate-900" title={dominantSource?.source.replace(/_/g, ' ')}>
+          {dominantSource ? dominantSource.source.replace(/_/g, ' ') : '—'}
+        </p>
+        <p className="mt-0.5 text-xs text-slate-500">Dominant source signal</p>
       </div>
 
       {locationsUnavailable > 0 && (

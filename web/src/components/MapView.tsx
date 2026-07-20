@@ -95,10 +95,21 @@ export default function MapView({
     const map = mapRef.current
     if (!map || markers.length === 0) return
 
+    // If the style isn't loaded yet, marker creation is deferred to the
+    // 'load' event via map.once() below. If `markers` changes again before
+    // that fires (very likely - MapPage.tsx's staggered async fetches
+    // change `allMarkers`'s reference shortly after mount), React calls
+    // THIS cleanup while addedMarkers/addedPopups are still empty (nothing
+    // to remove yet), leaving the original once('load', addMarkers)
+    // registration orphaned - it still fires later and adds a full "ghost"
+    // generation of markers nothing can ever clean up. `cancelled` +
+    // map.off() below close that race.
+    let cancelled = false
     const addedMarkers: maplibregl.Marker[] = []
     const addedPopups: maplibregl.Popup[] = []
 
     const addMarkers = () => {
+      if (cancelled) return
       for (const m of markers) {
         const el = createMarkerElement(m)
         const marker = new maplibregl.Marker({ element: el }).setLngLat([m.lng, m.lat]).addTo(map)
@@ -122,6 +133,8 @@ export default function MapView({
     else map.once('load', addMarkers)
 
     return () => {
+      cancelled = true
+      map.off('load', addMarkers)
       addedMarkers.forEach((m) => m.remove())
       addedPopups.forEach((p) => p.remove())
     }
