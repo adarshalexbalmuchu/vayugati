@@ -124,6 +124,14 @@ export default function MapView({
       center: center ?? DELHI_CENTER,
       zoom,
     })
+    // Reset here, not just at useRef's initial value: React StrictMode
+    // (dev only) double-invokes effects on mount - mount, cleanup, mount
+    // again - and this ref survives that cycle since it belongs to the
+    // component, not to any one map instance. Without resetting it against
+    // THIS particular map instance, the second (real) mount would see the
+    // flag already flipped from the first, torn-down instance's run, and
+    // wrongly skip protecting the map that's actually going to stay alive.
+    skippedInitialStyleSwap.current = false
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     if (showScaleBar) map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
     if (onHoverCoordinates) {
@@ -179,12 +187,17 @@ export default function MapView({
       })
     }
     ensureBoundaryLayersRef.current = addBoundaryLayers
+    // 'style.load', not 'load': 'load' only ever fires once in the map's
+    // whole lifetime, but a real basemap switch (or, before the fix below,
+    // a redundant one) reloads the style again later - a fallback
+    // registered on 'load' during any later reload would wait forever.
+    // 'style.load' fires on every style transition, including the first,
+    // so it's the correct event both here and in the
+    // wardBoundaries/showWardBoundaries/selectedBoundaryId effects below.
     if (map.isStyleLoaded()) addBoundaryLayers()
-    else map.once('load', addBoundaryLayers)
-    // Every basemap swap (see the styleUrl effect below) wipes all custom
-    // sources/layers - 'style.load' fires once per setStyle() completion
-    // (unlike 'load', which is a one-time map-lifecycle event), so this
-    // keeps the boundary layer alive across basemap switching.
+    else map.once('style.load', addBoundaryLayers)
+    // Persistent (not once): keeps the boundary layer alive across every
+    // later basemap switch too, not just this initial load.
     map.on('style.load', addBoundaryLayers)
 
     mapRef.current = map
@@ -200,9 +213,22 @@ export default function MapView({
 
   // Basemap swap on an already-live map - markers are DOM overlays
   // independent of the style, so they persist across setStyle() untouched.
+  // Skips its very first run: the mount effect above already constructs the
+  // map with `style: styleUrl`, so re-applying the identical URL here on
+  // mount is a genuinely redundant setStyle() call - wasted bandwidth for
+  // any real (network) style, and - critically - a full style reload that
+  // silently strips whatever custom sources/layers (the ward-boundary
+  // polygons) got added in the brief window before it completes. Real
+  // basemap switches (the user picking a different mode) always change
+  // `styleUrl`'s value after this initial skip, so they're unaffected.
+  const skippedInitialStyleSwap = useRef(false)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !styleUrl) return
+    if (!skippedInitialStyleSwap.current) {
+      skippedInitialStyleSwap.current = true
+      return
+    }
     if (map.isStyleLoaded()) map.setStyle(styleUrl)
     else map.once('load', () => map.setStyle(styleUrl))
   }, [styleUrl])
@@ -280,7 +306,7 @@ export default function MapView({
     if (!map || !wardBoundaries) return
     const apply = () => ensureBoundaryLayersRef.current?.()
     if (map.isStyleLoaded()) apply()
-    else map.once('load', apply)
+    else map.once('style.load', apply)
   }, [wardBoundaries])
 
   // Toggle layer visibility without touching the source/data.
@@ -293,7 +319,7 @@ export default function MapView({
       if (map.getLayer(BOUNDARY_LINE_LAYER_ID)) map.setLayoutProperty(BOUNDARY_LINE_LAYER_ID, 'visibility', visibility)
     }
     if (map.isStyleLoaded()) apply()
-    else map.once('load', apply)
+    else map.once('style.load', apply)
   }, [showWardBoundaries])
 
   // Highlight the selected ward's polygon without touching the source/data.
@@ -307,7 +333,7 @@ export default function MapView({
       map.setPaintProperty(BOUNDARY_LINE_LAYER_ID, 'line-width', lineWidthExpr(id))
     }
     if (map.isStyleLoaded()) apply()
-    else map.once('load', apply)
+    else map.once('style.load', apply)
   }, [selectedBoundaryId])
 
   return <div ref={containerRef} className="h-full w-full" />
