@@ -145,6 +145,38 @@ export default function MapView({
     // flag already flipped from the first, torn-down instance's run, and
     // wrongly skip protecting the map that's actually going to stay alive.
     skippedInitialStyleSwap.current = false
+
+    // Previously silent: any MapLibre-level failure (a bad style response,
+    // a tile 404, a WebGL error) had no listener at all, so the map just
+    // stopped rendering with nothing in the console to explain why.
+    map.on('error', (e) => {
+      console.error('[MapView] map error:', e.error ?? e)
+    })
+
+    // WebGL context loss is a real browser-level failure mode for any
+    // canvas-based renderer - GPU memory pressure, a tab backgrounded for a
+    // while, a driver reset - and it leaves exactly this symptom: the map
+    // was rendering fine, then silently goes blank with no error the app
+    // ever sees, because nothing was listening for it. `preventDefault()`
+    // on 'webglcontextlost' is required by the WebGL spec for the browser
+    // to attempt restoration at all; without it the loss is permanent.
+    // `ensureBoundaryLayersRef` already exists for exactly this kind of
+    // "the GL state was thrown away, re-add my custom layers" recovery
+    // (it's the same function 'style.load' below already relies on for a
+    // basemap switch), so context restoration reuses it rather than
+    // inventing a second recovery path.
+    const canvas = map.getCanvas()
+    const onContextLost = (e: Event) => {
+      e.preventDefault()
+      console.warn('[MapView] WebGL context lost - attempting recovery')
+    }
+    const onContextRestored = () => {
+      console.warn('[MapView] WebGL context restored')
+      ensureBoundaryLayersRef.current?.()
+    }
+    canvas.addEventListener('webglcontextlost', onContextLost)
+    canvas.addEventListener('webglcontextrestored', onContextRestored)
+
     map.addControl(new maplibregl.NavigationControl(), 'top-right')
     if (showScaleBar) map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
     if (onHoverCoordinates) {
@@ -219,6 +251,8 @@ export default function MapView({
 
     mapRef.current = map
     return () => {
+      canvas.removeEventListener('webglcontextlost', onContextLost)
+      canvas.removeEventListener('webglcontextrestored', onContextRestored)
       map.remove()
       mapRef.current = null
     }

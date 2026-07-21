@@ -160,23 +160,39 @@ export interface StationMarker {
 }
 
 /** Station-level counterpart to fetchAllWardsAqi — same shape MapView
- *  already renders, just one marker per station instead of per ward. Two
- *  queries total (stations, readings), never one per station. */
+ *  already renders, just one marker per station instead of per ward.
+ *
+ *  Previously "two queries total (stations, readings), never one per
+ *  station" - a single unfiltered `readings` fetch, deduped to "latest per
+ *  station" in JS. That was fine when `readings` was small, but at current
+ *  scale (19 stations, 25k+ rows and growing with every ingest run) it
+ *  pulled the ENTIRE table - 2.5MB, all history, to use 19 rows of it -
+ *  and did so on every Map page load. Switched to one bounded `.limit(1)`
+ *  query per station instead, run in parallel (`Promise.all`, not a
+ *  sequential loop) - the same `readings (station_id, ts desc)` index this
+ *  file's own `fetchLatestReading()` already relies on makes each of those
+ *  trivially fast, and the total payload drops to ~19 rows regardless of
+ *  how large `readings` grows. Still correctly shows a stale station's
+ *  true last reading (not silently "no data") - a fixed recent-time-window
+ *  filter on the single query was considered and rejected for exactly that
+ *  reason. */
 export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
   const { data: stations } = await supabase.from('stations').select('id, name, lat, lng').order('name')
   if (!stations) return []
 
-  const ids = stations.map((s) => s.id)
-  const { data: readings } = await supabase
-    .from('readings')
-    .select('station_id, aqi, pm25, pm10, no2, ts')
-    .in('station_id', ids)
-    .order('ts', { ascending: false })
-
   const latestByStation = new Map<number, { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null }>()
-  for (const r of readings ?? []) {
-    if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r) // first hit per station = newest
-  }
+  await Promise.all(
+    stations.map(async (s) => {
+      const { data } = await supabase
+        .from('readings')
+        .select('aqi, pm25, pm10, no2')
+        .eq('station_id', s.id)
+        .order('ts', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) latestByStation.set(s.id, data)
+    }),
+  )
 
   return stations
     .filter((s) => s.lat != null && s.lng != null)

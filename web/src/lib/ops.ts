@@ -114,13 +114,22 @@ export interface StationHealthRow {
   is_stale: boolean
 }
 
-/** Every station + its ward name + the age of its own latest reading —
- *  one query per table (stations, wards, readings), never one query per
- *  station, so this stays cheap regardless of station count. Station-level
- *  freshness has never been computed anywhere in this codebase before
- *  (only the city-wide "any reading at all" check in health_checks.py) —
- *  this is new, but built entirely from the same readings table that
- *  check already reads, not a new data source. */
+/** Every station + its ward name + the age of its own latest reading.
+ *
+ *  Used to say "one query per table (stations, wards, readings), never one
+ *  query per station" - an unfiltered `readings` fetch deduped to "latest
+ *  per station" in JS. At current scale (19 stations, 25k+ rows and
+ *  growing with every ingest run) that pulled the entire `readings` table
+ *  just to keep 19 timestamps out of it, on every Map/Sensors page load -
+ *  the exact same anti-pattern `data.ts`'s `fetchAllStationsWithReadings`
+ *  had, fixed the same way here: one bounded `.limit(1)` query per
+ *  station, run in parallel via `Promise.all` (not a sequential loop, so
+ *  this doesn't reintroduce the round-trip cost the original comment was
+ *  guarding against), using the same `readings (station_id, ts desc)`
+ *  index. Station-level freshness has never been computed anywhere else in
+ *  this codebase (only the city-wide "any reading at all" check in
+ *  health_checks.py) - this is new, but built entirely from the same
+ *  readings table that check already reads, not a new data source. */
 export async function fetchStationHealth(cityId?: number): Promise<StationHealthRow[]> {
   const stations = await fetchStations(cityId)
   if (stations.length === 0) return []
@@ -130,18 +139,20 @@ export async function fetchStationHealth(cityId?: number): Promise<StationHealth
   if (wardsError) fail('Could not load ward names', wardsError)
   const wardNameById = new Map((wards ?? []).map((w) => [w.id, w.name]))
 
-  const stationIds = stations.map((s) => s.id)
-  const { data: readings, error: readingsError } = await supabase
-    .from('readings')
-    .select('station_id, ts')
-    .in('station_id', stationIds)
-    .order('ts', { ascending: false })
-  if (readingsError) fail('Could not load station readings', readingsError)
-
   const latestTsByStation = new Map<number, string>()
-  for (const r of readings ?? []) {
-    if (!latestTsByStation.has(r.station_id)) latestTsByStation.set(r.station_id, r.ts) // first hit per station = newest, thanks to the order() above
-  }
+  await Promise.all(
+    stations.map(async (s) => {
+      const { data, error } = await supabase
+        .from('readings')
+        .select('ts')
+        .eq('station_id', s.id)
+        .order('ts', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) fail('Could not load station readings', error)
+      if (data) latestTsByStation.set(s.id, data.ts)
+    }),
+  )
 
   const now = Date.now()
   return stations.map((s) => {

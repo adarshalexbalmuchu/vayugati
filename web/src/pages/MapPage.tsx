@@ -74,8 +74,9 @@ const EMPTY_DATA: [
   Report[],
   StationHealthRow[],
   ActiveTaskDispatchesPage,
-  WardBoundary[],
-] = [[], [], new Map(), [], [], [], { rows: [], totalCount: 0, hasMore: false }, []]
+] = [[], [], new Map(), [], [], [], { rows: [], totalCount: 0, hasMore: false }]
+
+const EMPTY_BOUNDARIES: WardBoundary[] = []
 
 function popup(title: string, lines: string[]): string {
   return (
@@ -110,13 +111,22 @@ export default function MapPage() {
         fetchAllOpenReports(),
         fetchStationHealth(),
         listActiveTaskDispatches({ offset: 0, pageSize: 200 }),
-        fetchAllWardBoundaries(),
       ]),
     [],
   )
 
-  const [wards, stations, forecasts, incidents, reports, stationHealth, dispatchPage, wardBoundaries] =
-    state.data ?? EMPTY_DATA
+  const [wards, stations, forecasts, incidents, reports, stationHealth, dispatchPage] = state.data ?? EMPTY_DATA
+
+  // Ward boundary polygons are ~8MB of real OSM-derived GeoJSON across all
+  // 250+ wards (measured) - loaded separately from the rest of the page's
+  // data, not inside the `Promise.all` above, so the whole console no
+  // longer blocks on it. The "Ward boundaries" layer defaults to OFF
+  // (MapLayerControl's DEFAULT_LAYER_STATE), so most loads never need this
+  // payload at all; when they do, `wardBoundariesAvailable` below already
+  // correctly reflects "not loaded yet" via the same disabled-toggle affordance
+  // that previously covered a hard fetch failure - no new UI state needed.
+  const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(), [])
+  const wardBoundaries = wardBoundariesState.data ?? EMPTY_BOUNDARIES
 
   const leadingSource = useAsync(() => listLeadingSourceCategories(incidents.map((i) => i.id)), [incidents])
   const leadingSourceById = leadingSource.data ?? new Map()
