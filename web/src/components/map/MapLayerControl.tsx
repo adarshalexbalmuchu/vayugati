@@ -2,6 +2,7 @@ import { Layers2 } from 'lucide-react'
 
 export type MapLayerKey =
   | 'wardBoundaries'
+  | 'wardMarkers'
   | 'stations'
   | 'incidents'
   | 'predictedHotspots'
@@ -12,6 +13,7 @@ export type MapLayerKey =
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
+  'wardMarkers',
   'stations',
   'incidents',
   'predictedHotspots',
@@ -30,6 +32,11 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     label: 'Ward boundaries',
     available: false,
     note: 'No boundary geometry has been captured for these wards yet.',
+  },
+  wardMarkers: {
+    label: 'Ward AQI',
+    available: true,
+    note: 'Ward-level AQI value markers - previously always on with no toggle; now independent of "AQI stations".',
   },
   stations: { label: 'AQI stations', available: true, note: 'Live station readings.' },
   incidents: { label: 'Active incidents', available: true, note: 'Open incidents with a known location.' },
@@ -58,6 +65,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   wardBoundaries: false,
+  wardMarkers: true,
   stations: true,
   incidents: true,
   predictedHotspots: false,

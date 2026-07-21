@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '../components/AppShell'
 import MapView, { type WardBoundaryFeatureProps } from '../components/MapView'
 import { ErrorState, Skeleton } from '../components/ui'
@@ -101,6 +101,25 @@ export default function MapPage() {
   const [selection, setSelection] = useState<Selection>(null)
   const [resetToken, setResetToken] = useState(0)
 
+  // Warm the browser's cache for every basemap the user hasn't picked yet,
+  // so a later manual switch is instant instead of paying its real
+  // first-visit network cost (measured: 1.6-2.5s even on a fast connection
+  // - see lib/basemapPrefetch.ts). Fires once, a few seconds after mount so
+  // it never competes with the page's own critical data fetch or the real
+  // map's first paint; cancelled on unmount if the user navigates away
+  // before it fires. Deliberately excludes `basemap` from deps - this
+  // should run exactly once per page visit, not re-fire every time the
+  // user picks a different mode.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void import('../lib/basemapPrefetch').then(({ prefetchOtherBasemaps }) =>
+        prefetchOtherBasemaps(basemap, DELHI_CENTER, DELHI_DEFAULT_ZOOM),
+      )
+    }, 3000)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const state = useAsync(
     () =>
       Promise.all([
@@ -151,31 +170,33 @@ export default function MapPage() {
   // ── marker construction ──────────────────────────────────────────────────
   const wardMarkers: MapMarker[] = useMemo(
     () =>
-      wards
-        .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
-        .map((w) => {
-          const forecast = forecasts.get(w.id)
-          const reading = resolveWardReading(w, pollutant, timeMode, forecast)
-          const colorOverride =
-            layers.sourceAttribution && w.dominant_source
-              ? (SOURCE_CATEGORY_HEX[w.dominant_source as SourceCategory] ?? null)
-              : timeMode !== 'now'
-                ? HOTSPOT_STATUS_HEX[reading.status ?? 'no_data']
-                : null
-          return {
-            id: `ward-${w.id}`,
-            kind: 'ward' as const,
-            lat: w.lat as number,
-            lng: w.lng as number,
-            label: w.name,
-            aqi: w.aqi,
-            badgeText: reading.value != null ? String(Math.round(reading.value)) : '-',
-            pulsing: layers.predictedHotspots && severeWardIds.has(w.id),
-            colorOverride,
-            popupHtml: popup(w.name, [`${reading.value ?? '-'} ${reading.unit}`]),
-          }
-        }),
-    [wards, forecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
+      layers.wardMarkers
+        ? wards
+            .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
+            .map((w) => {
+              const forecast = forecasts.get(w.id)
+              const reading = resolveWardReading(w, pollutant, timeMode, forecast)
+              const colorOverride =
+                layers.sourceAttribution && w.dominant_source
+                  ? (SOURCE_CATEGORY_HEX[w.dominant_source as SourceCategory] ?? null)
+                  : timeMode !== 'now'
+                    ? HOTSPOT_STATUS_HEX[reading.status ?? 'no_data']
+                    : null
+              return {
+                id: `ward-${w.id}`,
+                kind: 'ward' as const,
+                lat: w.lat as number,
+                lng: w.lng as number,
+                label: w.name,
+                aqi: w.aqi,
+                badgeText: reading.value != null ? String(Math.round(reading.value)) : '-',
+                pulsing: layers.predictedHotspots && severeWardIds.has(w.id),
+                colorOverride,
+                popupHtml: popup(w.name, [`${reading.value ?? '-'} ${reading.unit}`]),
+              }
+            })
+        : [],
+    [layers.wardMarkers, wards, forecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
   )
 
   const stationMarkers: MapMarker[] = useMemo(
