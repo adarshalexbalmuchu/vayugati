@@ -7,6 +7,7 @@ import {
   HOTSPOT_READING_STALE_MINUTES,
   isWardDataBacked,
   nextDueAt,
+  peakWithinWindow,
   recurringWardsSummary,
   rollupStationHealth,
   severeWardsWithin,
@@ -35,6 +36,7 @@ function ward(overrides: Partial<WardSummary> = {}): WardSummary {
 function forecast(overrides: Partial<WardForecastSummary> = {}): WardForecastSummary {
   return {
     wardId: 1,
+    pollutant: 'pm25',
     points: [],
     peakPred: null,
     peakExcess: null,
@@ -92,6 +94,42 @@ describe('confidenceAtPeak', () => {
       ],
     })
     expect(confidenceAtPeak(f)).toBe(0.82)
+  })
+})
+
+describe('peakWithinWindow', () => {
+  const now = Date.now()
+  const hoursFromNow = (h: number) => new Date(now + h * 3_600_000).toISOString()
+
+  it('returns nulls when forecast is undefined', () => {
+    expect(peakWithinWindow(undefined, 24)).toEqual({ value: null, excess: null, ts: null })
+  })
+
+  it('only considers points within the selected window, not the whole curve', () => {
+    const f = forecast({
+      points: [
+        { horizon_ts: hoursFromNow(6), pm25_pred: null, baseline_pred: null, local_excess: 10, confidence: null, model_version: null, predicted_value: 80 },
+        { horizon_ts: hoursFromNow(40), pm25_pred: null, baseline_pred: null, local_excess: 90, confidence: null, model_version: null, predicted_value: 300 },
+      ],
+    })
+    // the 40h point (300) is the highest overall, but outside a 12h window
+    expect(peakWithinWindow(f, 12).value).toBe(80)
+    // widening the window to 48h should surface the real peak
+    expect(peakWithinWindow(f, 48).value).toBe(300)
+  })
+
+  it('falls back to pm25_pred when predicted_value is absent (older rows)', () => {
+    const f = forecast({
+      points: [{ horizon_ts: hoursFromNow(6), pm25_pred: 55, baseline_pred: null, local_excess: 5, confidence: null, model_version: null }],
+    })
+    expect(peakWithinWindow(f, 24).value).toBe(55)
+  })
+
+  it('returns nulls when every point is outside the window', () => {
+    const f = forecast({
+      points: [{ horizon_ts: hoursFromNow(40), pm25_pred: 300, baseline_pred: null, local_excess: null, confidence: null, model_version: null }],
+    })
+    expect(peakWithinWindow(f, 12)).toEqual({ value: null, excess: null, ts: null })
   })
 })
 

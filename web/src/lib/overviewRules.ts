@@ -46,6 +46,33 @@ export function confidenceAtPeak(forecast: WardForecastSummary | undefined): num
   return forecast.points.find((p) => p.horizon_ts === forecast.peakTs)?.confidence ?? null
 }
 
+export interface WindowedPeak {
+  value: number | null
+  excess: number | null
+  ts: string | null
+}
+
+/** WardForecastSummary.peakPred is the peak across the whole fetched curve
+ *  (up to 48h out, used by Map markers/PriorityAlerts/TeamAllocation, which
+ *  all want "the worst it gets"). The Hotspots table's own selected horizon
+ *  (12h/24h/36h/48h) needs a peak scoped to exactly that window instead -
+ *  selecting "12h" must not still show a peak the model predicts at hour 40.
+ *  A separate function, not a WardForecastSummary field, so those other
+ *  consumers' semantics stay exactly as they were. */
+export function peakWithinWindow(forecast: WardForecastSummary | undefined, windowHours: TimeWindowHours): WindowedPeak {
+  if (!forecast) return { value: null, excess: null, ts: null }
+  const cutoffMs = Date.now() + windowHours * 3_600_000
+  let best: WindowedPeak = { value: null, excess: null, ts: null }
+  for (const p of forecast.points) {
+    const ms = new Date(p.horizon_ts).getTime()
+    if (ms > cutoffMs) continue
+    const value = p.predicted_value ?? p.pm25_pred
+    if (value == null) continue
+    if (best.value == null || value > best.value) best = { value, excess: p.local_excess, ts: p.horizon_ts }
+  }
+  return best
+}
+
 export type HotspotStatus = 'severe' | 'watch' | 'stable' | 'stale' | 'no_data'
 
 export const HOTSPOT_STATUS_LABEL: Record<HotspotStatus, string> = {

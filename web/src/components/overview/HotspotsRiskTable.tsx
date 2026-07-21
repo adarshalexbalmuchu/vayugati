@@ -2,17 +2,16 @@ import { Fragment } from 'react'
 import { ChevronDown, ChevronRight, Flame } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { WardForecastSummary, WardSummary } from '../../lib/data'
+import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
-  confidenceAtPeak,
   hotspotStatus,
   HOTSPOT_STATUS_LABEL,
   isWardDataBacked,
+  peakWithinWindow,
   type HotspotStatus,
   type TimeWindowHours,
 } from '../../lib/overviewRules'
 import { Card, CardHeader } from '../ui'
-
-export type Pollutant = 'aqi' | 'pm25'
 
 function ageMinutes(ts: string | null): number | null {
   return ts ? (Date.now() - new Date(ts).getTime()) / 60_000 : null
@@ -52,11 +51,12 @@ function StatusBadge({ status, title }: { status: HotspotStatus; title?: string 
   )
 }
 
-function CurrentReadingBadge({ ward, pollutant }: { ward: WardSummary; pollutant: Pollutant }) {
-  if (pollutant === 'pm25') {
+function CurrentReadingBadge({ ward, pollutant }: { ward: WardSummary; pollutant: MapPollutant }) {
+  if (pollutant !== 'aqi') {
+    const value = pollutant === 'pm25' ? ward.pm25 : pollutant === 'pm10' ? ward.pm10 : ward.no2
     return (
       <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold tabular-nums text-slate-700">
-        {ward.pm25 != null ? `${Math.round(ward.pm25)} µg/m³` : '—'}
+        {value != null ? `${Math.round(value)} µg/m³` : '—'}
       </span>
     )
   }
@@ -71,6 +71,13 @@ function CurrentReadingBadge({ ward, pollutant }: { ward: WardSummary; pollutant
   )
 }
 
+/** AQI has no forecast of its own (forecast.py never computes the composite
+ *  index) - PM2.5/PM10/NO2 all do (forecast.py's DEFAULT_ENABLED_POLLUTANTS).
+ *  Matches the same proxy convention Map uses (forecastPollutantFor). */
+function forecastPollutantFor(pollutant: MapPollutant): 'pm25' | 'pm10' | 'no2' {
+  return pollutant === 'aqi' ? 'pm25' : pollutant
+}
+
 export default function HotspotsRiskTable({
   wards,
   forecasts,
@@ -80,12 +87,19 @@ export default function HotspotsRiskTable({
   onSelectWard,
 }: {
   wards: WardSummary[]
+  /** Keyed by ward id, values already scoped to whichever real forecast
+   *  pollutant forecastPollutantFor(pollutant) names - CommandView.tsx
+   *  fetches accordingly, this component never mixes pollutants itself. */
   forecasts: Map<number, WardForecastSummary>
-  pollutant: Pollutant
+  pollutant: MapPollutant
   windowHours: TimeWindowHours
   selectedWardId: number | null
   onSelectWard: (wardId: number) => void
 }) {
+  const forecastPollutant = forecastPollutantFor(pollutant)
+  const forecastPollutantLabel = MAP_POLLUTANT_LABEL[forecastPollutant]
+  const isProxy = pollutant === 'aqi'
+
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
       <CardHeader
@@ -97,6 +111,10 @@ export default function HotspotsRiskTable({
         }
         subtitle="Ranked by current reading, city-wide - click a row for detail"
       />
+      <p className="border-b border-slate-100 px-4 py-2 text-[11px] text-slate-500">
+        Showing current {MAP_POLLUTANT_LABEL[pollutant]}
+        {isProxy && ' with PM2.5 forecast-risk signal'} and forecast peak within {windowHours}h.
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[880px] border-collapse text-sm">
           <thead>
@@ -104,16 +122,12 @@ export default function HotspotsRiskTable({
               <th className="px-3 py-2 font-semibold">#</th>
               <th className="px-3 py-2 font-semibold">Ward</th>
               <th className="px-3 py-2 font-semibold">
-                {pollutant === 'pm25' ? (
-                  <>
-                    Current PM2.5 <span className="normal-case">(µg/m³)</span>
-                  </>
-                ) : (
-                  'Current AQI'
-                )}
+                Current {MAP_POLLUTANT_LABEL[pollutant]}
+                {pollutant !== 'aqi' && <span className="normal-case"> (µg/m³)</span>}
               </th>
               <th className="px-3 py-2 font-semibold">
-                Forecast PM2.5 Peak <span className="normal-case">(µg/m³)</span>
+                Forecast {forecastPollutantLabel} Peak <span className="normal-case">(µg/m³, within {windowHours}h)</span>
+                {isProxy && <span className="normal-case"> - risk signal</span>}
               </th>
               <th className="px-3 py-2 font-semibold">
                 Local Excess <span className="normal-case">(µg/m³)</span>
@@ -129,10 +143,11 @@ export default function HotspotsRiskTable({
             {wards.map((ward, i) => {
               const forecast = forecasts.get(ward.id)
               const dataBacked = isWardDataBacked(ward)
+              const windowed = peakWithinWindow(forecast, windowHours)
               const status = hotspotStatus(
                 {
                   hoursToSevere: forecast?.hoursToSevere ?? null,
-                  peakExcess: forecast?.peakExcess ?? null,
+                  peakExcess: windowed.excess,
                   aqi: ward.aqi,
                   readingAgeMinutes: ageMinutes(ward.ts),
                 },
@@ -141,8 +156,8 @@ export default function HotspotsRiskTable({
               // What the status would read without the staleness check - shown
               // as a secondary note on a stale badge rather than silently lost,
               // per the "keep the trend, but stale-qualified" requirement.
-              const underlyingTrend = forecast?.peakExcess != null && forecast.peakExcess > 0 ? 'was trending up' : null
-              const confidence = confidenceAtPeak(forecast)
+              const underlyingTrend = windowed.excess != null && windowed.excess > 0 ? 'was trending up' : null
+              const confidence = windowed.ts != null ? (forecast?.points.find((p) => p.horizon_ts === windowed.ts)?.confidence ?? null) : null
               const selected = ward.id === selectedWardId
               return (
                 <Fragment key={ward.id}>
@@ -156,12 +171,10 @@ export default function HotspotsRiskTable({
                       <CurrentReadingBadge ward={ward} pollutant={pollutant} />
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {forecast?.peakPred != null ? `${Math.round(forecast.peakPred)} µg/m³` : '—'}
+                      {windowed.value != null ? `${Math.round(windowed.value)} µg/m³` : <span className="text-slate-400">Forecast unavailable</span>}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {forecast?.peakExcess != null
-                        ? `${forecast.peakExcess > 0 ? '+' : ''}${Math.round(forecast.peakExcess)}`
-                        : '—'}
+                      {windowed.excess != null ? `${windowed.excess > 0 ? '+' : ''}${Math.round(windowed.excess)}` : '—'}
                     </td>
                     <td className="px-3 py-2 text-slate-600">
                       {dataBacked ? (
@@ -217,8 +230,10 @@ export default function HotspotsRiskTable({
         <p>
           {pollutant === 'aqi'
             ? 'Current reading is colour-coded on the India NAQI scale.'
-            : 'PM2.5 shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
-          Forecast Peak and Local Excess are always PM2.5, independent of the Current column's toggle.
+            : 'Current reading shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
+          {isProxy
+            ? 'Forecast peaks are shown only for pollutants with validated forecast data - AQI itself is not forecast, so PM2.5 is shown as a risk signal instead.'
+            : `Forecast Peak and Local Excess are both ${forecastPollutantLabel}, matching the selected metric.`}
         </p>
         <p>
           Likely Source is a preliminary citywide signal, not confirmed evidence - source confidence is only refined

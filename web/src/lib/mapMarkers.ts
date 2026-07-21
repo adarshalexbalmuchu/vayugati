@@ -146,10 +146,27 @@ function teardropElement(colorHex: string, hollow: boolean): HTMLDivElement {
   return pin
 }
 
+// Explicit stacking priority for click/visual precedence, rather than
+// relying on DOM append order (MapPage.tsx's allMarkers array order today
+// happens to put stations after wards, but that's an incidental property
+// of array-spread order, not a guarantee) - a station marker must always
+// be reachable over a ward marker or ward-boundary polygon it happens to
+// sit near/on top of. Ward-boundary polygons are MapLibre GL canvas layers,
+// which sit BELOW every DOM marker by default (the canvas element is
+// created before any marker `<div>` is appended) - this table only needs
+// to order the DOM markers against each other.
+const MARKER_Z_INDEX: Record<MapMarkerKind, number> = {
+  report: 1,
+  ward: 2,
+  station: 3,
+  incident: 4,
+}
+
 export function createMarkerElement(marker: MapMarker): HTMLDivElement {
   const el = wrapper()
   el.dataset.markerKind = marker.kind
   el.dataset.markerId = marker.id
+  el.style.zIndex = String(MARKER_Z_INDEX[marker.kind])
 
   if (marker.kind === 'ward' || marker.kind === 'station') {
     const color = marker.colorOverride ?? aqiLevel(marker.aqi ?? null).hex

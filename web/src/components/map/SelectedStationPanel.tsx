@@ -1,5 +1,8 @@
 import { X } from 'lucide-react'
-import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
+import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
+import type { ForecastRunRow } from '../../lib/incidents'
+import { MAP_POLLUTANT_LABEL, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
+import { Skeleton } from '../ui'
 
 export interface SelectedStation {
   id: number
@@ -26,10 +29,25 @@ function fmtAge(minutes: number | null): string {
 export default function SelectedStationPanel({
   station,
   pollutant,
+  timeMode,
+  forecastPeak,
+  forecastPollutantLabel,
+  latestForecastRun,
+  latestForecastRunLoading,
   onClose,
 }: {
   station: SelectedStation
   pollutant: MapPollutant
+  timeMode: MapTimeMode
+  /** This station's linked ward's forecast peak, in whichever pollutant
+   *  forecastPollutantLabel names - null when no forecast data covers this
+   *  ward at all (never fabricated). */
+  forecastPeak: number | null
+  forecastPollutantLabel: string
+  /** The linked ward's latest forecast_runs row - same table/query
+   *  PredictedIncidentPanel.tsx already uses, just surfaced here too. */
+  latestForecastRun: ForecastRunRow | null | undefined
+  latestForecastRunLoading: boolean
   onClose: () => void
 }) {
   return (
@@ -46,6 +64,13 @@ export default function SelectedStationPanel({
           <X className="h-3.5 w-3.5" aria-hidden />
         </button>
       </div>
+
+      {station.isStale && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-status-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-status-warning">
+          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-status-warning" aria-hidden />
+          Stale reading - last seen {fmtAge(station.ageMinutes)}, values below may not reflect current conditions.
+        </div>
+      )}
 
       <div className="mb-2 flex items-center gap-2">
         <span
@@ -86,6 +111,33 @@ export default function SelectedStationPanel({
           <dd className="font-semibold tabular-nums text-slate-800">{station.no2 ?? '—'}</dd>
         </div>
       </dl>
+
+      <div className="mt-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Forecast (linked ward)</p>
+        {latestForecastRunLoading ? (
+          <Skeleton className="mt-1 h-14 w-full" />
+        ) : latestForecastRun ? (
+          (() => {
+            const method: ForecastMethod = latestForecastRun.method === 'lightgbm' ? 'lightgbm' : 'diurnal_persistence'
+            return (
+              <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+                <p className="font-semibold text-slate-800">{FORECAST_METHOD_LABEL[method]}</p>
+                <p className="mt-0.5">{forecastFallbackStatus(method, latestForecastRun.beats_persistence)}</p>
+                <p className="mt-1 text-slate-500">
+                  {timeMode === 'now' ? 'Latest cycle' : `${timeMode} forecast peak`}:{' '}
+                  {timeMode === 'now'
+                    ? new Date(latestForecastRun.generated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+                    : forecastPeak != null
+                      ? `${Math.round(forecastPeak)} µg/m³ (${forecastPollutantLabel})`
+                      : 'Not available'}
+                </p>
+              </div>
+            )
+          })()
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">No forecast validation record for this station's ward yet.</p>
+        )}
+      </div>
     </div>
   )
 }

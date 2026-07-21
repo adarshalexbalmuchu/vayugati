@@ -2,9 +2,22 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, ListTree } from 'lucide-react'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { SEVERITY_HEX, SOURCE_CATEGORY_HEX } from '../../lib/mapMarkers'
+import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 
 const SEVERITY_ORDER: Severity[] = ['severe', 'high', 'moderate', 'low']
 const PHYSICAL_SOURCES: SourceCategory[] = ['vehicular', 'industrial', 'construction_dust', 'road_dust', 'open_burning', 'waste']
+
+// Mirrors AqiBadge.tsx's India NAQI scale - same bands/colours, kept as a
+// separate small table here rather than importing that component's
+// internals, since only the label/hex pair is needed for a legend key.
+const AQI_BANDS: { label: string; hex: string }[] = [
+  { label: 'Good (0-50)', hex: '#22c55e' },
+  { label: 'Satisfactory (51-100)', hex: '#84cc16' },
+  { label: 'Moderate (101-200)', hex: '#eab308' },
+  { label: 'Poor (201-300)', hex: '#f97316' },
+  { label: 'Very Poor (301-400)', hex: '#ef4444' },
+  { label: 'Severe (400+)', hex: '#9333ea' },
+]
 
 function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' | 'square' | 'diamond' | 'ring' }) {
   const radius = shape === 'circle' ? '50%' : shape === 'square' ? '3px' : shape === 'diamond' ? '2px' : '50%'
@@ -26,11 +39,11 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
  *  reference material, looked up less often than the layer toggles, so it
  *  shouldn't cost map real estate until asked for. Only shows keys for
  *  layers that can genuinely appear - no invented categories. */
-export default function MapLegend({ sourceAttributionOn }: { sourceAttributionOn: boolean }) {
+export default function MapLegend({ sourceAttributionOn, pollutant }: { sourceAttributionOn: boolean; pollutant: MapPollutant }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="w-48 rounded-lg border border-slate-200 bg-white shadow-card">
+    <div className="w-52 rounded-lg border border-slate-200 bg-white shadow-card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -47,7 +60,26 @@ export default function MapLegend({ sourceAttributionOn }: { sourceAttributionOn
 
       {open && (
         <div className="px-1.5 pb-1.5">
-          <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Severity</p>
+          {pollutant === 'aqi' ? (
+            <>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">AQI scale (India NAQI)</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {AQI_BANDS.map((b) => (
+                  <li key={b.label} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                    <Swatch color={b.hex} shape="square" />
+                    {b.label}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-[10px] text-slate-500">
+              Marker colour in "Now" mode is still AQI-coloured; the number shown is {MAP_POLLUTANT_LABEL[pollutant]} in µg/m³, a
+              different scale from AQI.
+            </p>
+          )}
+
+          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Severity (incidents)</p>
           <ul className="mt-0.5 space-y-0.5">
             {SEVERITY_ORDER.map((s) => (
               <li key={s} className="flex items-center gap-1.5 text-[10px] capitalize text-slate-600">
@@ -58,14 +90,19 @@ export default function MapLegend({ sourceAttributionOn }: { sourceAttributionOn
           </ul>
 
           <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Marker types</p>
-          <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-600">
+          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+            AQ station readings show actual monitoring station locations. Ward-linked AQI shows the reading assigned
+            to each operational hotspot ward via its own station - not an independent ward-level calculation, so the
+            two often show the same number at nearby coordinates.
+          </p>
+          <ul className="mt-1 space-y-0.5 text-[10px] text-slate-600">
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="circle" />
-              Ward
+              Ward-linked AQI (hotspot ward)
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="square" />
-              Station
+              AQ station (actual location)
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="diamond" />
@@ -74,6 +111,14 @@ export default function MapLegend({ sourceAttributionOn }: { sourceAttributionOn
             <li className="flex items-center gap-1.5">
               <Swatch color="#0F6CBD" shape="ring" />
               Citizen report
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-status-warning/50" aria-hidden />
+              Forecast alert (pulsing halo - ward forecast to cross severe)
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm border border-sky-500 bg-sky-500/20" aria-hidden />
+              Ward boundary polygon
             </li>
           </ul>
 
@@ -85,7 +130,7 @@ export default function MapLegend({ sourceAttributionOn }: { sourceAttributionOn
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#D97706" shape="ring" />
-              Stale
+              Stale (dashed ring + warning dot)
             </li>
           </ul>
 

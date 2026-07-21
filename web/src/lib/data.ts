@@ -128,6 +128,12 @@ export interface WardBoundary {
    *  defaulting to 'mcd' for rows that predate that field. */
   jurisdictionType: 'mcd' | 'ndmc' | 'cantonment'
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon
+  /** A representative point for this ward, if one was captured during
+   *  import - null for many of the 250 Phase 2 municipal-boundary wards
+   *  (only the 13 hotspot wards were guaranteed one). Used only to compute
+   *  "nearest station" honestly - never fabricated when absent. */
+  lat: number | null
+  lng: number | null
 }
 
 /** Real ward boundary polygons for the Map's ward-boundary layer - covers
@@ -140,7 +146,7 @@ export interface WardBoundary {
 export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
   const { data } = await supabase
     .from('wards')
-    .select('id, name, ward_number, boundary, metadata')
+    .select('id, name, ward_number, boundary, metadata, lat, lng')
     .not('boundary', 'is', null)
     .order('ward_number', { ascending: true, nullsFirst: false })
   if (!data) return []
@@ -155,6 +161,8 @@ export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
         wardNumber: w.ward_number,
         jurisdictionType,
         geometry: w.boundary as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
+        lat: w.lat,
+        lng: w.lng,
       }
     })
 }
@@ -413,6 +421,12 @@ export interface ForecastPoint {
   local_excess: number | null
   confidence: number | null
   model_version: string | null
+  /** Universal predicted-value column (every pollutant); `pm25_pred` is a
+   *  legacy alias only ever populated for pollutant='pm25' rows (see
+   *  forecast.py). Optional here since fetchForecast()'s narrower select
+   *  below doesn't fetch it - only fetchAllForecasts() (Map/Overview,
+   *  multi-pollutant) does. */
+  predicted_value?: number | null
 }
 
 /**
@@ -432,22 +446,40 @@ export async function fetchForecast(wardId: number): Promise<ForecastPoint[]> {
   return data ?? []
 }
 
+export type ForecastPollutant = 'pm25' | 'pm10' | 'no2'
+
 export interface WardForecastSummary {
   wardId: number
+  /** Which pollutant these points/peaks actually are - carried alongside
+   *  the data itself so a consumer several components away (Map markers,
+   *  Overview's Hotspots table) can never silently mislabel it. */
+  pollutant: ForecastPollutant
   points: ForecastPoint[]
   peakPred: number | null
   peakExcess: number | null
   peakTs: string | null
-  hoursToSevere: number | null // hours until pm25_pred first crosses 400
+  /** Hours until this pollutant's own forecast first crosses its severity
+   *  threshold - only ever computed for PM2.5, the one pollutant with an
+   *  established threshold in this codebase (SEVERE_THRESHOLD_PM25). Always
+   *  null for PM10/NO2 - never a fabricated severity claim for a pollutant
+   *  with no stated threshold here. */
+  hoursToSevere: number | null
 }
 
-const SEVERE_THRESHOLD = 400
+const SEVERE_THRESHOLD_PM25 = 400
 
-export async function fetchAllForecasts(): Promise<Map<number, WardForecastSummary>> {
+/** Real forecast.py output for whichever of the 3 forecast-covered
+ *  pollutants is requested (pm25/pm10/no2 - see forecast.py's
+ *  DEFAULT_ENABLED_POLLUTANTS; AQI itself is never forecast, it's a
+ *  composite index the pipeline doesn't compute - callers needing an
+ *  "AQI view" use this with pollutant='pm25' as an explicitly-labelled
+ *  proxy, never a fabricated AQI number). Defaults to 'pm25' to match every
+ *  existing caller's prior behaviour before this became parameterized. */
+export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): Promise<Map<number, WardForecastSummary>> {
   const { data } = await supabase
     .from('forecasts')
-    .select('ward_id, horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version')
-    .eq('pollutant', 'pm25')
+    .select('ward_id, horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, predicted_value')
+    .eq('pollutant', pollutant)
     .order('horizon_ts')
     .limit(48 * 20)
   const byWard = new Map<number, WardForecastSummary>()
@@ -455,25 +487,23 @@ export async function fetchAllForecasts(): Promise<Map<number, WardForecastSumma
     const wardId = row.ward_id as number
     let entry = byWard.get(wardId)
     if (!entry) {
-      entry = { wardId, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null }
+      entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null }
       byWard.set(wardId, entry)
     }
     entry.points.push(row as ForecastPoint)
   }
   const now = Date.now()
   for (const entry of byWard.values()) {
-    for (let i = 0; i < entry.points.length; i++) {
-      const p = entry.points[i]
-      if (p.pm25_pred != null && (entry.peakPred == null || p.pm25_pred > entry.peakPred)) {
-        entry.peakPred = p.pm25_pred
+    for (const p of entry.points) {
+      // predicted_value is the universal column; pm25_pred is kept as a
+      // fallback only for a row written before that column existed.
+      const predicted = p.predicted_value ?? p.pm25_pred
+      if (predicted != null && (entry.peakPred == null || predicted > entry.peakPred)) {
+        entry.peakPred = predicted
         entry.peakExcess = p.local_excess
         entry.peakTs = p.horizon_ts
       }
-      if (
-        entry.hoursToSevere == null &&
-        p.pm25_pred != null &&
-        p.pm25_pred >= SEVERE_THRESHOLD
-      ) {
+      if (pollutant === 'pm25' && entry.hoursToSevere == null && predicted != null && predicted >= SEVERE_THRESHOLD_PM25) {
         entry.hoursToSevere = Math.round((new Date(p.horizon_ts).getTime() - now) / 3_600_000)
       }
     }
@@ -606,6 +636,57 @@ export interface CitizenActivity {
 export async function listCitizenActivity(): Promise<CitizenActivity[]> {
   const { data } = await supabase.rpc('list_citizen_report_activity')
   return (data ?? []) as CitizenActivity[]
+}
+
+export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
+  submitted: 'New / unreviewed',
+  verified: 'Verified',
+  assigned: 'Assigned',
+  acted: 'Action taken',
+  resolved: 'Resolved',
+  rejected: 'Rejected',
+}
+
+export interface CitizenReportRow {
+  id: number
+  description: string | null
+  ai_category: SourceCategory | null
+  status: ReportStatus
+  created_at: string | null
+  ward_id: number | null
+  ward_name: string | null
+  incident_id: number | null
+  photo_url: string | null
+}
+
+/** Report-level queue for the Citizens page (plan: KPI strip + queue, not
+ *  just the per-reporter rollup listCitizenActivity() already provides).
+ *  Same `reports` table fetchAllOpenReports() already reads for the Map's
+ *  citizen-reports layer - this is unfiltered by status (so rejected/
+ *  resolved reports are visible too, which the open-only queries
+ *  deliberately exclude) and joins ward name the same way ops.ts's
+ *  fetchStationHealth() does (a separate lookup, not a nested select). */
+export async function listAllCitizenReports(limit = 300): Promise<CitizenReportRow[]> {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('id, description, ai_category, status, created_at, ward_id, incident_id, photo_url')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(`Could not load citizen reports: ${error.message}`)
+  const rows = data ?? []
+  if (rows.length === 0) return []
+
+  const wardIds = [...new Set(rows.map((r) => r.ward_id).filter((id): id is number => id != null))]
+  const wardNameById = new Map<number, string>()
+  if (wardIds.length > 0) {
+    const { data: wards } = await supabase.from('wards').select('id, name').in('id', wardIds)
+    for (const w of wards ?? []) wardNameById.set(w.id, w.name)
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    ward_name: r.ward_id != null ? (wardNameById.get(r.ward_id) ?? null) : null,
+  }))
 }
 
 // ── Analytics (commander-wide outcome/forecast rollups) ──────────────────────

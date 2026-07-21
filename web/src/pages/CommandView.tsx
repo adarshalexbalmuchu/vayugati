@@ -5,7 +5,7 @@ import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import KpiStrip, { type KpiItem } from '../components/overview/KpiStrip'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
-import HotspotsRiskTable, { type Pollutant } from '../components/overview/HotspotsRiskTable'
+import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import SourceMixPanel from '../components/overview/SourceMixPanel'
 import TeamAllocationPanel from '../components/overview/TeamAllocationPanel'
 import SensorHealthSnapshot from '../components/overview/SensorHealthSnapshot'
@@ -17,6 +17,7 @@ import {
   fetchGatiMetrics,
 } from '../lib/data'
 import { listActiveTaskDispatches } from '../lib/incidents'
+import { forecastPollutantFor, MAP_POLLUTANT_LABEL, type MapPollutant } from '../lib/mapRules'
 import { fetchStationHealth } from '../lib/ops'
 import {
   bucketDispatchSla,
@@ -28,6 +29,7 @@ import {
 import { useAsync } from '../lib/useAsync'
 
 const WINDOW_OPTIONS: TimeWindowHours[] = [12, 24, 36, 48]
+const POLLUTANT_OPTIONS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
 
 /**
  * Overview — the commander's daily City Command Dashboard (Phase 13 redesign).
@@ -38,7 +40,7 @@ const WINDOW_OPTIONS: TimeWindowHours[] = [12, 24, 36, 48]
  * new data source, only a single ranked, cross-referenced read of them.
  */
 export default function CommandView() {
-  const [pollutant, setPollutant] = useState<Pollutant>('aqi')
+  const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [windowHours, setWindowHours] = useState<TimeWindowHours>(36)
   const [teams, setTeams] = useState(6)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
@@ -47,7 +49,6 @@ export default function CommandView() {
     () =>
       Promise.all([
         fetchAllWardsAqi(),
-        fetchAllForecasts(),
         fetchGatiMetrics(),
         listActiveTaskDispatches({ offset: 0, pageSize: 200 }),
         fetchStationHealth(),
@@ -55,6 +56,12 @@ export default function CommandView() {
       ]),
     [],
   )
+  // Separate from the bundle above so switching pollutants only re-fetches
+  // forecasts, not wards/metrics/dispatches/station health/accuracy too -
+  // same split MapPage.tsx uses. AQI maps to a labelled PM2.5 proxy
+  // (forecastPollutantFor) since forecast.py never computes AQI itself.
+  const forecastPollutant = forecastPollutantFor(pollutant)
+  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant])
 
   return (
     <AppShell subtitle="Overview">
@@ -71,7 +78,7 @@ export default function CommandView() {
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
-              {(['aqi', 'pm25'] as const).map((p) => (
+              {POLLUTANT_OPTIONS.map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -80,7 +87,7 @@ export default function CommandView() {
                     pollutant === p ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
                   }`}
                 >
-                  {p === 'aqi' ? 'AQI' : 'PM2.5'}
+                  {MAP_POLLUTANT_LABEL[p]}
                 </button>
               ))}
             </div>
@@ -103,7 +110,10 @@ export default function CommandView() {
 
             <button
               type="button"
-              onClick={() => state.refresh()}
+              onClick={() => {
+                state.refresh()
+                forecastsState.refresh()
+              }}
               disabled={state.refreshing}
               className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
             >
@@ -113,7 +123,7 @@ export default function CommandView() {
           </div>
         </div>
 
-        {state.loading ? (
+        {state.loading || forecastsState.loading ? (
           <div className="space-y-4">
             <Skeleton className="h-20 w-full rounded-xl" />
             <div className="grid gap-4 lg:grid-cols-2">
@@ -129,7 +139,8 @@ export default function CommandView() {
         ) : (
           state.data &&
           (() => {
-            const [wards, forecasts, metrics, dispatchPage, stationHealth, accuracy] = state.data
+            const [wards, metrics, dispatchPage, stationHealth, accuracy] = state.data
+            const forecasts = forecastsState.data ?? new Map()
             const sortedWards = [...wards].sort((a, b) => {
               if (a.aqi === null && b.aqi === null) return 0
               if (a.aqi === null) return 1
