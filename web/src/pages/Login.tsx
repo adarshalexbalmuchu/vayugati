@@ -1,16 +1,29 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { LogoWordmark } from '../components/AppShell'
 import { roleHome, useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
+/**
+ * Login/auth brand surface (logo + sky-blue background redesign). Scoped
+ * entirely to this page - every colour below is an explicit arbitrary-value
+ * class (`bg-[#C7EAF9]` etc.), not a change to tailwind.config.js's shared
+ * tokens, so the Commander/Field/Citizen/Ops workspaces (which reuse those
+ * same tokens) are provably unaffected. All auth behaviour (handlers,
+ * validation, session/role redirect) is untouched from the previous version
+ * - only markup/classes changed.
+ */
 export default function Login() {
   const { session, profile, loading } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const emailId = useId()
+  const passwordId = useId()
 
   if (session && profile && !loading) {
     return <Navigate to={roleHome(profile.role)} replace />
@@ -41,55 +54,84 @@ export default function Login() {
   }
 
   return (
-    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-cream px-4">
-      {/* soft brand aura */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-ink-200/40 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
-
-      <div className="relative w-full max-w-sm animate-fade-in">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#C7EAF9] px-4 py-8 sm:px-5">
+      <div className="w-full max-w-[420px] animate-fade-in">
+        {/* Logo + tagline - one brand block, compact spacing */}
         <div className="mb-6 flex flex-col items-center text-center">
-          <LogoWordmark className="h-24 w-auto sm:h-28" />
-          <p className="mt-2 text-sm text-ink-500">जानकारी से कार्यवाही तक</p>
-          <p className="text-xs text-ink-400">from information to action</p>
+          <LogoWordmark className="h-auto w-[150px] sm:w-[190px]" />
+          <p className="mt-3 text-base font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
+          <p className="text-xs text-[#422B1B]/70">From information to action</p>
         </div>
 
-        <form onSubmit={signIn} className="card space-y-4 p-6">
-          <div className="space-y-3">
+        {/* Auth card */}
+        <form
+          onSubmit={signIn}
+          className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-card sm:p-8"
+          noValidate={false}
+        >
+          <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Email</label>
+              <label htmlFor={emailId} className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Email
+              </label>
               <input
+                id={emailId}
                 type="email"
                 required
                 autoComplete="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="focus-ring w-full rounded-xl border border-ink-200 bg-ink-50 px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:bg-white"
+                className="auth-input min-h-[44px] w-full rounded-xl border border-[#E5E7EB] bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/20"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Password</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="focus-ring w-full rounded-xl border border-ink-200 bg-ink-50 px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:bg-white"
-              />
+              <label htmlFor={passwordId} className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id={passwordId}
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="auth-input min-h-[44px] w-full rounded-xl border border-[#E5E7EB] bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 outline-none transition hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#422B1B]/40"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+                </button>
+              </div>
             </div>
           </div>
 
-          {error && <p className="rounded-lg bg-status-critical/10 px-3 py-2 text-sm text-status-critical">{error}</p>}
-          {message && <p className="rounded-lg bg-status-success/10 px-3 py-2 text-sm text-status-success">{message}</p>}
+          {error && (
+            <p role="alert" className="mt-4 flex items-start gap-1.5 rounded-lg bg-status-critical/10 px-3 py-2.5 text-sm text-status-critical">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
+              <span>{error}</span>
+            </p>
+          )}
+          {message && (
+            <p role="status" className="mt-4 flex items-start gap-1.5 rounded-lg bg-status-success/10 px-3 py-2.5 text-sm text-status-success">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
+              <span>{message}</span>
+            </p>
+          )}
 
-          <div className="flex gap-2">
+          <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
             <button
               type="submit"
               disabled={busy}
-              className="focus-ring flex-1 rounded-xl bg-ink-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-ink-800 disabled:opacity-50"
+              className="focus-ring order-1 min-h-[44px] flex-1 rounded-xl bg-[#422B1B] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#341f14] disabled:cursor-not-allowed disabled:opacity-50 sm:order-2"
             >
               {busy ? 'Please wait…' : 'Sign in'}
             </button>
@@ -97,16 +139,14 @@ export default function Login() {
               type="button"
               disabled={busy}
               onClick={signUp}
-              className="focus-ring flex-1 rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+              className="focus-ring order-2 min-h-[44px] flex-1 rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#422B1B] transition hover:bg-[#422B1B]/5 disabled:cursor-not-allowed disabled:opacity-50 sm:order-1"
             >
               Sign up
             </button>
           </div>
         </form>
 
-        <p className="mt-4 text-center text-xs text-ink-400">
-          Delhi City Pack · pan-India air incident response
-        </p>
+        <p className="mt-4 text-center text-xs text-[#6B7280]">Delhi City Pack · pan-India air incident response</p>
       </div>
     </div>
   )

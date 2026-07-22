@@ -31,6 +31,17 @@
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
     animation: skeleton-shimmer 1.4s infinite;
   }
+  /* Scoped to the login page's own inputs (.auth-input) only, so browser
+     autofill (yellow/blue tint by default) never overrides the white card
+     background elsewhere in the app - the long transition-delay is the
+     standard trick to defeat Chrome/Safari's forced autofill background. */
+  .auth-input:-webkit-autofill,
+  .auth-input:-webkit-autofill:hover,
+  .auth-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #0f172a;
+    -webkit-box-shadow: 0 0 0px 1000px #ffffff inset;
+    transition: background-color 9999s ease-in-out 0s;
+  }
 }
 
 @keyframes skeleton-shimmer {
