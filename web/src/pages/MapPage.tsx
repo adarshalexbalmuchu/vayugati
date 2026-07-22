@@ -20,6 +20,8 @@ import {
   fetchAllWardBoundaries,
   fetchAllWardsAqi,
   fetchAttribution,
+  fetchLatestReadingsPreferred,
+  fetchTransportActivity,
   type Report,
   type StationMarker,
   type WardBoundary,
@@ -35,7 +37,7 @@ import {
   type ActiveTaskDispatchesPage,
   type Incident,
 } from '../lib/incidents'
-import { HOTSPOT_STATUS_HEX, SOURCE_CATEGORY_HEX, type MapMarker } from '../lib/mapMarkers'
+import { HOTSPOT_STATUS_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX, type MapMarker } from '../lib/mapMarkers'
 import {
   DELHI_BOUNDS,
   DELHI_CENTER,
@@ -158,6 +160,27 @@ export default function MapPage() {
   const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(), [])
   const wardBoundaries = wardBoundariesState.data ?? EMPTY_BOUNDARIES
 
+  // Delhi OTD transport-activity context layer - independent fetch, same
+  // graceful-degradation contract as Overview's own TransportActivityPanel
+  // (null on any failure, an explicit unavailableReason on a reachable-but-
+  // empty summary). Never blocks the rest of the map.
+  const transitState = useAsync(() => fetchTransportActivity(), [])
+  const transitByWard = useMemo(
+    () => new Map((transitState.data?.perWard ?? []).map((w) => [w.wardId, w])),
+    [transitState.data],
+  )
+
+  // CPCB/data.gov preferred-latest-reading reconciliation - same
+  // independent-fetch, overlay-only contract as transitState above. A
+  // failure here just leaves station markers/popups on their existing
+  // OpenAQ-sourced AQI, unchanged. See docs/data/cpcb-data-gov-primary-
+  // latest-integration-report.md.
+  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
+  const latestReadingByStationId = useMemo(
+    () => new Map((latestReadingsState.data ?? []).map((r) => [r.stationId, r])),
+    [latestReadingsState.data],
+  )
+
   const leadingSource = useAsync(() => listLeadingSourceCategories(incidents.map((i) => i.id)), [incidents])
   const leadingSourceById = leadingSource.data ?? new Map()
 
@@ -242,19 +265,26 @@ export default function MapPage() {
             .map((s) => {
               const health = stationHealthById.get(s.id)
               const isStale = layers.sensorFreshness && !!health?.is_stale
+              const preferred = latestReadingByStationId.get(s.id)
+              const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+              const displayAqi = usingCpcb ? preferred!.cpcbAqi : s.aqi
               return {
                 id: `station-${s.id}`,
                 kind: 'station' as const,
                 lat: s.lat,
                 lng: s.lng,
                 label: s.name,
-                aqi: s.aqi,
+                aqi: displayAqi,
                 isStale,
-                popupHtml: popup(s.name, [`AQI ${s.aqi ?? '-'}`, health?.ward_name ? health.ward_name : '']),
+                popupHtml: popup(s.name, [
+                  `AQI ${displayAqi ?? '-'}`,
+                  health?.ward_name ? health.ward_name : '',
+                  `Latest reading: ${usingCpcb ? 'CPCB/data.gov preferred' : 'OpenAQ fallback'}`,
+                ]),
               }
             })
         : [],
-    [layers.stations, layers.sensorFreshness, stations, stationHealthById],
+    [layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId],
   )
 
   const incidentMarkers: MapMarker[] = useMemo(() => {
@@ -303,9 +333,39 @@ export default function MapPage() {
     [layers.citizenReports, reports],
   )
 
+  // Ward-level only - the backend never exposes raw per-vehicle positions to
+  // the browser (see docs/data/delhi-otd-transport-context-integration-
+  // report.md), just the same per-ward vehicle_count/activity_level summary
+  // Overview's hotspot table shows. Wards with zero nearby vehicles are
+  // omitted rather than drawn as an empty marker, to keep the layer legible.
+  const transitMarkers: MapMarker[] = useMemo(
+    () =>
+      layers.transitActivity
+        ? wards
+            .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
+            .map((w) => ({ ward: w, activity: transitByWard.get(w.id) }))
+            .filter((x): x is { ward: WardSummary; activity: NonNullable<typeof x.activity> } => !!x.activity && x.activity.vehicleCount > 0)
+            .map(({ ward: w, activity }) => ({
+              id: `transit-${w.id}`,
+              kind: 'ward' as const,
+              lat: w.lat as number,
+              lng: w.lng as number,
+              label: w.name,
+              badgeText: String(activity.vehicleCount),
+              colorOverride: TRANSIT_ACTIVITY_HEX[activity.activityLevel === 'none' ? 'low' : activity.activityLevel],
+              popupHtml: popup(w.name, [
+                `${activity.vehicleCount} vehicles nearby (${activity.activityLevel})`,
+                'Public transport activity via Delhi Open Transit Data.',
+                'Context layer only — not proof of emissions or congestion.',
+              ]),
+            }))
+        : [],
+    [layers.transitActivity, wards, transitByWard],
+  )
+
   const allMarkers = useMemo(
-    () => [...wardMarkers, ...stationMarkers, ...incidentMarkers, ...reportMarkers],
-    [wardMarkers, stationMarkers, incidentMarkers, reportMarkers],
+    () => [...wardMarkers, ...stationMarkers, ...incidentMarkers, ...reportMarkers, ...transitMarkers],
+    [wardMarkers, stationMarkers, incidentMarkers, reportMarkers, transitMarkers],
   )
 
   // Only ever built from validated Delhi/NCR coordinates - a single bad row
@@ -374,18 +434,21 @@ export default function MapPage() {
           const s = stations.find((st) => st.id === selection.id)
           const health = stationHealthById.get(selection.id)
           if (!s) return undefined
+          const preferred = latestReadingByStationId.get(selection.id)
+          const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
           return {
             id: s.id,
             name: s.name,
             wardName: health?.ward_name ?? null,
             sensorType: health?.sensor_type ?? 'unknown',
-            aqi: s.aqi,
+            aqi: usingCpcb ? preferred!.cpcbAqi : s.aqi,
             pm25: s.pm25,
             pm10: s.pm10,
             no2: s.no2,
             ageMinutes: health?.latest_reading_age_minutes ?? null,
             isStale: health?.is_stale ?? false,
             isActive: health?.is_active ?? true,
+            readingSource: preferred?.sourceUsed,
           }
         })()
       : undefined
@@ -493,8 +556,9 @@ export default function MapPage() {
                     wardBoundariesLoading={wardBoundariesState.loading}
                     dispatchZonesAvailable={dispatchIncidentIds.size > 0}
                     citizenReportsAvailable={reports.length > 0}
+                    transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard.length ?? 0) > 0}
                   />
-                  <MapLegend sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} />
+                  <MapLegend sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} />
                 </div>
                 <BasemapSwitcher mode={basemap} onChange={setBasemap} />
               </div>

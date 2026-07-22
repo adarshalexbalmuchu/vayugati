@@ -10,6 +10,7 @@ export type MapLayerKey =
   | 'dispatchZones'
   | 'citizenReports'
   | 'sensorFreshness'
+  | 'transitActivity'
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
@@ -21,6 +22,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'dispatchZones',
   'citizenReports',
   'sensorFreshness',
+  'transitActivity',
 ]
 
 export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean; note: string }> = {
@@ -69,6 +71,11 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: true,
     note: 'Highlights stations with no recent reading.',
   },
+  transitActivity: {
+    label: 'Public transport activity',
+    available: false,
+    note: 'Delhi Open Transit Data is unavailable right now.',
+  },
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -85,6 +92,7 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   dispatchZones: false,
   citizenReports: false,
   sensorFreshness: false,
+  transitActivity: false,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -116,6 +124,7 @@ export default function MapLayerControl({
   wardBoundariesLoading = false,
   dispatchZonesAvailable = false,
   citizenReportsAvailable = false,
+  transitActivityAvailable = false,
 }: {
   layers: Record<MapLayerKey, boolean>
   onToggle: (key: MapLayerKey) => void
@@ -133,6 +142,9 @@ export default function MapLayerControl({
   dispatchZonesAvailable?: boolean
   /** True once at least one currently-loaded citizen report has a location. */
   citizenReportsAvailable?: boolean
+  /** True once the ingest service has returned a real (non-unavailable)
+   *  Delhi OTD transit-activity summary this session. */
+  transitActivityAvailable?: boolean
 }) {
   return (
     <div className="w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-card">
@@ -153,6 +165,12 @@ export default function MapLayerControl({
             meta = { ...meta, available: true, note: "Flags an incident's marker when it has an active dispatch." }
           } else if (key === 'citizenReports' && citizenReportsAvailable) {
             meta = { ...meta, available: true, note: 'Open citizen reports with a known location.' }
+          } else if (key === 'transitActivity' && transitActivityAvailable) {
+            meta = {
+              ...meta,
+              available: true,
+              note: 'Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion.',
+            }
           }
           const on = layers[key] && meta.available
           return (

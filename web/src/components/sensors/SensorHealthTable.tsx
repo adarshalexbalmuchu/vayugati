@@ -12,6 +12,11 @@ export interface SensorRow extends StationHealthRow {
   pm10: number | null
   no2: number | null
   linkedIncidentCount: number
+  /** Which source `aqi` above actually came from - undefined when the
+   *  CPCB/data.gov reconciliation hasn't loaded (falls back to the
+   *  existing OpenAQ-sourced value either way). See
+   *  docs/data/cpcb-data-gov-primary-latest-integration-report.md. */
+  readingSource?: 'cpcb' | 'openaq_fallback'
 }
 
 const POLLUTANT_KEYS = ['aqi', 'pm25', 'pm10', 'no2'] as const
@@ -67,7 +72,9 @@ export default function SensorHealthTable({
                 <th className="px-3 py-2 font-semibold">Type</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold">Last seen</th>
-                <th className="px-3 py-2 font-semibold">Latest AQI</th>
+                <th className="px-3 py-2 font-semibold" title="Latest readings: CPCB/data.gov preferred · OpenAQ fallback">
+                  Latest AQI
+                </th>
                 <th className="px-3 py-2 font-semibold">Pollutants</th>
                 <th className="px-3 py-2 font-semibold">Coverage</th>
                 <th className="px-3 py-2 font-semibold">Linked incidents</th>
@@ -91,7 +98,26 @@ export default function SensorHealthTable({
                       <SensorStatusBadge status={status} />
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-500">{fmtAge(s.latest_reading_age_minutes)}</td>
-                    <td className="px-3 py-2 tabular-nums font-semibold text-slate-800">{s.aqi ?? '—'}</td>
+                    <td className="px-3 py-2 tabular-nums font-semibold text-slate-800">
+                      <span
+                        className="inline-flex items-center gap-1.5"
+                        title={
+                          s.readingSource === 'cpcb'
+                            ? 'Latest reading: CPCB/data.gov preferred'
+                            : s.readingSource === 'openaq_fallback'
+                              ? 'Latest reading: OpenAQ fallback'
+                              : undefined
+                        }
+                      >
+                        {s.readingSource && (
+                          <span
+                            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${s.readingSource === 'cpcb' ? 'bg-accent-500' : 'bg-slate-300'}`}
+                            aria-hidden
+                          />
+                        )}
+                        {s.aqi ?? '—'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-slate-500">
                       {available.length > 0 ? available.map((k) => k.toUpperCase()).join(', ') : 'None'}
                     </td>

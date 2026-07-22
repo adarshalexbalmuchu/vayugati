@@ -21,6 +21,14 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 # the key.
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 
+# Delhi Open Transit Data (OTD) real-time GTFS-realtime feed key — server-
+# side only, never logged. Same audit-only status as DATA_GOV_API_KEY above
+# (see scripts/audit_delhi_otd.py): not read by any production ingest path,
+# not part of require_env(). This is a transit feed, not an air-quality one
+# — evaluating it as a possible activity-context layer, not a replacement
+# for anything ingest already does.
+DELHI_OTD_API_KEY = os.getenv("DELHI_OTD_API_KEY", "")
+
 # local | test | staging | production (Phase 10, plan §4) — tags every
 # structured log line and system_health row so a pilot/production incident
 # is never confused with a local dev run hitting the same log aggregator.

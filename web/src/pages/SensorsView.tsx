@@ -9,7 +9,7 @@ import SensorFilterBar, { ALL, type SensorFilters } from '../components/sensors/
 import SensorHealthTable, { type SensorRow } from '../components/sensors/SensorHealthTable'
 import { sensorStatus, type SensorStatus } from '../components/sensors/SensorStatusBadge'
 import { useAuth } from '../lib/auth'
-import { fetchAllStationsWithReadings, fetchDataFootprint, fetchForecastAccuracySummary } from '../lib/data'
+import { fetchAllStationsWithReadings, fetchDataFootprint, fetchForecastAccuracySummary, fetchLatestReadingsPreferred } from '../lib/data'
 import { listIncidents } from '../lib/incidents'
 import { fetchStationHealth, setStationActive, type StationHealthRow } from '../lib/ops'
 import type { DataReadinessInput } from '../lib/readinessRules'
@@ -42,11 +42,15 @@ export default function SensorsView() {
   // station table above), same pattern as Analytics' forecastAccuracy hook.
   const footprintState = useAsync(fetchDataFootprint, [])
   const forecastAccuracyState = useAsync(fetchForecastAccuracySummary, [])
+  // Same independent-fetch contract - a failure here just leaves every
+  // row's existing OpenAQ-sourced aqi unchanged, readingSource undefined.
+  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
 
   const rows: SensorRow[] = useMemo(() => {
     if (!state.data) return []
     const [health, readings] = state.data
     const readingByStationId = new Map(readings.map((r) => [r.id, r]))
+    const preferredByStationId = new Map((latestReadingsState.data ?? []).map((r) => [r.stationId, r]))
     const incidentCountByWard = new Map<number, number>()
     for (const i of openIncidents) {
       if (i.ward_id == null) continue
@@ -54,18 +58,21 @@ export default function SensorsView() {
     }
     return health.map((s: StationHealthRow) => {
       const r = readingByStationId.get(s.id)
+      const preferred = preferredByStationId.get(s.id)
+      const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
       return {
         ...s,
         lat: r?.lat ?? null,
         lng: r?.lng ?? null,
-        aqi: r?.aqi ?? null,
+        aqi: usingCpcb ? preferred!.cpcbAqi : (r?.aqi ?? null),
         pm25: r?.pm25 ?? null,
         pm10: r?.pm10 ?? null,
         no2: r?.no2 ?? null,
         linkedIncidentCount: s.ward_id != null ? (incidentCountByWard.get(s.ward_id) ?? 0) : 0,
+        readingSource: preferred?.sourceUsed,
       }
     })
-  }, [state.data, openIncidents])
+  }, [state.data, openIncidents, latestReadingsState.data])
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => sensorStatus(r)))].sort() as SensorStatus[], [rows])
   const wards = useMemo(() => [...new Set(rows.map((r) => r.ward_name).filter((w): w is string => w != null))].sort(), [rows])
@@ -196,6 +203,12 @@ export default function SensorsView() {
               (upstream OpenAQ publish delays, or a known gap - see Data Readiness for specifics), not necessarily a broken sensor.
             </span>
           </div>
+        )}
+
+        {!state.loading && !state.error && rows.length > 0 && (
+          <p className="px-1 text-[11px] text-slate-400">
+            Latest readings: CPCB/data.gov preferred · OpenAQ fallback. AQI computed using CPCB breakpoint logic.
+          </p>
         )}
 
         <div className="flex min-h-0 flex-1 gap-3">

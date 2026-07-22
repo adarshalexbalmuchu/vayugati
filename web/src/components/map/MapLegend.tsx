@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, ListTree } from 'lucide-react'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
-import { SEVERITY_HEX, SOURCE_CATEGORY_HEX } from '../../lib/mapMarkers'
+import { SEVERITY_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX } from '../../lib/mapMarkers'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 
 const SEVERITY_ORDER: Severity[] = ['severe', 'high', 'moderate', 'low']
@@ -39,7 +39,15 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
  *  reference material, looked up less often than the layer toggles, so it
  *  shouldn't cost map real estate until asked for. Only shows keys for
  *  layers that can genuinely appear - no invented categories. */
-export default function MapLegend({ sourceAttributionOn, pollutant }: { sourceAttributionOn: boolean; pollutant: MapPollutant }) {
+export default function MapLegend({
+  sourceAttributionOn,
+  pollutant,
+  transitActivityOn,
+}: {
+  sourceAttributionOn: boolean
+  pollutant: MapPollutant
+  transitActivityOn: boolean
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -144,6 +152,30 @@ export default function MapLegend({ sourceAttributionOn, pollutant }: { sourceAt
                     {sourceCategoryLabel(c)}
                   </li>
                 ))}
+              </ul>
+            </>
+          )}
+
+          {transitActivityOn && (
+            <>
+              <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Transit activity</p>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+                Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or
+                congestion. Marker number is nearby live vehicle count, not AQI.
+              </p>
+              <ul className="mt-0.5 space-y-0.5">
+                <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                  <Swatch color={TRANSIT_ACTIVITY_HEX.low} />
+                  Low activity
+                </li>
+                <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                  <Swatch color={TRANSIT_ACTIVITY_HEX.medium} />
+                  Medium activity
+                </li>
+                <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                  <Swatch color={TRANSIT_ACTIVITY_HEX.high} />
+                  High activity
+                </li>
               </ul>
             </>
           )}

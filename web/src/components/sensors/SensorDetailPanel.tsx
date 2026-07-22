@@ -87,7 +87,14 @@ export default function SensorDetailPanel({
         </dl>
 
         <div>
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Latest readings</p>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Latest readings
+            {station.readingSource && (
+              <span className="ml-1.5 font-normal normal-case text-slate-400">
+                ({station.readingSource === 'cpcb' ? 'CPCB/data.gov' : 'OpenAQ fallback'})
+              </span>
+            )}
+          </p>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div>
               <dt className="text-slate-400">AQI</dt>

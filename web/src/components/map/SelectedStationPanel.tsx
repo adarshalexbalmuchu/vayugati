@@ -16,6 +16,11 @@ export interface SelectedStation {
   ageMinutes: number | null
   isStale: boolean
   isActive: boolean
+  /** Which source `aqi` came from - undefined when the CPCB/data.gov
+   *  reconciliation hasn't loaded (falls back to the existing OpenAQ-
+   *  sourced value either way). See docs/data/cpcb-data-gov-primary-
+   *  latest-integration-report.md. */
+  readingSource?: 'cpcb' | 'openaq_fallback'
 }
 
 function fmtAge(minutes: number | null): string {
@@ -95,7 +100,14 @@ export default function SelectedStationPanel({
           </dd>
         </div>
         <div>
-          <dt className="text-slate-400">AQI</dt>
+          <dt className="text-slate-400">
+            AQI
+            {station.readingSource && (
+              <span className="ml-1 font-normal normal-case text-slate-400">
+                ({station.readingSource === 'cpcb' ? 'CPCB/data.gov' : 'OpenAQ fallback'})
+              </span>
+            )}
+          </dt>
           <dd className="font-semibold tabular-nums text-slate-800">{station.aqi ?? '—'}</dd>
         </div>
         <div>

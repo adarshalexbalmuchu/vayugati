@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
-import { ChevronDown, ChevronRight, Clock, Flame } from 'lucide-react'
+import { Bus, ChevronDown, ChevronRight, Clock, Flame } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
-import type { WardForecastSummary, WardSummary } from '../../lib/data'
+import type { LatestReadingReconciliation, TransportActivityWard, WardForecastSummary, WardSummary } from '../../lib/data'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
   hotspotStatus,
@@ -54,7 +54,44 @@ function StatusBadge({ status, title }: { status: HotspotStatus; title?: string 
   )
 }
 
-function CurrentReadingBadge({ ward, pollutant }: { ward: WardSummary; pollutant: MapPollutant }) {
+const TRANSIT_LEVEL_TONE: Record<TransportActivityWard['activityLevel'], string> = {
+  none: 'text-slate-400 ring-slate-200',
+  low: 'text-teal-600 ring-teal-200',
+  medium: 'text-teal-700 ring-teal-300',
+  high: 'text-teal-800 ring-teal-400',
+}
+
+/** Context only - see docs/data/delhi-otd-transport-context-integration-report.md.
+ *  `activity` is undefined (not zero) when the ward simply isn't in this
+ *  cycle's summary (service unreachable / not yet refreshed) - shown as a
+ *  plain dash, never a fabricated "none" reading. */
+function TransitActivityBadge({ activity }: { activity: TransportActivityWard | undefined }) {
+  if (!activity) return <span className="text-slate-300">—</span>
+  return (
+    <span
+      title="Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion."
+      className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TRANSIT_LEVEL_TONE[activity.activityLevel]}`}
+    >
+      <Bus className="h-3 w-3" aria-hidden />
+      {activity.vehicleCount} nearby
+    </span>
+  )
+}
+
+/** AQI only: prefers CPCB/data.gov's own value when this ward's station is
+ *  matched and CPCB is fresh (preferred.sourceUsed === 'cpcb') - falls back
+ *  to the existing OpenAQ-sourced ward.aqi otherwise, unchanged from
+ *  before. A small source dot makes which one is showing explicit, never
+ *  silent. See docs/data/cpcb-data-gov-primary-latest-integration-report.md. */
+function CurrentReadingBadge({
+  ward,
+  pollutant,
+  preferred,
+}: {
+  ward: WardSummary
+  pollutant: MapPollutant
+  preferred?: LatestReadingReconciliation
+}) {
   if (pollutant !== 'aqi') {
     const value = pollutant === 'pm25' ? ward.pm25 : pollutant === 'pm10' ? ward.pm10 : ward.no2
     return (
@@ -63,13 +100,20 @@ function CurrentReadingBadge({ ward, pollutant }: { ward: WardSummary; pollutant
       </span>
     )
   }
-  const level = aqiLevel(ward.aqi)
+  const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+  const displayAqi = usingCpcb ? preferred!.cpcbAqi : ward.aqi
+  const level = aqiLevel(displayAqi)
   return (
     <span
-      className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold tabular-nums"
+      title={usingCpcb ? 'Latest reading: CPCB/data.gov preferred' : 'Latest reading: OpenAQ fallback'}
+      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold tabular-nums"
       style={{ backgroundColor: `${level.hex}1f`, color: level.hex }}
     >
-      {ward.aqi ?? '—'}
+      <span
+        className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${usingCpcb ? 'bg-accent-500' : 'bg-slate-300'}`}
+        aria-hidden
+      />
+      {displayAqi ?? '—'}
     </span>
   )
 }
@@ -90,6 +134,8 @@ export default function HotspotsRiskTable({
   onWindowHoursChange,
   selectedWardId,
   onSelectWard,
+  transitActivityByWard,
+  latestReadingsByWard,
 }: {
   wards: WardSummary[]
   /** Keyed by ward id, values already scoped to whichever real forecast
@@ -102,6 +148,13 @@ export default function HotspotsRiskTable({
   onWindowHoursChange: (h: TimeWindowHours) => void
   selectedWardId: number | null
   onSelectWard: (wardId: number) => void
+  /** Optional - undefined map or a missing entry both render as "—", never
+   *  fabricated. Context only, see TransitActivityBadge above. */
+  transitActivityByWard?: Map<number, TransportActivityWard>
+  /** Optional - CPCB/data.gov preferred-latest-reading reconciliation, keyed
+   *  by ward id. Missing/unmatched/stale all fall back to the existing
+   *  OpenAQ-sourced ward.aqi unchanged - see CurrentReadingBadge above. */
+  latestReadingsByWard?: Map<number, LatestReadingReconciliation>
 }) {
   const forecastPollutant = forecastPollutantFor(pollutant)
   const forecastPollutantLabel = MAP_POLLUTANT_LABEL[forecastPollutant]
@@ -151,32 +204,33 @@ export default function HotspotsRiskTable({
           </div>
         }
       />
-      <p className="border-b border-slate-100 px-4 py-2 text-[11px] text-slate-500">
-        Showing current {MAP_POLLUTANT_LABEL[pollutant]}
-        {isProxy && ' with PM2.5 forecast-risk signal'} and forecast peak within {windowHours}h.
-      </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[880px] border-collapse text-sm">
+        <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              <th className="px-3 py-2 font-semibold">#</th>
-              <th className="px-3 py-2 font-semibold">Ward</th>
-              <th className="px-3 py-2 font-semibold">
+              <th className="px-3 py-1.5 font-semibold">#</th>
+              <th className="px-3 py-1.5 font-semibold">Ward</th>
+              <th className="px-3 py-1.5 font-semibold">
                 Current {MAP_POLLUTANT_LABEL[pollutant]}
                 {pollutant !== 'aqi' && <span className="normal-case"> (µg/m³)</span>}
               </th>
-              <th className="px-3 py-2 font-semibold">
-                Forecast {forecastPollutantLabel} Peak <span className="normal-case">(µg/m³, within {windowHours}h)</span>
+              <th
+                className="px-3 py-1.5 font-semibold"
+                title={`Forecast peak within ${windowHours}h, local excess in parentheses. Hover a value for forecast confidence.`}
+              >
+                Forecast {forecastPollutantLabel} Peak <span className="normal-case">(Δ excess)</span>
                 {isProxy && <span className="normal-case"> - risk signal</span>}
               </th>
-              <th className="px-3 py-2 font-semibold">
-                Local Excess <span className="normal-case">(µg/m³)</span>
+              <th className="px-3 py-1.5 font-semibold">Likely Source</th>
+              <th className="px-3 py-1.5 font-semibold">Status</th>
+              <th className="px-3 py-1.5 font-semibold">Age</th>
+              <th
+                className="px-3 py-1.5 font-semibold"
+                title="Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion."
+              >
+                Transit
               </th>
-              <th className="px-3 py-2 font-semibold">Likely Source</th>
-              <th className="px-3 py-2 font-semibold">Forecast Confidence</th>
-              <th className="px-3 py-2 font-semibold">Status</th>
-              <th className="px-3 py-2 font-semibold">Age</th>
-              <th className="w-8 px-2 py-2" />
+              <th className="w-8 px-2 py-1.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -198,6 +252,7 @@ export default function HotspotsRiskTable({
               // per the "keep the trend, but stale-qualified" requirement.
               const underlyingTrend = windowed.excess != null && windowed.excess > 0 ? 'was trending up' : null
               const confidence = windowed.ts != null ? (forecast?.points.find((p) => p.horizon_ts === windowed.ts)?.confidence ?? null) : null
+              const confidenceTitle = confidence != null ? `Forecast confidence: ${Math.round(confidence * 100)}%` : undefined
               const selected = ward.id === selectedWardId
               return (
                 <Fragment key={ward.id}>
@@ -205,18 +260,28 @@ export default function HotspotsRiskTable({
                     onClick={() => onSelectWard(ward.id)}
                     className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                   >
-                    <td className="px-3 py-2 tabular-nums text-slate-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium text-slate-800">{ward.name}</td>
-                    <td className="px-3 py-2">
-                      <CurrentReadingBadge ward={ward} pollutant={pollutant} />
+                    <td className="px-3 py-1.5 tabular-nums text-slate-400">{i + 1}</td>
+                    <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
+                    <td className="px-3 py-1.5">
+                      <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={latestReadingsByWard?.get(ward.id)} />
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {windowed.value != null ? `${Math.round(windowed.value)} µg/m³` : <span className="text-slate-400">Forecast unavailable</span>}
+                    <td className="px-3 py-1.5 tabular-nums text-slate-600" title={confidenceTitle}>
+                      {windowed.value != null ? (
+                        <>
+                          {Math.round(windowed.value)} µg/m³
+                          {windowed.excess != null && (
+                            <span className={windowed.excess > 0 ? 'text-status-warning' : 'text-slate-400'}>
+                              {' '}
+                              ({windowed.excess > 0 ? '+' : ''}
+                              {Math.round(windowed.excess)})
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-400">Unavailable</span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {windowed.excess != null ? `${windowed.excess > 0 ? '+' : ''}${Math.round(windowed.excess)}` : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-slate-600">
+                    <td className="px-3 py-1.5 text-slate-600">
                       {dataBacked ? (
                         (ward.dominant_source ?? 'Unknown')
                       ) : (
@@ -225,23 +290,23 @@ export default function HotspotsRiskTable({
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {confidence != null ? `${Math.round(confidence * 100)}%` : '—'}
-                    </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5">
                       <StatusBadge
                         status={status}
                         title={status === 'stale' ? `Last fresh reading ${timeAgo(ward.ts)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
                       />
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-slate-500">{timeAgo(ward.ts)}</td>
-                    <td className="px-2 py-2 text-slate-300">
+                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(ward.ts)}</td>
+                    <td className="px-3 py-1.5">
+                      <TransitActivityBadge activity={transitActivityByWard?.get(ward.id)} />
+                    </td>
+                    <td className="px-2 py-1.5 text-slate-300">
                       {selected ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                     </td>
                   </tr>
                   {selected && (
                     <tr className="bg-accent-50/60">
-                      <td colSpan={10} className="px-3 py-3">
+                      <td colSpan={9} className="px-3 py-3">
                         <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs text-slate-600">
                           <span>
                             <span className="font-semibold text-slate-500">PM2.5 now:</span>{' '}
@@ -250,6 +315,10 @@ export default function HotspotsRiskTable({
                           <span>
                             <span className="font-semibold text-slate-500">Predicted severe in:</span>{' '}
                             {forecast?.hoursToSevere != null ? `${forecast.hoursToSevere}h` : 'not predicted'}
+                          </span>
+                          <span>
+                            <span className="font-semibold text-slate-500">Forecast confidence:</span>{' '}
+                            {confidence != null ? `${Math.round(confidence * 100)}%` : 'unavailable'}
                           </span>
                           <span>
                             <span className="font-semibold text-slate-500">Last reading:</span>{' '}
@@ -280,6 +349,11 @@ export default function HotspotsRiskTable({
           per-incident with citizen, field, or authority evidence in the Incidents workspace. Forecast Confidence
           reflects the forecast model's own reliability at its predicted peak, not confidence in the likely source.
         </p>
+        {pollutant === 'aqi' && (
+          <p>
+            Latest readings: CPCB/data.gov preferred · OpenAQ fallback. AQI computed using CPCB breakpoint logic.
+          </p>
+        )}
       </div>
     </Card>
   )

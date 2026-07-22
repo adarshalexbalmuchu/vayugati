@@ -133,8 +133,16 @@ function IconRail({ role, homePath }: { role: string | undefined; homePath: stri
  *  notifications, and the profile menu. `subtitle` still names the active
  *  page for the browser tab title (accessibility/orientation), it just isn't
  *  rendered as visible breadcrumb text anymore - each page already carries
- *  its own in-page title. */
-function TopBar({ subtitle }: { subtitle?: string }) {
+ *  its own in-page title.
+ *
+ *  `headerContent`, when passed, REPLACES the "Vayu Gati" brand text with
+ *  page-specific content (Overview's own identity block + Refresh button,
+ *  merging what used to be a separate row into this one) - opt-in per page,
+ *  so every page that doesn't pass it keeps the plain brand text unchanged,
+ *  including the mobile-only branding role that text otherwise plays (the
+ *  icon rail is desktop-only; a page that opts in accepts trading that for
+ *  its own content on mobile too). */
+function TopBar({ subtitle, headerContent }: { subtitle?: string; headerContent?: ReactNode }) {
   const { profile, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -144,7 +152,9 @@ function TopBar({ subtitle }: { subtitle?: string }) {
 
   return (
     <header className="z-header flex items-center gap-3 border-b border-slate-200 bg-white px-3 py-2 sm:px-4">
-      <span className="truncate text-[15px] font-bold tracking-tight text-slate-900">Vayu Gati</span>
+      <div className="min-w-0 flex-1">
+        {headerContent ?? <span className="truncate text-[15px] font-bold tracking-tight text-slate-900">Vayu Gati</span>}
+      </div>
 
       <div className="ml-auto flex items-center gap-1.5">
         <button
@@ -203,10 +213,14 @@ function TopBar({ subtitle }: { subtitle?: string }) {
  */
 export default function AppShell({
   subtitle,
+  headerContent,
   secondaryNav,
   children,
 }: {
   subtitle?: string
+  /** Replaces the "Vayu Gati" brand text in the top bar with page-specific
+   *  content - see TopBar's own doc comment above for the tradeoffs. */
+  headerContent?: ReactNode
   /** Contextual secondary navigation for the active module (plan §19). Optional:
    *  pages that don't pass it keep the previous single-pane layout unchanged. */
   secondaryNav?: ReactNode
@@ -232,7 +246,7 @@ export default function AppShell({
     <div className="flex h-[100dvh]">
       <IconRail role={profile?.role} homePath={homePath} />
       <div className="flex min-w-0 flex-1 flex-col bg-white text-slate-900">
-        <TopBar subtitle={subtitle} />
+        <TopBar subtitle={subtitle} headerContent={headerContent} />
         <OfflineBanner />
         {secondaryNav ? (
           // Contextual nav: a column on desktop, a scrollable strip on narrow

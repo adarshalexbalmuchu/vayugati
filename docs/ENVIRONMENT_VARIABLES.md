@@ -25,6 +25,7 @@ key in a committed `.env.example`, treat it as compromised — see
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | **Server-side only.** Bypasses RLS entirely — this is the one credential in this whole system that can read/write anything. Never log it, never send it to the frontend, never put it in a client-visible response. See [SECURITY.md](SECURITY.md). |
 | `OPENAQ_API_KEY` | Yes | https://explore.openaq.org/register |
 | `DATA_GOV_API_KEY` | No | Official data.gov.in CPCB AQI API key, server-side only. https://data.gov.in — currently used only by the audit script `ingest/scripts/audit_data_gov_cpcb.py`; **not** wired into production ingest (`app/ingest.py` still runs on OpenAQ exactly as before). |
+| `DELHI_OTD_API_KEY` | No | Delhi Open Transit Data real-time feed key, server-side only. https://otd.delhi.gov.in — audit-only for now (`ingest/scripts/audit_delhi_otd.py`); **not** wired into production ingest. |
 | `ANTHROPIC_API_KEY` | Yes | Used by `classify.py` for report classification. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Optional (Phase 9). Unset → `notifications.py` uses the development-safe mock adapter (logs "would send", never claims a real delivery). `SMTP_PASSWORD` is a credential — same handling as the service_role key. |
 | `ENVIRONMENT` | No | `local` \| `test` \| `staging` \| `production`. Defaults to `local`. Tags every structured log line and `job_runs` row — display/log metadata only, same as the frontend's `VITE_ENVIRONMENT`. |
@@ -42,9 +43,9 @@ real boundary): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
 **Never client-side, never logged, never in a committed file**:
 `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_PASSWORD`, `ANTHROPIC_API_KEY`,
-`OPENAQ_API_KEY`, `DATA_GOV_API_KEY` (no `VITE_` equivalent exists or should
-ever exist for it — it is a backend/ingest-only credential),
-`SUPABASE_ACCESS_TOKEN` (the CLI's personal access token —
+`OPENAQ_API_KEY`, `DATA_GOV_API_KEY`, `DELHI_OTD_API_KEY` (no `VITE_`
+equivalent exists or should ever exist for either — both are backend/
+ingest-only credentials), `SUPABASE_ACCESS_TOKEN` (the CLI's personal access token —
 distinct from the service_role key, never present in this repo's own
 `.env.example` files since it's a per-developer credential, not a
 per-project one).

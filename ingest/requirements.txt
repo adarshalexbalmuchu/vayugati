@@ -12,5 +12,10 @@ scikit-learn>=1.4,<2
 scipy>=1.11,<2
 lightgbm>=4
 
+# Delhi Open Transit Data (OTD) GTFS-realtime decoding (audit/context-layer
+# only - see app/delhi_otd.py). Tiny, pure-Python bindings + protobuf;
+# doesn't touch any existing dependency's pinned version.
+gtfs-realtime-bindings>=2
+
 # dev / tests only
 pytest>=8

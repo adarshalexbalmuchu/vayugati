@@ -838,3 +838,140 @@ export async function classifyReport(params: {
     return null
   }
 }
+
+// ── Delhi Open Transit Data (transport-activity context layer) ─────────────
+// Context only - never pollution evidence, never congestion/emission
+// attribution. See docs/data/delhi-otd-transport-context-integration-report.md.
+
+export interface TransportActivityWard {
+  wardId: number
+  wardName: string
+  vehicleCount: number
+  activityLevel: 'none' | 'low' | 'medium' | 'high'
+}
+
+export interface TransportActivitySummary {
+  generatedAt: string
+  /** null (not 0) when the backend never got a real reading this cycle -
+   *  see ingest/app/transit_activity.py's unavailable_summary(). */
+  liveBusesTracked: number | null
+  activeRoutes: number | null
+  bufferKm: number
+  perWard: TransportActivityWard[]
+  label: string
+  disclaimer: string
+  unavailableReason?: string | null
+}
+
+const TRANSIT_TIMEOUT_MS = 8_000
+
+/**
+ * Best-effort fetch of the ingest service's transit-activity summary -
+ * same pattern as classifyReport above (timeout, catch-all, null on any
+ * failure). The ingest service itself already degrades gracefully when
+ * DELHI_OTD_API_KEY is unset or the feed call fails (returns an explicit
+ * "unavailable" summary rather than erroring), so this function has two
+ * independent layers of graceful degradation: this fetch failing entirely
+ * (service down/unreachable) returns null; the service responding but with
+ * nothing to report returns a summary with `unavailableReason` set.
+ */
+export async function fetchTransportActivity(): Promise<TransportActivitySummary | null> {
+  try {
+    const res = await fetch(`${INGEST_URL}/transit/activity`, { signal: AbortSignal.timeout(TRANSIT_TIMEOUT_MS) })
+    if (!res.ok) return null
+    const data = await res.json()
+    return {
+      generatedAt: data.generated_at,
+      liveBusesTracked: data.live_buses_tracked ?? null,
+      activeRoutes: data.active_routes ?? null,
+      bufferKm: data.buffer_km,
+      perWard: (data.per_ward ?? []).map((w: { ward_id: number; ward_name: string; vehicle_count: number; activity_level: TransportActivityWard['activityLevel'] }) => ({
+        wardId: w.ward_id,
+        wardName: w.ward_name,
+        vehicleCount: w.vehicle_count,
+        activityLevel: w.activity_level,
+      })),
+      label: data.label,
+      disclaimer: data.disclaimer,
+      unavailableReason: data.unavailable_reason ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+// ── CPCB/data.gov preferred latest-reading source ───────────────────────────
+// Latest readings only - never replaces OpenAQ history or forecast.py
+// inputs, which keep running exactly as before. See
+// docs/data/cpcb-data-gov-primary-latest-integration-report.md.
+
+export type LatestReadingSource = 'cpcb' | 'openaq_fallback'
+
+export interface LatestReadingReconciliation {
+  stationId: number
+  stationName: string
+  wardId: number | null
+  matched: boolean
+  cpcbStationName: string | null
+  cpcbLastUpdate: string | null
+  openaqLastUpdate: string | null
+  cpcbPollutants: Record<string, { avg: number; min: number | null; max: number | null }>
+  openaqPollutants: Record<string, number>
+  cpcbAqi: number | null
+  openaqAqi: number | null
+  sourceUsed: LatestReadingSource
+  flags: string[]
+}
+
+const LATEST_READINGS_TIMEOUT_MS = 8_000
+
+/**
+ * Best-effort fetch of the ingest service's CPCB-preferred-latest-reading
+ * reconciliation, one row per station - same pattern as
+ * fetchTransportActivity above (timeout, catch-all, null on any failure).
+ * Callers overlay this ON TOP of their existing Supabase-sourced OpenAQ
+ * reads for DISPLAY only (Overview hotspot table, Sensors, Map popups) -
+ * this never replaces those queries, so a failure here just means the
+ * existing OpenAQ-sourced numbers keep showing, unchanged.
+ */
+export async function fetchLatestReadingsPreferred(): Promise<LatestReadingReconciliation[] | null> {
+  try {
+    const res = await fetch(`${INGEST_URL}/readings/latest`, { signal: AbortSignal.timeout(LATEST_READINGS_TIMEOUT_MS) })
+    if (!res.ok) return null
+    const data: unknown = await res.json()
+    if (!Array.isArray(data)) return null
+    return data.map(
+      (r: {
+        station_id: number
+        station_name: string
+        ward_id: number | null
+        matched: boolean
+        cpcb_station_name: string | null
+        cpcb_last_update: string | null
+        openaq_last_update: string | null
+        cpcb_pollutants: Record<string, { avg: number; min: number | null; max: number | null }> | null
+        openaq_pollutants: Record<string, number> | null
+        cpcb_aqi: number | null
+        openaq_aqi: number | null
+        source_used: LatestReadingSource
+        flags: string[] | null
+      }) => ({
+        stationId: r.station_id,
+        stationName: r.station_name,
+        wardId: r.ward_id,
+        matched: r.matched,
+        cpcbStationName: r.cpcb_station_name,
+        cpcbLastUpdate: r.cpcb_last_update,
+        openaqLastUpdate: r.openaq_last_update,
+        cpcbPollutants: r.cpcb_pollutants ?? {},
+        openaqPollutants: r.openaq_pollutants ?? {},
+        cpcbAqi: r.cpcb_aqi,
+        openaqAqi: r.openaq_aqi,
+        sourceUsed: r.source_used,
+        flags: r.flags ?? [],
+      }),
+    )
+  } catch {
+    return null
+  }
+}

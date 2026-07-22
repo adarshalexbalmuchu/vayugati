@@ -25,6 +25,14 @@ def get_wards_with_city() -> list[dict]:
     return client().table("wards").select("id, name, lat, lng, city_id").execute().data
 
 
+def get_hotspot_wards() -> list[dict]:
+    """[{id, name, lat, lng}, ...] for the monitored hotspot set only (same
+    `is_hotspot=true` scope the frontend's fetchAllWardsAqi() uses) - for
+    context layers that should score against the same ward set the rest of
+    the app already treats as "the wards that matter" (transit_activity.py)."""
+    return client().table("wards").select("id, name, lat, lng").eq("is_hotspot", True).execute().data
+
+
 def get_active_cities(city_code: str | None = None) -> list[dict]:
     """Active city_config rows (optionally filtered to one city_code), each
     with its own `config` jsonb (pollutant_priority, forecasting config, …)."""
@@ -32,6 +40,38 @@ def get_active_cities(city_code: str | None = None) -> list[dict]:
     if city_code:
         q = q.eq("city_code", city_code)
     return q.execute().data
+
+
+def get_all_stations() -> list[dict]:
+    """[{id, name, ward_id}, ...] - every station, for the CPCB/data.gov
+    latest-reading reconciliation (station_matching.py + latest_readings.py).
+    Not scoped to hotspot wards like get_hotspot_wards() - a station can
+    exist without its ward being in the monitored hotspot set."""
+    return client().table("stations").select("id, name, ward_id").execute().data
+
+
+def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
+    """station_id -> {ts, pm25, pm10, no2, so2, co, o3, aqi} for its single
+    most recent reading. One small `.limit(1)` query per station (same
+    per-station-loop shape the frontend's fetchStationHealth() already uses
+    for the identical "N stations, cheap enough as one-per-station" reason)
+    - this only runs once per scheduled reconciliation cycle, not per
+    request."""
+    out: dict[int, dict] = {}
+    for sid in station_ids:
+        rows = (
+            client()
+            .table("readings")
+            .select("ts, pm25, pm10, no2, so2, co, o3, aqi")
+            .eq("station_id", sid)
+            .order("ts", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if rows:
+            out[sid] = rows[0]
+    return out
 
 
 def get_station_by_ref(external_ref: str) -> dict | None:

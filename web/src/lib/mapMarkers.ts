@@ -54,6 +54,19 @@ export const SOURCE_CATEGORY_HEX: Record<SourceCategory, string> = {
   unresolved: '#CBD5E1',
 }
 
+/**
+ * Transit-activity context layer (Delhi Open Transit Data) - a deliberately
+ * distinct teal family, not reused from the AQI/status/source palettes
+ * above, so this never reads as a severity or source-attribution signal.
+ * See docs/data/delhi-otd-transport-context-integration-report.md: this is
+ * public transport activity, never pollution evidence or congestion.
+ */
+export const TRANSIT_ACTIVITY_HEX: Record<'low' | 'medium' | 'high', string> = {
+  low: '#5EEAD4',
+  medium: '#14B8A6',
+  high: '#0F766E',
+}
+
 export interface MapMarker {
   id: string
   kind: MapMarkerKind
