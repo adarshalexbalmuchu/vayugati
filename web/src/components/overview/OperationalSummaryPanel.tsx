@@ -11,15 +11,6 @@ const PIPELINE_STATUS_TONE: Record<string, string> = {
   'No data': 'text-slate-400',
 }
 
-function TrustRow({ label, value, tone = 'text-slate-800' }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-slate-500">{label}</span>
-      <span className={`font-semibold tabular-nums ${tone}`}>{value}</span>
-    </div>
-  )
-}
-
 /** A live snapshot synthesis of already-fetched data - deliberately not an
  *  "improving/worsening" trend claim, since no historical time-series
  *  baseline exists in this app to honestly support that. */
@@ -72,16 +63,44 @@ export default function OperationalSummaryPanel({
 
         <div>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Forecast trust</p>
-          <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2.5">
-            <TrustRow
-              label="Forecast pipeline"
+          <div className="grid grid-cols-2 gap-2">
+            <Stat
               value={forecastPipelineStatusLabel(accuracy.coverage)}
-              tone={PIPELINE_STATUS_TONE[forecastPipelineStatusLabel(accuracy.coverage)]}
+              label="Pipeline"
+              accent={PIPELINE_STATUS_TONE[forecastPipelineStatusLabel(accuracy.coverage)]}
             />
-            <TrustRow label="Coverage" value={`${accuracy.coverage.freshCount}/${accuracy.coverage.totalPairs}`} />
-            <TrustRow label="ML selected" value={String(accuracy.methodMix.lightgbmCount)} />
-            <TrustRow label="Safer baseline" value={String(accuracy.methodMix.diurnalPersistenceCount)} />
+            <Stat value={`${accuracy.coverage.freshCount}/${accuracy.coverage.totalPairs}`} label="Coverage" />
           </div>
+
+          <div className="mt-3">
+            <div className="flex h-2 overflow-hidden rounded-full bg-slate-100">
+              {accuracy.methodMix.total > 0 && (
+                <>
+                  <div
+                    className="bg-accent-500"
+                    style={{ width: `${(accuracy.methodMix.lightgbmCount / accuracy.methodMix.total) * 100}%` }}
+                    title={`ML selected: ${accuracy.methodMix.lightgbmCount}`}
+                  />
+                  <div
+                    className="bg-slate-300"
+                    style={{ width: `${(accuracy.methodMix.diurnalPersistenceCount / accuracy.methodMix.total) * 100}%` }}
+                    title={`Safer baseline: ${accuracy.methodMix.diurnalPersistenceCount}`}
+                  />
+                </>
+              )}
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 font-semibold text-accent-700">
+                <span className="h-2 w-2 rounded-full bg-accent-500" aria-hidden />
+                ML selected {accuracy.methodMix.lightgbmCount}
+              </span>
+              <span className="flex items-center gap-1.5 font-semibold text-slate-500">
+                <span className="h-2 w-2 rounded-full bg-slate-300" aria-hidden />
+                Safer baseline {accuracy.methodMix.diurnalPersistenceCount}
+              </span>
+            </div>
+          </div>
+
           <p className="mt-2 text-xs text-slate-500">ML is used only when it beats strong simple baselines.</p>
           {accuracy.coverage.latestGeneratedAt && (
             <p className="mt-1 text-[11px] text-slate-400">

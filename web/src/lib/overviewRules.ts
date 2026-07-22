@@ -116,6 +116,30 @@ export function hotspotStatus(
   return 'no_data'
 }
 
+/** How many wards currently warrant a commander's attention - severe within
+ *  the window, or trending up towards it (hotspotStatus's 'severe'/'watch'
+ *  tiers), tallied city-wide. An aggregate of what the Hotspot table already
+ *  computes per row, not a new signal - used by Overview's Response
+ *  Planning card in place of the removed team-allocation slider. */
+export function wardsNeedingReviewCount(
+  wards: WardSummary[],
+  forecasts: Map<number, WardForecastSummary>,
+  windowHours: TimeWindowHours,
+): number {
+  let count = 0
+  for (const w of wards) {
+    const forecast = forecasts.get(w.id)
+    const windowed = peakWithinWindow(forecast, windowHours)
+    const readingAgeMinutes = w.ts ? (Date.now() - new Date(w.ts).getTime()) / 60_000 : null
+    const status = hotspotStatus(
+      { hoursToSevere: forecast?.hoursToSevere ?? null, peakExcess: windowed.excess, aqi: w.aqi, readingAgeMinutes },
+      windowHours,
+    )
+    if (status === 'severe' || status === 'watch') count++
+  }
+  return count
+}
+
 /** Same "first populated checkpoint column" fallback already duplicated in
  *  TasksView.tsx / FieldTaskDispatchCard.tsx / TaskDispatchPanel.tsx -
  *  centralizing here is incidental cleanup, not a new rule. */

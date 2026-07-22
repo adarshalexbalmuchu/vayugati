@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { BUILD_INFO } from '../lib/env'
 import { initOfflineSync } from '../lib/offlineSync'
 import MobileBottomNav from './MobileNav'
 import { OfflineBanner } from './ui'
@@ -129,33 +128,25 @@ function IconRail({ role, homePath }: { role: string | undefined; homePath: stri
   )
 }
 
+/** Minimal top bar (launch UI pass): no breadcrumb text, no search input (was
+ *  a disabled placeholder anyway), no help flyout — just the brand mark,
+ *  notifications, and the profile menu. `subtitle` still names the active
+ *  page for the browser tab title (accessibility/orientation), it just isn't
+ *  rendered as visible breadcrumb text anymore - each page already carries
+ *  its own in-page title. */
 function TopBar({ subtitle }: { subtitle?: string }) {
   const { profile, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [helpOpen, setHelpOpen] = useState(false)
+
+  useEffect(() => {
+    document.title = subtitle ? `${subtitle} · Vayu Gati` : 'Vayu Gati'
+  }, [subtitle])
 
   return (
     <header className="z-header flex items-center gap-3 border-b border-slate-200 bg-white px-3 py-2 sm:px-4">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className="truncate text-[15px] font-bold tracking-tight text-slate-900">Vayu Gati</span>
-        {subtitle && <span className="hidden truncate text-xs font-medium text-slate-400 sm:inline">{subtitle}</span>}
-      </div>
+      <span className="truncate text-[15px] font-bold tracking-tight text-slate-900">Vayu Gati</span>
 
-      {/* global search - visual placeholder, not wired yet. Deliberately
-          narrower and lower-contrast than a live control (max-w-xs, not
-          max-w-md) so it reads as a disabled affordance, not a broken
-          central feature - see docs/data/overview-incidents-launch-ui-fix-report.md. */}
-      <div className="mx-auto hidden max-w-xs flex-1 sm:block">
-        <input
-          type="search"
-          disabled
-          placeholder="Search disabled in pilot build"
-          title="Search will be enabled after pilot data review"
-          className="focus-ring w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-400 placeholder:text-slate-400"
-        />
-      </div>
-
-      <div className="ml-auto flex items-center gap-1.5 sm:ml-0">
+      <div className="ml-auto flex items-center gap-1.5">
         <button
           type="button"
           title="Alerts - none yet"
@@ -164,30 +155,6 @@ function TopBar({ subtitle }: { subtitle?: string }) {
           <span aria-hidden>🔔</span>
           <span className="sr-only">Alerts</span>
         </button>
-
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setHelpOpen((v) => !v)}
-            title="Help"
-            className="focus-ring rounded-lg p-2 text-sm text-slate-500 transition hover:bg-slate-100"
-          >
-            <span aria-hidden>❓</span>
-            <span className="sr-only">Help</span>
-          </button>
-          {helpOpen && (
-            <div className="z-dropdown absolute right-0 top-full mt-1 w-56 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-card-lg">
-              <p className="font-semibold text-slate-800">Vayu Gati</p>
-              <p className="mt-1">
-                Pan-India air incident-response platform. Delhi is the first City Pack - see{' '}
-                <code>docs/IMPLEMENTATION_STATUS.md</code> for what&apos;s live today.
-              </p>
-              <p className="mt-2 border-t border-slate-100 pt-2 text-[10px] text-slate-400">
-                Build {BUILD_INFO.sha} · {BUILD_INFO.environment}
-              </p>
-            </div>
-          )}
-        </div>
 
         <div className="relative">
           <button

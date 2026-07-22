@@ -37,11 +37,22 @@ function KpiCard({ icon: Icon, label, value, sublabel, tone = 'neutral' }: Omit<
   )
 }
 
+const DESKTOP_COLS: Record<number, string> = {
+  4: 'lg:grid-cols-4',
+  5: 'lg:grid-cols-5',
+  6: 'lg:grid-cols-6',
+}
+
 /** Compact operational status strip - the page's answer to "is the city
- *  normal or worsening" at a glance, before any panel below is read. */
-export default function KpiStrip({ items }: { items: KpiItem[] }) {
+ *  normal or worsening" at a glance, before any panel below is read.
+ *  `columns` only changes the desktop column count (default 6, matching
+ *  every existing caller) - narrower callers can opt into a tighter strip
+ *  without affecting anyone who doesn't pass it. */
+export default function KpiStrip({ items, columns = 6 }: { items: KpiItem[]; columns?: 4 | 5 | 6 }) {
   return (
-    <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 shadow-card sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+    <div
+      className={`grid grid-cols-2 divide-x divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 shadow-card sm:grid-cols-3 ${DESKTOP_COLS[columns]} lg:divide-y-0`}
+    >
       {items.map(({ key, ...item }) => (
         <KpiCard key={key} {...item} />
       ))}

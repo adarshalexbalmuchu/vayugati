@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { ChevronDown, ChevronRight, Flame } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Flame } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { WardForecastSummary, WardSummary } from '../../lib/data'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
@@ -12,6 +12,9 @@ import {
   type TimeWindowHours,
 } from '../../lib/overviewRules'
 import { Card, CardHeader } from '../ui'
+
+const POLLUTANT_OPTIONS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
+const WINDOW_OPTIONS: TimeWindowHours[] = [12, 24, 36, 48]
 
 function ageMinutes(ts: string | null): number | null {
   return ts ? (Date.now() - new Date(ts).getTime()) / 60_000 : null
@@ -82,7 +85,9 @@ export default function HotspotsRiskTable({
   wards,
   forecasts,
   pollutant,
+  onPollutantChange,
   windowHours,
+  onWindowHoursChange,
   selectedWardId,
   onSelectWard,
 }: {
@@ -92,7 +97,9 @@ export default function HotspotsRiskTable({
    *  fetches accordingly, this component never mixes pollutants itself. */
   forecasts: Map<number, WardForecastSummary>
   pollutant: MapPollutant
+  onPollutantChange: (p: MapPollutant) => void
   windowHours: TimeWindowHours
+  onWindowHoursChange: (h: TimeWindowHours) => void
   selectedWardId: number | null
   onSelectWard: (wardId: number) => void
 }) {
@@ -110,6 +117,39 @@ export default function HotspotsRiskTable({
           </span>
         }
         subtitle="Ranked by current readings, forecast risk, and local source signal."
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
+              {POLLUTANT_OPTIONS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => onPollutantChange(p)}
+                  className={`focus-ring rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                    pollutant === p ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  {MAP_POLLUTANT_LABEL[p]}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
+              <Clock className="ml-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden />
+              {WINDOW_OPTIONS.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => onWindowHoursChange(h)}
+                  className={`focus-ring rounded-md px-2 py-1 text-xs font-semibold transition ${
+                    windowHours === h ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+        }
       />
       <p className="border-b border-slate-100 px-4 py-2 text-[11px] text-slate-500">
         Showing current {MAP_POLLUTANT_LABEL[pollutant]}

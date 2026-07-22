@@ -12,6 +12,7 @@ import {
   rollupStationHealth,
   severeWardsWithin,
   tallySourceMix,
+  wardsNeedingReviewCount,
 } from './overviewRules'
 import type { ActiveTaskDispatch, Incident } from './incidents'
 import type { StationHealthRow } from './ops'
@@ -169,6 +170,49 @@ describe('hotspotStatus', () => {
 
   it('omitting readingAgeMinutes entirely behaves exactly as before (existing Map caller safety)', () => {
     expect(hotspotStatus({ hoursToSevere: 50, peakExcess: 15, aqi: 177 }, 36)).toBe('watch')
+  })
+})
+
+describe('wardsNeedingReviewCount', () => {
+  it('counts a ward crossing severe within the window', () => {
+    const wards = [ward({ id: 1 })]
+    const forecasts = new Map<number, WardForecastSummary>([[1, forecast({ wardId: 1, hoursToSevere: 10 })]])
+    expect(wardsNeedingReviewCount(wards, forecasts, 36)).toBe(1)
+  })
+
+  it('counts a ward trending up (watch) even when not yet severe', () => {
+    const wards = [ward({ id: 1, aqi: 120 })]
+    const forecasts = new Map<number, WardForecastSummary>([
+      [
+        1,
+        forecast({
+          wardId: 1,
+          hoursToSevere: null,
+          points: [
+            {
+              horizon_ts: new Date().toISOString(),
+              predicted_value: 90,
+              pm25_pred: null,
+              baseline_pred: null,
+              local_excess: 15,
+              confidence: null,
+              model_version: null,
+            },
+          ],
+        }),
+      ],
+    ])
+    expect(wardsNeedingReviewCount(wards, forecasts, 36)).toBe(1)
+  })
+
+  it('does not count a stable ward with no severe/watch signal', () => {
+    const wards = [ward({ id: 1, aqi: 60 })]
+    const forecasts = new Map<number, WardForecastSummary>()
+    expect(wardsNeedingReviewCount(wards, forecasts, 36)).toBe(0)
+  })
+
+  it('returns 0 for an empty ward list', () => {
+    expect(wardsNeedingReviewCount([], new Map(), 36)).toBe(0)
   })
 })
 
