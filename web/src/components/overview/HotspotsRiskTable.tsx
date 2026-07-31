@@ -238,18 +238,6 @@ export default function HotspotsRiskTable({
               <th className="px-3 py-1.5 font-semibold">Likely Source</th>
               <th className="px-3 py-1.5 font-semibold">Status</th>
               <th className="px-3 py-1.5 font-semibold">Age</th>
-              <th
-                className="px-3 py-1.5 font-semibold"
-                title="Which source is behind the AQI shown - CPCB/data.gov preferred, OpenAQ fallback, or Review (unmatched/disagreeing)."
-              >
-                AQ Source
-              </th>
-              <th
-                className="px-3 py-1.5 font-semibold"
-                title="Matched (clean) · Stale (source data older than 3h) · Mismatch (CPCB and OpenAQ disagree) · No data (unmatched or nothing usable)."
-              >
-                Confidence
-              </th>
               <th className="w-8 px-2 py-1.5" />
             </tr>
           </thead>
@@ -317,19 +305,13 @@ export default function HotspotsRiskTable({
                       />
                     </td>
                     <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(ward.ts)}</td>
-                    <td className="px-3 py-1.5">
-                      <AqSourceBadge preferred={latestReadingsByWard?.get(ward.id)} />
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <DataConfidenceBadge preferred={latestReadingsByWard?.get(ward.id)} />
-                    </td>
                     <td className="px-2 py-1.5 text-slate-300">
                       {selected ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                     </td>
                   </tr>
                   {selected && (
                     <tr className="bg-accent-50/60">
-                      <td colSpan={10} className="px-3 py-3">
+                      <td colSpan={8} className="px-3 py-3">
                         <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs text-slate-600">
                           <span>
                             <span className="font-semibold text-slate-500">PM2.5 now:</span>{' '}
@@ -346,6 +328,14 @@ export default function HotspotsRiskTable({
                           <span>
                             <span className="font-semibold text-slate-500">Last reading:</span>{' '}
                             {ward.ts ? new Date(ward.ts).toLocaleString() : 'unavailable'}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-500">AQ source:</span>
+                            <AqSourceBadge preferred={latestReadingsByWard?.get(ward.id)} />
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-500">Confidence:</span>
+                            <DataConfidenceBadge preferred={latestReadingsByWard?.get(ward.id)} />
                           </span>
                         </div>
                       </td>
