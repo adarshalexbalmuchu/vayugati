@@ -25,6 +25,16 @@ def _hour_floor_utc(ts_iso: str) -> str:
     return dt.replace(minute=0, second=0, microsecond=0).isoformat()
 
 
+def _parse_cpcb_agency(cpcb_name: str) -> str | None:
+    """Extract monitoring agency from a CPCB station-name suffix.
+    'Anand Vihar, Delhi - DPCC' -> 'DPCC'
+    Returns None when no '- ' suffix is present."""
+    if " - " in cpcb_name:
+        suffix = cpcb_name.rsplit(" - ", 1)[-1].strip().upper()
+        return suffix or None
+    return None
+
+
 def _parse_cpcb_ts(ts_str: str) -> str | None:
     """Parse CPCB's 'DD-MM-YYYY HH:MM:SS' IST string -> UTC ISO hour floor.
     Returns None on any parse failure rather than raising."""
@@ -84,6 +94,9 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
             db.upsert_reading(row)
             covered.add(sid)
             rows_written += 1
+            agency = _parse_cpcb_agency(cpcb_name)
+            if agency:
+                db.set_station_agency(sid, agency)
         except Exception as e:
             log.exception("CPCB upsert failed for %r (station_id=%s)", cpcb_name, sid)
             errors.append(f"cpcb_upsert {cpcb_name}: {e}")

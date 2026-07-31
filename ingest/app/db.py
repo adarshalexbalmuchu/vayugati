@@ -102,6 +102,14 @@ def insert_station(
     return client().table("stations").insert(row).execute().data[0]
 
 
+def set_station_agency(station_id: int, agency: str) -> None:
+    """Write the monitoring agency (DPCC/IMD/IITM) onto the stations row.
+    Called from the CPCB ingest path which extracts it from the station-name
+    suffix ("Anand Vihar, Delhi - DPCC" -> "DPCC"). Idempotent: safe to call
+    every ingest cycle; the value rarely if ever changes in practice."""
+    client().table("stations").update({"agency": agency}).eq("id", station_id).execute()
+
+
 def upsert_reading(row: dict) -> None:
     # merge-duplicates: only the columns present in `row` are updated,
     # so a later sensor for the same hour fills in, not wipes, the rest.
