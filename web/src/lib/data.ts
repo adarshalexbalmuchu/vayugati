@@ -512,8 +512,9 @@ export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): 
     .from('forecasts')
     .select('ward_id, horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, predicted_value')
     .eq('pollutant', pollutant)
+    .gte('horizon_ts', new Date().toISOString())
     .order('horizon_ts')
-    .limit(48 * 20)
+    .limit(48 * 300)
   const byWard = new Map<number, WardForecastSummary>()
   for (const row of data ?? []) {
     const wardId = row.ward_id as number
