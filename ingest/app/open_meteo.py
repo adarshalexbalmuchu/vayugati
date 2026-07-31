@@ -15,20 +15,8 @@ HOURLY_VARS = (
 )
 
 
-def get_current(lat: float, lng: float) -> dict:
-    """Current weather at a point: {ts_utc, temp_c, humidity, wind_speed, wind_dir, precipitation, pressure}."""
-    resp = httpx.get(
-        BASE,
-        params={
-            "latitude": lat,
-            "longitude": lng,
-            "current": CURRENT_VARS,
-            "timezone": "UTC",
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    cur = resp.json()["current"]
+def _parse_current(item: dict) -> dict:
+    cur = item["current"]
     return {
         "ts_utc": cur["time"] + ":00Z",  # Open-Meteo returns e.g. "2026-07-14T07:15"
         "temp_c": cur["temperature_2m"],
@@ -38,6 +26,44 @@ def get_current(lat: float, lng: float) -> dict:
         "precipitation": cur["precipitation"],
         "pressure": cur["surface_pressure"],
     }
+
+
+def get_current(lat: float, lng: float) -> dict:
+    """Current weather at a single point."""
+    resp = httpx.get(
+        BASE,
+        params={"latitude": lat, "longitude": lng, "current": CURRENT_VARS, "timezone": "UTC"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return _parse_current(resp.json())
+
+
+def get_current_batch(locations: list[tuple[float, float]]) -> list[dict]:
+    """Current weather for multiple locations in one request — eliminates the
+    per-ward sequential loop that produced 429s on Render's shared egress IP.
+
+    Open-Meteo accepts comma-separated latitude/longitude arrays and returns a
+    JSON array in the same order. One network round-trip replaces N sequential
+    ones regardless of how many wards are configured. The single location case
+    (returns a plain dict, not a list) is normalised to a one-element list so
+    callers never need to branch on response shape.
+
+    locations: [(lat, lng), ...] — must be non-empty (validated by caller).
+    Returns weather dicts in the same order as `locations`."""
+    lats = ",".join(str(lat) for lat, _ in locations)
+    lngs = ",".join(str(lng) for _, lng in locations)
+    resp = httpx.get(
+        BASE,
+        params={"latitude": lats, "longitude": lngs, "current": CURRENT_VARS, "timezone": "UTC"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    # Single-location responses are a plain dict; multi-location are a list.
+    if isinstance(data, dict):
+        data = [data]
+    return [_parse_current(item) for item in data]
 
 
 def get_hourly_forecast(lat: float, lng: float, hours: int = 48) -> list[dict]:

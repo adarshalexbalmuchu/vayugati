@@ -8,7 +8,6 @@ Open-Meteo weather is independent of either AQ source.
 """
 
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 
 from . import aqi, config, data_gov_cpcb, db, open_meteo, openaq, station_matching
@@ -205,32 +204,35 @@ def run() -> dict:
 
     summary["readings_upserted"] = summary["cpcb_rows_written"] + summary["openaq_rows_written"]
 
-    # ── Open-Meteo weather (independent of AQ source) ─────────────────────────
+    # ── Open-Meteo weather (batch — one request for all wards) ───────────────
+    # Sequential per-ward calls produced consistent 429s from Render's shared
+    # egress IP even with 0.5s pauses. Open-Meteo accepts comma-separated
+    # lat/lng arrays and returns results in the same order, so N wards = 1
+    # request instead of N.
     wards_all = db.get_wards()
-    for name, ward in wards_all.items():
-        if ward["lat"] is None or ward["lng"] is None:
-            continue
+    geo_wards = [(name, ward) for name, ward in wards_all.items()
+                 if ward["lat"] is not None and ward["lng"] is not None]
+    if geo_wards:
         try:
-            # Brief pause between calls — back-to-back requests for all wards
-            # produced real 429s from Render's shared egress IP in practice.
-            time.sleep(0.5)
-            w = open_meteo.get_current(ward["lat"], ward["lng"])
-            db.upsert_weather(
-                {
-                    "ward_id": ward["id"],
-                    "ts": _hour_floor_utc(w["ts_utc"]),
-                    "temp_c": w["temp_c"],
-                    "humidity": w["humidity"],
-                    "wind_speed": w["wind_speed"],
-                    "wind_dir": w["wind_dir"],
-                    "precipitation": w["precipitation"],
-                    "pressure": w["pressure"],
-                }
-            )
-            summary["weather_upserted"] += 1
+            locations = [(ward["lat"], ward["lng"]) for _, ward in geo_wards]
+            weather_results = open_meteo.get_current_batch(locations)
+            for (name, ward), w in zip(geo_wards, weather_results):
+                db.upsert_weather(
+                    {
+                        "ward_id": ward["id"],
+                        "ts": _hour_floor_utc(w["ts_utc"]),
+                        "temp_c": w["temp_c"],
+                        "humidity": w["humidity"],
+                        "wind_speed": w["wind_speed"],
+                        "wind_dir": w["wind_dir"],
+                        "precipitation": w["precipitation"],
+                        "pressure": w["pressure"],
+                    }
+                )
+                summary["weather_upserted"] += 1
         except Exception as e:
-            log.exception("weather for ward %s failed", name)
-            summary["errors"].append(f"weather {name}: {e}")
+            log.exception("batch weather fetch failed")
+            summary["errors"].append(f"weather batch: {e}")
 
     summary["finished_at"] = datetime.now(timezone.utc).isoformat()
     log.info("ingest done: %s", summary)
