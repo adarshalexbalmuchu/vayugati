@@ -62,9 +62,9 @@ export default function SensorHealthSnapshot({
         {dataSourceTally && (
           <div className="flex items-center gap-1.5 text-xs">
             <Database className="h-3.5 w-3.5 flex-shrink-0 text-accent-600" aria-hidden />
-            <span className="font-semibold text-accent-700">{dataSourceTally.cpcbMatched} CPCB</span>
+            <span className="font-semibold text-accent-700">{dataSourceTally.cpcbMatched} stations via CPCB</span>
             <span className="text-slate-300">·</span>
-            <span className="font-semibold text-slate-500">{dataSourceTally.openaqFallback} OpenAQ fallback</span>
+            <span className="font-semibold text-slate-500">{dataSourceTally.openaqFallback} via OpenAQ fallback</span>
           </div>
         )}
 

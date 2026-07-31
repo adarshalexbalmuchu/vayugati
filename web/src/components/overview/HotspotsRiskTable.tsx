@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react'
-import { Bus, ChevronDown, ChevronRight, Clock, Flame, Info } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Flame, Info } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
-import type { LatestReadingReconciliation, TransportActivityWard, WardForecastSummary, WardSummary } from '../../lib/data'
+import type { LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
@@ -55,29 +55,6 @@ function StatusBadge({ status, title }: { status: HotspotStatus; title?: string 
   )
 }
 
-const TRANSIT_LEVEL_TONE: Record<TransportActivityWard['activityLevel'], string> = {
-  none: 'text-slate-400 ring-slate-200',
-  low: 'text-teal-600 ring-teal-200',
-  medium: 'text-teal-700 ring-teal-300',
-  high: 'text-teal-800 ring-teal-400',
-}
-
-/** Context only - see docs/data/delhi-otd-transport-context-integration-report.md.
- *  `activity` is undefined (not zero) when the ward simply isn't in this
- *  cycle's summary (service unreachable / not yet refreshed) - shown as a
- *  plain dash, never a fabricated "none" reading. */
-function TransitActivityBadge({ activity }: { activity: TransportActivityWard | undefined }) {
-  if (!activity) return <span className="text-slate-300">—</span>
-  return (
-    <span
-      title="Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion."
-      className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${TRANSIT_LEVEL_TONE[activity.activityLevel]}`}
-    >
-      <Bus className="h-3 w-3" aria-hidden />
-      {activity.vehicleCount} nearby
-    </span>
-  )
-}
 
 /** AQI only: prefers CPCB/data.gov's own value when this ward's station is
  *  matched and CPCB is fresh (preferred.sourceUsed === 'cpcb') - falls back
@@ -174,7 +151,6 @@ export default function HotspotsRiskTable({
   onWindowHoursChange,
   selectedWardId,
   onSelectWard,
-  transitActivityByWard,
   latestReadingsByWard,
 }: {
   wards: WardSummary[]
@@ -188,9 +164,6 @@ export default function HotspotsRiskTable({
   onWindowHoursChange: (h: TimeWindowHours) => void
   selectedWardId: number | null
   onSelectWard: (wardId: number) => void
-  /** Optional - undefined map or a missing entry both render as "—", never
-   *  fabricated. Context only, see TransitActivityBadge above. */
-  transitActivityByWard?: Map<number, TransportActivityWard>
   /** Optional - CPCB/data.gov preferred-latest-reading reconciliation, keyed
    *  by ward id. Missing/unmatched/stale all fall back to the existing
    *  OpenAQ-sourced ward.aqi unchanged - see CurrentReadingBadge above. */
@@ -277,12 +250,6 @@ export default function HotspotsRiskTable({
               >
                 Confidence
               </th>
-              <th
-                className="px-3 py-1.5 font-semibold"
-                title="Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion."
-              >
-                Transit
-              </th>
               <th className="w-8 px-2 py-1.5" />
             </tr>
           </thead>
@@ -356,16 +323,13 @@ export default function HotspotsRiskTable({
                     <td className="px-3 py-1.5">
                       <DataConfidenceBadge preferred={latestReadingsByWard?.get(ward.id)} />
                     </td>
-                    <td className="px-3 py-1.5">
-                      <TransitActivityBadge activity={transitActivityByWard?.get(ward.id)} />
-                    </td>
                     <td className="px-2 py-1.5 text-slate-300">
                       {selected ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                     </td>
                   </tr>
                   {selected && (
                     <tr className="bg-accent-50/60">
-                      <td colSpan={11} className="px-3 py-3">
+                      <td colSpan={10} className="px-3 py-3">
                         <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs text-slate-600">
                           <span>
                             <span className="font-semibold text-slate-500">PM2.5 now:</span>{' '}

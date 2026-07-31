@@ -176,7 +176,6 @@ export default function CommandView() {
                   onWindowHoursChange={setWindowHours}
                   selectedWardId={selectedWardId}
                   onSelectWard={setSelectedWardId}
-                  transitActivityByWard={transitByWard}
                   latestReadingsByWard={latestReadingsByWard}
                 />
 
@@ -202,7 +201,6 @@ export default function CommandView() {
                   <SensorHealthSnapshot rollup={stationRollup} dataSourceTally={dataSourceTally} />
                   <TransportActivityPanel
                     summary={transitState.data}
-                    onRetry={() => transitState.refresh()}
                     highRiskHotspots={highRiskHotspots}
                   />
                 </div>

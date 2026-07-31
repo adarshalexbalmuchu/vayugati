@@ -39,7 +39,7 @@ export default function OperationalSummaryPanel({
           <span className="font-semibold text-slate-800">{metrics.openCount}</span> incidents open,{' '}
           <span className="font-semibold text-slate-800">{metrics.resolvedCount}</span> resolved with a recorded
           outcome
-          {metrics.medianHours != null && (
+          {metrics.medianHours != null && parseFloat(metrics.medianHours.toFixed(1)) > 0 && (
             <>
               {' '}
               &mdash; median time to action{' '}
