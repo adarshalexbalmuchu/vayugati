@@ -22,7 +22,14 @@ export interface Reading {
   pm25: number | null
   pm10: number | null
   no2: number | null
+  so2: number | null
+  co: number | null
+  o3: number | null
   ts: string | null
+  /** Station that produced this reading — null when no station match exists. */
+  station_name: string | null
+  /** Monitoring agency (DPCC / IMD / IITM / CPCB) from stations.agency. */
+  station_agency: string | null
 }
 
 export interface Weather {
@@ -44,7 +51,12 @@ export interface WardSummary {
   pm25: number | null
   pm10: number | null
   no2: number | null
+  so2: number | null
+  co: number | null
+  o3: number | null
   ts: string | null
+  station_name: string | null
+  station_agency: string | null
 }
 
 export interface Report {
@@ -69,12 +81,27 @@ export async function fetchLatestReading(wardId: number): Promise<Reading | null
   if (!ids.length) return null
   const { data } = await supabase
     .from('readings')
-    .select('aqi, pm25, pm10, no2, ts')
+    .select('aqi, pm25, pm10, no2, so2, co, o3, ts, stations(name, agency)')
     .in('station_id', ids)
     .order('ts', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return data ?? null
+  if (!data) return null
+  // readings.station_id → stations.id is a many-to-one FK, so PostgREST
+  // returns stations as a single object, not an array.
+  const st = data.stations as { name: string; agency: string | null } | null
+  return {
+    aqi: data.aqi,
+    pm25: data.pm25,
+    pm10: data.pm10,
+    no2: data.no2,
+    so2: data.so2 ?? null,
+    co: data.co ?? null,
+    o3: data.o3 ?? null,
+    ts: data.ts,
+    station_name: st?.name ?? null,
+    station_agency: st?.agency ?? null,
+  }
 }
 
 export async function fetchCurrentWeather(wardId: number): Promise<Weather | null> {
@@ -112,7 +139,12 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
         pm25: reading?.pm25 ?? null,
         pm10: reading?.pm10 ?? null,
         no2: reading?.no2 ?? null,
+        so2: reading?.so2 ?? null,
+        co: reading?.co ?? null,
+        o3: reading?.o3 ?? null,
         ts: reading?.ts ?? null,
+        station_name: reading?.station_name ?? null,
+        station_agency: reading?.station_agency ?? null,
       }
     }),
   )

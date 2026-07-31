@@ -54,6 +54,16 @@ export default function SelectedWardPanel({
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ward</p>
           <h2 className="text-sm font-semibold text-slate-800">{ward.name}</h2>
+          {ward.station_name && (
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {ward.station_name}
+              {ward.station_agency && (
+                <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 font-medium text-slate-500">
+                  {ward.station_agency}
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <button type="button" onClick={onClose} className="focus-ring rounded p-1 text-slate-400 hover:bg-slate-100">
           <X className="h-3.5 w-3.5" aria-hidden />
@@ -86,6 +96,30 @@ export default function SelectedWardPanel({
           <dd className="font-semibold capitalize text-slate-800">{ward.dominant_source?.replace(/_/g, ' ') ?? 'Unknown'}</dd>
         </div>
       </dl>
+
+      <div className="mt-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current readings</p>
+        <dl className="mt-1 grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
+          {(
+            [
+              { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', value: ward.pm25 },
+              { key: 'pm10', label: 'PM10', unit: 'µg/m³', value: ward.pm10 },
+              { key: 'no2', label: 'NO₂', unit: 'µg/m³', value: ward.no2 },
+              { key: 'so2', label: 'SO₂', unit: 'µg/m³', value: ward.so2 },
+              { key: 'co', label: 'CO', unit: 'mg/m³', value: ward.co },
+              { key: 'o3', label: 'O₃', unit: 'µg/m³', value: ward.o3 },
+            ] as const
+          ).map(({ key, label, unit, value }) => (
+            <div key={key}>
+              <dt className="text-slate-400">{label}</dt>
+              <dd className="font-semibold tabular-nums text-slate-800">
+                {value != null ? value.toFixed(1) : <span className="font-normal text-slate-400">—</span>}
+              </dd>
+              <dd className="text-[10px] text-slate-400">{unit}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
 
       <div className="mt-3">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">PM2.5 forecast status</p>

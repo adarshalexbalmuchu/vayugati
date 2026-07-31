@@ -30,7 +30,12 @@ function ward(overrides: Partial<WardSummary> = {}): WardSummary {
     pm25: null,
     pm10: null,
     no2: null,
+    so2: null,
+    co: null,
+    o3: null,
     ts: null,
+    station_name: null,
+    station_agency: null,
     ...overrides,
   }
 }
