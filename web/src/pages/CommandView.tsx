@@ -22,6 +22,7 @@ import { listActiveTaskDispatches } from '../lib/incidents'
 import { tallyDataSourceConfidence } from '../lib/latestReadingRules'
 import { forecastPollutantFor, type MapPollutant } from '../lib/mapRules'
 import { fetchStationHealth } from '../lib/ops'
+import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
   bucketDispatchSla,
   rollupStationHealth,
@@ -44,6 +45,7 @@ export default function CommandView() {
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [windowHours, setWindowHours] = useState<TimeWindowHours>(36)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
+  const { readingDegraded, forecastDegraded } = useIngestHealth()
 
   const state = useAsync(
     () =>
@@ -122,13 +124,22 @@ export default function CommandView() {
           state.data &&
           (() => {
             const [wards, metrics, dispatchPage, stationHealth, accuracy] = state.data
-            const forecasts = forecastsState.data ?? new Map()
+            const rawForecasts = forecastsState.data ?? new Map()
             const sortedWards = [...wards].sort((a, b) => {
               if (a.aqi === null && b.aqi === null) return 0
               if (a.aqi === null) return 1
               if (b.aqi === null) return -1
               return b.aqi - a.aqi
             })
+            // When data is degraded, suppress derived outputs that imply certainty.
+            // Reading degraded: null out dominant_source so the "Likely Source"
+            // column doesn't show stale attribution as current fact.
+            // Forecast degraded: empty forecasts map causes forecast columns and
+            // PriorityAlertsPanel to show "—" / no alerts rather than stale peaks.
+            const displayWards = readingDegraded
+              ? sortedWards.map((w) => ({ ...w, dominant_source: null as string | null }))
+              : sortedWards
+            const forecasts = forecastDegraded ? new Map() : rawForecasts
             const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
             const slaBuckets = bucketDispatchSla(dispatchPage.rows)
             const sourceMix = tallySourceMix(wards)
@@ -152,7 +163,7 @@ export default function CommandView() {
             return (
               <>
                 <HotspotsRiskTable
-                  wards={sortedWards}
+                  wards={displayWards}
                   forecasts={forecasts}
                   pollutant={pollutant}
                   onPollutantChange={setPollutant}
@@ -164,7 +175,7 @@ export default function CommandView() {
                   latestReadingsByWard={latestReadingsByWard}
                 />
 
-                <DataSourceConfidenceStrip tally={dataSourceTally} transit={transitState.data} />
+                <DataSourceConfidenceStrip />
 
                 <div className="grid items-start gap-4 lg:grid-cols-[1.3fr_1fr]">
                   <PriorityAlertsPanel

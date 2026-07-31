@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { initOfflineSync } from '../lib/offlineSync'
+import DegradedDataBanner from './DegradedDataBanner'
 import MobileBottomNav from './MobileNav'
 import { OfflineBanner } from './ui'
 
@@ -248,6 +249,7 @@ export default function AppShell({
       <div className="flex min-w-0 flex-1 flex-col bg-white text-slate-900">
         <TopBar subtitle={subtitle} headerContent={headerContent} />
         <OfflineBanner />
+        <DegradedDataBanner />
         {secondaryNav ? (
           // Contextual nav: a column on desktop, a scrollable strip on narrow
           // screens. It must never simply disappear — it is the only way to

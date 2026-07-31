@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireRole from './components/RequireRole'
 import { AuthProvider, roleHome, useAuth } from './lib/auth'
+import { IngestHealthProvider } from './contexts/IngestHealthContext'
 import CitizenView from './pages/CitizenView'
 import CommandView from './pages/CommandView'
 import FieldView from './pages/FieldView'
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        <IngestHealthProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -127,6 +129,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </IngestHealthProvider>
       </AuthProvider>
     </ErrorBoundary>
   )
