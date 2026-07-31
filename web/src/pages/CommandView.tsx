@@ -6,6 +6,7 @@ import DataSourceConfidenceStrip from '../components/overview/DataSourceConfiden
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
 import CityStatusStrip from '../components/overview/CityStatusStrip'
+import { CityAqiGauge } from '../components/overview/CityAqiGauge'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import SourceMixPanel from '../components/overview/SourceMixPanel'
 import ResponsePlanningPanel from '../components/overview/ResponsePlanningPanel'
@@ -168,6 +169,10 @@ export default function CommandView() {
 
             return (
               <>
+                {/* Step 1 preview — gauge in isolation with real AQI data */}
+                <div className="flex justify-center py-2">
+                  <CityAqiGauge aqi={sortedWards[0]?.aqi ?? null} />
+                </div>
                 <CityStatusStrip
                   worstWard={sortedWards[0]?.aqi != null ? { name: sortedWards[0].name, aqi: sortedWards[0].aqi } : null}
                   reviewCount={reviewWards.length}
