@@ -18,8 +18,10 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: DATA_GOV_API_KEY
+        sync: false # Required — primary AQ ingest source (CPCB/data.gov.in)
       - key: OPENAQ_API_KEY
-        sync: false
+        sync: false # Optional — fallback for stations CPCB name-match doesn't cover
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: SMTP_HOST

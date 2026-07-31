@@ -16,7 +16,7 @@ limit).
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, TypeVar
 
 from . import config, db
@@ -75,6 +75,56 @@ def categorize_error(e: Exception) -> str:
     if "postgrest" in name or "apierror" in name or "database" in name:
         return "database"
     return "unknown"
+
+
+def cleanup_stuck_jobs() -> int:
+    """On service startup, mark job_runs rows stuck 'running' for >30 min as
+    failed so their unique-index lock is released.
+
+    The partial unique index `(job_name, coalesce(city_code, '')) WHERE
+    status='running'` allows only one concurrent run per job. If the previous
+    process was killed (OOM, SIGKILL, Render rolling restart) while a job was
+    in flight, that row stays 'running' forever — its lock blocks every
+    subsequent attempt, which `run_tracked` silently skips as "lock
+    contention". This is why a crashed service can look healthy (health check
+    passes, scheduler fires on time) but never actually ingests anything.
+
+    Called once at the top of `lifespan()`, before the bootstrap thread
+    starts, so any 'running' row older than 30 minutes is definitively from a
+    previous process, not from a parallel instance of this one.
+
+    Returns the count of rows cleared (normally 0 on a clean restart)."""
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        stuck = (
+            db.client()
+            .table("job_runs")
+            .select("id, job_name")
+            .eq("status", "running")
+            .lt("started_at", cutoff)
+            .execute()
+            .data
+        ) or []
+        if not stuck:
+            return 0
+        ids = [r["id"] for r in stuck]
+        db.client().table("job_runs").update(
+            {
+                "status": "failed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "error_message": "Process crash/restart — marked failed on startup cleanup",
+                "error_category": "unknown",
+            }
+        ).in_("id", ids).execute()
+        log.warning(
+            "startup: cleared %d stuck job_run(s) from prior crash: %s",
+            len(stuck),
+            [r["job_name"] for r in stuck],
+        )
+        return len(stuck)
+    except Exception:
+        log.exception("startup: stuck-job cleanup failed — jobs may still be locked (proceeding anyway)")
+        return 0
 
 
 def run_tracked(job_name: str, fn: Callable[[], T], city_code: str | None = None) -> T | None:

@@ -1,12 +1,24 @@
-"""One ingestion run: OpenAQ station readings + Open-Meteo weather -> Supabase."""
+"""One ingestion run: CPCB/data.gov (primary) + OpenAQ fallback + Open-Meteo -> Supabase.
+
+CPCB/data.gov.in is now the primary AQ source: one paginated API call returns
+the latest reading for every Delhi station in a single round-trip, with no
+per-month quota. OpenAQ remains a fallback for stations that CPCB's name-
+matching doesn't cover, or for deployments where DATA_GOV_API_KEY is unset.
+Open-Meteo weather is independent of either AQ source.
+"""
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from . import aqi, config, db, open_meteo, openaq
+from . import aqi, config, data_gov_cpcb, db, open_meteo, openaq, station_matching
 
 log = logging.getLogger("ingest")
+
+# IST offset for parsing CPCB's 'DD-MM-YYYY HH:MM:SS' last_update strings.
+# The same constant appears in latest_readings.py — one source of truth for
+# the IST convention that CPCB's live feed uses.
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def _hour_floor_utc(ts_iso: str) -> str:
@@ -14,8 +26,80 @@ def _hour_floor_utc(ts_iso: str) -> str:
     return dt.replace(minute=0, second=0, microsecond=0).isoformat()
 
 
-def _ensure_station(entry: dict, wards: dict[str, dict]) -> int | None:
-    """Find or create the stations row for a configured station. Returns station id."""
+def _parse_cpcb_ts(ts_str: str) -> str | None:
+    """Parse CPCB's 'DD-MM-YYYY HH:MM:SS' IST string -> UTC ISO hour floor.
+    Returns None on any parse failure rather than raising."""
+    try:
+        dt = datetime.strptime(ts_str, "%d-%m-%Y %H:%M:%S").replace(tzinfo=_IST)
+        return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[int]]:
+    """Fetch CPCB/data.gov.in latest readings and write matched ones to Supabase.
+
+    One API call per cycle returns all Delhi stations — no per-station loop,
+    no per-month quota. Returns (rows_written, errors, station_ids_covered) so
+    the caller knows which stations the OpenAQ fallback can skip."""
+    records = data_gov_cpcb.fetch_delhi_records()
+    if records is None:
+        msg = "CPCB fetch returned None — DATA_GOV_API_KEY unset or API unavailable"
+        log.warning(msg)
+        return 0, [msg], set()
+
+    cpcb_by_station = data_gov_cpcb.group_by_station(records)
+    rows_written = 0
+    errors: list[str] = []
+    covered: set[int] = set()
+
+    for cpcb_name, entry in cpcb_by_station.items():
+        sid = station_matching.match_station(cpcb_name, match_index)
+        if sid is None:
+            continue  # CPCB station not in our monitored set — skip
+
+        ts_str = entry.get("last_update")
+        if not ts_str:
+            continue
+
+        ts_hour = _parse_cpcb_ts(ts_str)
+        if ts_hour is None:
+            errors.append(f"CPCB bad timestamp for {cpcb_name!r}: {ts_str!r}")
+            continue
+
+        pollutants = entry.get("pollutants") or {}
+        row: dict = {"station_id": sid, "ts": ts_hour}
+        for col in ("pm25", "pm10", "no2", "so2", "co", "o3"):
+            val = (pollutants.get(col) or {}).get("avg")
+            if val is not None and val >= 0:
+                row[col] = val
+
+        if len(row) <= 2:
+            continue  # only station_id + ts, no pollutant data — nothing to write
+
+        computed_aqi = aqi.compute_aqi(row.get("pm25"), row.get("pm10"))
+        if computed_aqi is not None:
+            row["aqi"] = computed_aqi
+
+        try:
+            db.upsert_reading(row)
+            covered.add(sid)
+            rows_written += 1
+        except Exception as e:
+            log.exception("CPCB upsert failed for %r (station_id=%s)", cpcb_name, sid)
+            errors.append(f"cpcb_upsert {cpcb_name}: {e}")
+
+    log.info(
+        "CPCB ingest: %d rows written, %d stations matched out of %d CPCB records, %d errors",
+        rows_written, len(covered), len(cpcb_by_station), len(errors),
+    )
+    return rows_written, errors, covered
+
+
+# ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
+
+def _ensure_station_openaq(entry: dict, wards: dict[str, dict]) -> int | None:
+    """Find or create the stations row for an OpenAQ-configured station."""
     ref = str(entry["openaq_location_id"])
     existing = db.get_station_by_ref(ref)
     if existing:
@@ -32,16 +116,15 @@ def _ensure_station(entry: dict, wards: dict[str, dict]) -> int | None:
     return created["id"]
 
 
-def _ingest_station(entry: dict, wards: dict[str, dict]) -> int:
-    """Pull latest readings for one station. Returns rows upserted."""
-    station_id = _ensure_station(entry, wards)
+def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
+    """Pull latest readings for one station via OpenAQ. Returns rows upserted."""
+    station_id = _ensure_station_openaq(entry, wards)
     if station_id is None:
         return 0
 
     sensors = openaq.get_location(entry["openaq_location_id"])["sensors"]
     latest = openaq.get_latest(entry["openaq_location_id"])
 
-    # group sensor values into one row per hour
     by_hour: dict[str, dict] = {}
     for m in latest:
         param = sensors.get(m["sensor_id"])
@@ -53,53 +136,83 @@ def _ingest_station(entry: dict, wards: dict[str, dict]) -> int:
 
     for ts, values in by_hour.items():
         row = {"station_id": station_id, "ts": ts, **values}
-        row_aqi = aqi.compute_aqi(values.get("pm25"), values.get("pm10"))
-        if row_aqi is not None:
-            row["aqi"] = row_aqi
+        computed_aqi = aqi.compute_aqi(values.get("pm25"), values.get("pm10"))
+        if computed_aqi is not None:
+            row["aqi"] = computed_aqi
         db.upsert_reading(row)
     return len(by_hour)
 
 
+# ── Main entry point ──────────────────────────────────────────────────────────
+
 def run() -> dict:
-    """One full ingestion pass. Safe to run every hour; upserts are idempotent."""
-    summary = {
+    """One full ingestion pass. CPCB/data.gov.in is the primary AQ source;
+    OpenAQ runs only for stations that CPCB's name-match didn't cover (or
+    when DATA_GOV_API_KEY is unset). Open-Meteo weather is independent.
+    Safe to run every hour; all upserts are idempotent."""
+    summary: dict = {
         "started_at": datetime.now(timezone.utc).isoformat(),
-        "stations_configured": 0,
+        "cpcb_rows_written": 0,
+        "openaq_rows_written": 0,
+        "openaq_stations_tried": 0,
         "stations_skipped_no_id": [],
-        "readings_upserted": 0,
         "weather_upserted": 0,
         "errors": [],
     }
 
-    stations = config.load_stations()
-    summary["stations_configured"] = len(stations)
-    wards = db.get_wards()
+    # ── CPCB primary pass ─────────────────────────────────────────────────────
+    all_stations = db.get_all_stations()
+    # Build external_ref -> station_id map for cheap OpenAQ dedup check below
+    ref_to_sid: dict[str, int] = {
+        s["external_ref"]: s["id"]
+        for s in all_stations
+        if s.get("external_ref")
+    }
+    match_index = station_matching.build_match_index(all_stations)
 
-    for entry in stations:
-        if not entry.get("openaq_location_id"):
-            summary["stations_skipped_no_id"].append(entry["ward"])
-            continue
-        try:
-            summary["readings_upserted"] += _ingest_station(entry, wards)
-        except Exception as e:  # one bad station must not kill the run
-            log.exception("station for ward %s failed", entry["ward"])
-            summary["errors"].append(f"{entry['ward']}: {e}")
+    cpcb_rows, cpcb_errors, cpcb_covered = _ingest_from_cpcb(match_index)
+    summary["cpcb_rows_written"] = cpcb_rows
+    summary["errors"].extend(cpcb_errors)
 
-    if summary["stations_skipped_no_id"]:
-        log.warning(
-            "no openaq_location_id configured for: %s — fill stations.yaml",
-            ", ".join(summary["stations_skipped_no_id"]),
-        )
+    # ── OpenAQ fallback ───────────────────────────────────────────────────────
+    # Only runs when OPENAQ_API_KEY is set, and only for stations that CPCB's
+    # name-match didn't cover — avoids burning quota on stations already written.
+    if config.OPENAQ_API_KEY:
+        stations_cfg = config.load_stations()
+        wards = db.get_wards()
+        for entry in stations_cfg:
+            if not entry.get("openaq_location_id"):
+                summary["stations_skipped_no_id"].append(entry["ward"])
+                continue
+            # Skip if CPCB already wrote a reading for this station this cycle
+            sid = ref_to_sid.get(str(entry["openaq_location_id"]))
+            if sid and sid in cpcb_covered:
+                continue
+            summary["openaq_stations_tried"] += 1
+            try:
+                n = _ingest_station_openaq(entry, wards)
+                summary["openaq_rows_written"] += n
+            except Exception as e:
+                log.exception("OpenAQ fallback failed for ward %s", entry["ward"])
+                summary["errors"].append(f"openaq {entry['ward']}: {e}")
+        if summary["stations_skipped_no_id"]:
+            log.warning(
+                "no openaq_location_id configured for: %s — fill stations.yaml",
+                ", ".join(summary["stations_skipped_no_id"]),
+            )
+    else:
+        log.info("OPENAQ_API_KEY not set — OpenAQ fallback skipped")
 
-    for name, ward in wards.items():
+    summary["readings_upserted"] = summary["cpcb_rows_written"] + summary["openaq_rows_written"]
+
+    # ── Open-Meteo weather (independent of AQ source) ─────────────────────────
+    wards_all = db.get_wards()
+    for name, ward in wards_all.items():
         if ward["lat"] is None or ward["lng"] is None:
             continue
         try:
-            # A brief pause between calls — hitting Open-Meteo for all
-            # configured wards back-to-back with zero delay produced real
-            # 429s from a real deployment (Render's shared egress IP), never
-            # reproduced by local/disposable-Postgres testing since that
-            # never made this many real sequential API calls.
+            # Brief pause between calls — back-to-back requests for all wards
+            # produced real 429s from Render's shared egress IP in practice.
             time.sleep(0.5)
             w = open_meteo.get_current(ward["lat"], ward["lng"])
             db.upsert_weather(
