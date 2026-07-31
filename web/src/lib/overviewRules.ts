@@ -111,7 +111,9 @@ export function hotspotStatus(
   if (row.aqi != null && row.readingAgeMinutes != null && row.readingAgeMinutes > HOTSPOT_READING_STALE_MINUTES) {
     return 'stale'
   }
-  if (row.peakExcess != null && row.peakExcess > 0) return 'watch'
+  // Require a meaningful local excess to call it "Trending up" — +2 µg/m³ is
+  // indistinguishable from model noise on a 40 µg/m³ city baseline.
+  if (row.peakExcess != null && row.peakExcess >= 10) return 'watch'
   if (row.aqi != null) return 'stable'
   return 'no_data'
 }

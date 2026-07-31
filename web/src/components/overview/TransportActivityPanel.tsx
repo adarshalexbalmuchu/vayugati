@@ -35,7 +35,25 @@ export default function TransportActivityPanel({
 }) {
   const unavailableReason = summary?.unavailableReason ?? (summary ? null : 'Transit service unreachable')
 
-  if (unavailableReason) return null
+  if (unavailableReason) {
+    return (
+      <Card className="flex min-h-0 flex-col overflow-hidden">
+        <CardHeader
+          title={
+            <span className="flex items-center gap-1.5">
+              <Bus className="h-4 w-4 text-slate-300" aria-hidden />
+              Transport Activity Context
+            </span>
+          }
+          subtitle="Public transport activity via Delhi Open Transit Data."
+        />
+        <div className="px-4 py-3.5 space-y-1.5">
+          <p className="text-xs text-slate-400">Real-time bus data unavailable right now.</p>
+          <p className="text-xs text-slate-400">Context layer only — not proof of emissions or congestion.</p>
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
