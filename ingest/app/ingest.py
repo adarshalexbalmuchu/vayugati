@@ -61,11 +61,27 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
     rows_written = 0
     errors: list[str] = []
     covered: set[int] = set()
+    # Collision guard: tracks station_id -> first CPCB name that matched it
+    # this cycle. If a second CPCB record normalizes to the same station_id,
+    # the second write is skipped and a warning is logged — turns a silent
+    # overwrite (readings AND agency) into a visible signal. If the warning
+    # fires in practice, it confirms case B: two genuinely distinct CPCB
+    # records (e.g. one IMD, one IITM) resolving to the same internal station.
+    first_match: dict[int, str] = {}
 
     for cpcb_name, entry in cpcb_by_station.items():
         sid = station_matching.match_station(cpcb_name, match_index)
         if sid is None:
             continue  # CPCB station not in our monitored set — skip
+
+        if sid in first_match:
+            log.warning(
+                "CPCB collision: station_id=%s matched by both %r and %r — "
+                "skipping second record to avoid silent overwrite",
+                sid, first_match[sid], cpcb_name,
+            )
+            continue
+        first_match[sid] = cpcb_name
 
         ts_str = entry.get("last_update")
         if not ts_str:
