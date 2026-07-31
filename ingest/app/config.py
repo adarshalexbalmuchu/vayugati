@@ -21,13 +21,6 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 # the key.
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 
-# Open-Meteo API key — optional. When set, requests go to the commercial
-# endpoint (customer-api.open-meteo.com) which has separate, much higher
-# rate limits than the free shared endpoint. Get a free non-commercial key
-# at https://open-meteo.com/en/pricing. Without this key the free endpoint
-# is used, which can return 429s on shared egress IPs (e.g. Render Starter).
-OPEN_METEO_API_KEY = os.getenv("OPEN_METEO_API_KEY", "")
-
 # Delhi Open Transit Data (OTD) real-time GTFS-realtime feed key — server-
 # side only, never logged. Same audit-only status as DATA_GOV_API_KEY above
 # (see scripts/audit_delhi_otd.py): not read by any production ingest path,
