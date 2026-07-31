@@ -535,13 +535,17 @@ def run(city_code: str | None = None) -> dict:
         if not city_wards:
             continue
 
+        # Fetch once per city (not per pollutant) — all three pollutants read
+        # the same 30-day window; re-fetching inside the loop triples the
+        # number of large paginated DB requests for no benefit.
+        readings = db.get_readings_history(hours=24 * 30)
+        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
+
         for pollutant in cfg["enabled_pollutants"]:
-            readings = db.get_readings_history(hours=24 * 30)
             readings_df = _hourly_ward_pollutant(readings, pollutant)
             if readings_df.empty:
                 log.info("no %s readings yet for city %s — nothing to forecast", pollutant, city["city_code"])
                 continue
-            weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
             threshold = cfg["pollutant_thresholds"].get(pollutant)
 
             for ward in city_wards:

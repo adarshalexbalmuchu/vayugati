@@ -1,5 +1,6 @@
 """Supabase access. Uses the service_role key: writes bypass RLS by design."""
 
+import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -138,6 +139,11 @@ def upsert_weather(row: dict) -> None:
 
 # ── history reads (for forecast + attribution) ───────────────────────────────
 
+def _is_transient_network_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(s in msg for s in ("disconnected", "connection reset", "connection error", "eof occurred"))
+
+
 def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
     """Fetch every row of a PostgREST query, page by page. PostgREST caps a
     single response at its server-configured max (1000 rows on Supabase by
@@ -145,11 +151,22 @@ def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
     `.limit(50000)` returns at most 1000 rows. This walks `.range()` windows
     until a short page signals the end. Matters now that a ward can have
     thousands of hourly readings in the forecast window (historical backfill);
-    with only a few dozen readings it never surfaced."""
+    with only a few dozen readings it never surfaced.
+
+    Retries each page up to 3 times with exponential backoff on transient
+    Render→Supabase TCP resets ("Server disconnected", ECONNRESET)."""
     out: list[dict] = []
     start = 0
     while True:
-        page = query_builder.range(start, start + page_size - 1).execute().data
+        for attempt in range(3):
+            try:
+                page = query_builder.range(start, start + page_size - 1).execute().data
+                break
+            except Exception as exc:
+                if attempt < 2 and _is_transient_network_error(exc):
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
         out.extend(page)
         if len(page) < page_size:
             break
@@ -163,19 +180,30 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     no2 was added in Phase 8 (unified forecasting, plan §1's "keep NO2 as
     optional/supporting") — additive to the returned dict, so the existing
     attribution.py caller (which only reads pm25/wind_dir) is unaffected.
+
+    station_id → ward_id is resolved in Python from a single small stations
+    query rather than via a PostgREST embedded join on every paginated row —
+    the embed makes each page slow enough to hit Render→Supabase TCP timeouts
+    on a multi-thousand-row result set (30 days × 13 stations × hourly reads).
     """
+    stations = client().table("stations").select("id, ward_id").execute().data or []
+    sid_to_ward: dict[int, int] = {
+        s["id"]: s["ward_id"] for s in stations if s.get("ward_id") is not None
+    }
+    if not sid_to_ward:
+        return []
+
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     rows = _fetch_all(
         client()
         .table("readings")
-        .select("ts, pm25, pm10, no2, aqi, stations(ward_id)")
+        .select("ts, station_id, pm25, pm10, no2, aqi")
         .gte("ts", cutoff)
         .order("ts")
     )
     out = []
     for r in rows:
-        st = r.get("stations")
-        ward_id = st.get("ward_id") if isinstance(st, dict) else (st[0]["ward_id"] if st else None)
+        ward_id = sid_to_ward.get(r["station_id"])
         if ward_id is None:
             continue
         out.append(
