@@ -6,7 +6,7 @@ import DataSourceConfidenceStrip from '../components/overview/DataSourceConfiden
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
 import CityStatusStrip from '../components/overview/CityStatusStrip'
-import { CityAqiGauge } from '../components/overview/CityAqiGauge'
+import CityStatusHero from '../components/overview/CityStatusHero'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import SourceMixPanel from '../components/overview/SourceMixPanel'
 import ResponsePlanningPanel from '../components/overview/ResponsePlanningPanel'
@@ -27,6 +27,8 @@ import { fetchStationHealth } from '../lib/ops'
 import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
   bucketDispatchSla,
+  hotspotStatus,
+  peakWithinWindow,
   rollupStationHealth,
   severeWardsWithin,
   tallySourceMix,
@@ -167,11 +169,31 @@ export default function CommandView() {
               .filter((h): h is { wardName: string; activity: NonNullable<typeof h.activity> } => !!h.activity && h.activity.vehicleCount > 0)
               .map((h) => ({ wardName: h.wardName, vehicleCount: h.activity.vehicleCount }))
 
+            // Trend status for the worst ward — same hotspotStatus() the table uses
+            // per row, computed once here for the hero, not duplicated.
+            const worstWard = displayWards[0] ?? null
+            const worstForecast = worstWard ? forecasts.get(worstWard.id) : null
+            const worstWindowed = worstForecast ? peakWithinWindow(worstForecast, windowHours) : null
+            const worstReadingAge = worstWard?.ts
+              ? (Date.now() - new Date(worstWard.ts).getTime()) / 60_000
+              : null
+            const worstTrend = worstWard
+              ? hotspotStatus(
+                  { hoursToSevere: worstForecast?.hoursToSevere ?? null, peakExcess: worstWindowed?.excess ?? null, aqi: worstWard.aqi, readingAgeMinutes: worstReadingAge },
+                  windowHours,
+                )
+              : null
+
             return (
               <>
-                {/* Step 1 preview — gauge in isolation with real AQI data */}
-                <div className="flex justify-center py-2">
-                  <CityAqiGauge aqi={sortedWards[0]?.aqi ?? null} />
+                {/* Step 2 preview — gauge + ward context */}
+                <div className="flex items-center rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
+                  <CityStatusHero
+                    aqi={worstWard?.aqi ?? null}
+                    wardName={worstWard?.name ?? null}
+                    trend={worstTrend}
+                    source={worstWard?.dominant_source ?? null}
+                  />
                 </div>
                 <CityStatusStrip
                   worstWard={sortedWards[0]?.aqi != null ? { name: sortedWards[0].name, aqi: sortedWards[0].aqi } : null}
