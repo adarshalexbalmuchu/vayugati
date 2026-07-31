@@ -99,26 +99,30 @@ export default function SelectedWardPanel({
 
       <div className="mt-3">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current readings</p>
-        <dl className="mt-1 grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
-          {(
-            [
-              { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', value: ward.pm25 },
-              { key: 'pm10', label: 'PM10', unit: 'µg/m³', value: ward.pm10 },
-              { key: 'no2', label: 'NO₂', unit: 'µg/m³', value: ward.no2 },
-              { key: 'so2', label: 'SO₂', unit: 'µg/m³', value: ward.so2 },
-              { key: 'co', label: 'CO', unit: 'mg/m³', value: ward.co },
-              { key: 'o3', label: 'O₃', unit: 'µg/m³', value: ward.o3 },
-            ] as const
-          ).map(({ key, label, unit, value }) => (
-            <div key={key}>
-              <dt className="text-slate-400">{label}</dt>
-              <dd className="font-semibold tabular-nums text-slate-800">
-                {value != null ? value.toFixed(1) : <span className="font-normal text-slate-400">—</span>}
-              </dd>
-              <dd className="text-[10px] text-slate-400">{unit}</dd>
-            </div>
-          ))}
-        </dl>
+        {ward.station_name ? (
+          <dl className="mt-1 grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
+            {(
+              [
+                { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', value: ward.pm25 },
+                { key: 'pm10', label: 'PM10', unit: 'µg/m³', value: ward.pm10 },
+                { key: 'no2', label: 'NO₂', unit: 'µg/m³', value: ward.no2 },
+                { key: 'so2', label: 'SO₂', unit: 'µg/m³', value: ward.so2 },
+                { key: 'co', label: 'CO', unit: 'mg/m³', value: ward.co },
+                { key: 'o3', label: 'O₃', unit: 'µg/m³', value: ward.o3 },
+              ] as const
+            ).map(({ key, label, unit, value }) => (
+              <div key={key}>
+                <dt className="text-slate-400">{label}</dt>
+                <dd className="font-semibold tabular-nums text-slate-800">
+                  {value != null ? value.toFixed(1) : <span className="font-normal text-slate-400">—</span>}
+                </dd>
+                <dd className="text-[10px] text-slate-400">{unit}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">No monitoring station matched for this ward.</p>
+        )}
       </div>
 
       <div className="mt-3">
