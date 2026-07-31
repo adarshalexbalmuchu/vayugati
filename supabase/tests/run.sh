@@ -38,7 +38,7 @@ start_pg() {
   echo "== starting disposable postgres (${CONTAINER}) on :${PORT}"
   docker run -d --name "$CONTAINER" \
     -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB="$DB" \
-    -p "${PORT}:5432" postgres:15 >/dev/null
+    postgres:15 >/dev/null
   # The official postgres image briefly starts up to run initdb, shuts
   # itself down, then restarts for real — pg_isready can catch that
   # transient window and falsely report ready right before the shutdown
