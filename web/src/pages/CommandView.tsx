@@ -7,6 +7,7 @@ import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
 import CityStatusStrip from '../components/overview/CityStatusStrip'
 import CityStatusHero from '../components/overview/CityStatusHero'
+import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import SourceMixPanel from '../components/overview/SourceMixPanel'
 import ResponsePlanningPanel from '../components/overview/ResponsePlanningPanel'
@@ -186,7 +187,7 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Step 2 preview — gauge + ward context */}
+                {/* Steps 2+3 preview — hero + KPI row as separate blocks before Step 4 merges them */}
                 <div className="flex items-center rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
                   <CityStatusHero
                     aqi={worstWard?.aqi ?? null}
@@ -195,6 +196,13 @@ export default function CommandView() {
                     source={worstWard?.dominant_source ?? null}
                   />
                 </div>
+                <CityKpiRow
+                  reviewCount={reviewWards.length}
+                  openIncidents={metrics.openCount}
+                  coverage={accuracy.coverage.totalPairs > 0
+                    ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
+                    : null}
+                />
                 <CityStatusStrip
                   worstWard={sortedWards[0]?.aqi != null ? { name: sortedWards[0].name, aqi: sortedWards[0].aqi } : null}
                   reviewCount={reviewWards.length}
