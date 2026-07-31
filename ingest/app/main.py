@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -275,7 +276,7 @@ def health():
     result["last_run"] = _last_run
     result["last_intel"] = _last_intel
     result["last_ops"] = _last_ops
-    return result
+    return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
 
 
 @app.post("/run")

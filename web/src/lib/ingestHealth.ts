@@ -30,7 +30,7 @@ export interface IngestHealthResponse {
 
 export async function fetchIngestHealth(): Promise<IngestHealthResponse | null> {
   try {
-    const res = await fetch(`${INGEST_URL}/health`, { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(`${INGEST_URL}/health`, { signal: AbortSignal.timeout(8000), cache: 'no-store' })
     if (!res.ok) return null
     return (await res.json()) as IngestHealthResponse
   } catch {
