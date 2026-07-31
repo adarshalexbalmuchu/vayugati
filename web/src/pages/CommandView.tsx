@@ -5,6 +5,7 @@ import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import DataSourceConfidenceStrip from '../components/overview/DataSourceConfidenceStrip'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
+import CityStatusStrip from '../components/overview/CityStatusStrip'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import SourceMixPanel from '../components/overview/SourceMixPanel'
 import ResponsePlanningPanel from '../components/overview/ResponsePlanningPanel'
@@ -167,6 +168,13 @@ export default function CommandView() {
 
             return (
               <>
+                <CityStatusStrip
+                  worstWard={sortedWards[0]?.aqi != null ? { name: sortedWards[0].name, aqi: sortedWards[0].aqi } : null}
+                  reviewCount={reviewWards.length}
+                  severeInWindowCount={severeAlerts.length}
+                  openIncidents={metrics.openCount}
+                  windowHours={windowHours}
+                />
                 <HotspotsRiskTable
                   wards={displayWards}
                   forecasts={forecasts}
