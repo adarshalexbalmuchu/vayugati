@@ -50,7 +50,7 @@ def get_all_stations() -> list[dict]:
     external_ref is the OpenAQ location id string (or None for stations
     not sourced from OpenAQ). Not scoped to hotspot wards — a station can
     exist without its ward being in the monitored hotspot set."""
-    return client().table("stations").select("id, name, ward_id, external_ref").execute().data
+    return client().table("stations").select("id, name, ward_id, external_ref").neq("is_active", False).execute().data
 
 
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:

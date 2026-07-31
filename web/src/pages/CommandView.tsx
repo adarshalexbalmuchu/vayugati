@@ -157,7 +157,7 @@ export default function CommandView() {
                 .filter((r) => r.wardId != null)
                 .map((r) => [r.wardId as number, r]),
             )
-            const dataSourceTally = latestReadingsState.data ? tallyDataSourceConfidence(latestReadingsState.data) : null
+            const dataSourceTally = latestReadingsState.data?.length ? tallyDataSourceConfidence(latestReadingsState.data) : null
             // Cross-reference two already-fetched summaries (severe/watch
             // wards x real nearby transit activity) - no new fetch, nothing
             // fabricated when either summary hasn't loaded.

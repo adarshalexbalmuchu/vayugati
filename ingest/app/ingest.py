@@ -210,7 +210,8 @@ def run() -> dict:
         wards = db.get_wards()
         for entry in stations_cfg:
             if not entry.get("openaq_location_id"):
-                summary["stations_skipped_no_id"].append(entry["ward"])
+                if not entry.get("known_no_station"):
+                    summary["stations_skipped_no_id"].append(entry["ward"])
                 continue
             # Skip if CPCB already wrote a reading for this station this cycle
             sid = ref_to_sid.get(str(entry["openaq_location_id"]))

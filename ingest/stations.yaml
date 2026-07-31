@@ -48,7 +48,8 @@ stations:
                                 # OpenAQ id frozen since 2022-10-16. Repointed to the
                                 # live id 2026-07-21; same physical station/coords.
   - ward: Mayapuri
-    openaq_location_id: null   # UNRESOLVED, not a data gap: Mayapuri has no official
+    openaq_location_id: null
+    known_no_station: true     # UNRESOLVED, not a data gap: Mayapuri has no official
                                 # CPCB/DPCC/IMD CAAQMS station at all (absent from the
                                 # 79-row CPCB reference list) and no matching OpenAQ
                                 # location exists in the Delhi/NCR search. Confirmed
