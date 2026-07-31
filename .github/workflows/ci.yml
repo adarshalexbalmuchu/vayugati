@@ -111,7 +111,9 @@ jobs:
           # (catching genuine schema drift).
           attempt=1
           max_attempts=5
-          until npx --yes supabase gen types typescript --db-url "postgresql://postgres:postgres@localhost:55432/vayugati" > /tmp/generated.ts 2>/tmp/gen-types.err; do
+          CONTAINER="${VG_TEST_CONTAINER:-vg-pg}"
+          DB_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER")
+          until npx --yes supabase gen types typescript --db-url "postgresql://postgres:postgres@${DB_IP}:5432/vayugati" > /tmp/generated.ts 2>/tmp/gen-types.err; do
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "::error::supabase gen types failed after $max_attempts attempts:"
               cat /tmp/gen-types.err
