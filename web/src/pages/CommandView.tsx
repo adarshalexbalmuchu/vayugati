@@ -111,7 +111,7 @@ export default function CommandView() {
         </div>
       }
     >
-      <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50 p-3 sm:p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto bg-sky-50 p-3 sm:p-4">
         {state.loading || forecastsState.loading ? (
           <div className="space-y-4">
             <Skeleton className="h-72 w-full rounded-xl" />

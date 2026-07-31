@@ -18,13 +18,15 @@ export function CityAqiGauge({ aqi, size = 160 }: { aqi: number | null; size?: n
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 120 120" className="absolute inset-0 h-full w-full" aria-hidden>
-        {/* Gauge face */}
-        <circle cx={CX} cy={CY} r={58} fill="#0f172a" />
-        {/* Unfilled track */}
+        {/* Gauge face — ink.800 (#341F14) so the brown brand warm dark sits
+            behind the AQI arc rather than the default near-black */}
+        <circle cx={CX} cy={CY} r={58} fill="#341F14" />
+        {/* Unfilled track — ink.600 (#6B4A2A), lighter than the face so the
+            empty portion of the arc reads as a groove, not a void */}
         <circle
           cx={CX} cy={CY} r={R}
           fill="none"
-          stroke="#1e293b"
+          stroke="#6B4A2A"
           strokeWidth={SW}
           strokeLinecap="round"
           strokeDasharray={`${TRACK_LEN} ${CIRCUMFERENCE - TRACK_LEN}`}
