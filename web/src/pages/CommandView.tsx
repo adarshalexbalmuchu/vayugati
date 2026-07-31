@@ -193,12 +193,14 @@ export default function CommandView() {
                 {/* Hero area: gauge + ward context left, KPI cards right — single card */}
                 <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-8">
-                    <CityStatusHero
-                      aqi={worstWard?.aqi ?? null}
-                      wardName={worstWard?.name ?? null}
-                      trend={worstTrend}
-                      source={worstWard?.dominant_source ?? null}
-                    />
+                    <div className="lg:basis-[42%] lg:shrink-0">
+                      <CityStatusHero
+                        aqi={worstWard?.aqi ?? null}
+                        wardName={worstWard?.name ?? null}
+                        trend={worstTrend}
+                        source={worstWard?.dominant_source ?? null}
+                      />
+                    </div>
                     <div className="h-px w-full bg-slate-100 lg:h-16 lg:w-px lg:flex-shrink-0" aria-hidden />
                     <div className="flex-1 min-w-0">
                       <CityKpiRow
