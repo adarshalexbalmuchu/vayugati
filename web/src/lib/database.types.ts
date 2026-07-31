@@ -1887,6 +1887,7 @@ export type Database = {
       }
       stations: {
         Row: {
+          agency: string | null
           created_at: string | null
           external_ref: string | null
           id: number
@@ -1899,6 +1900,7 @@ export type Database = {
           ward_id: number | null
         }
         Insert: {
+          agency?: string | null
           created_at?: string | null
           external_ref?: string | null
           id?: number
@@ -1911,6 +1913,7 @@ export type Database = {
           ward_id?: number | null
         }
         Update: {
+          agency?: string | null
           created_at?: string | null
           external_ref?: string | null
           id?: number
