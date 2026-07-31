@@ -10,7 +10,7 @@ function KpiCard({
   valueColor?: string
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-1.5 rounded-xl bg-slate-900 px-4 py-3.5">
+    <div className="flex flex-col gap-1.5 rounded-xl bg-slate-900 px-4 py-3.5">
       <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
         {label}
       </span>
@@ -45,7 +45,7 @@ export default function CityKpiRow({
     : 'text-status-warning'
 
   return (
-    <div className="flex gap-3">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <KpiCard
         label="Wards flagged"
         value={reviewCount}

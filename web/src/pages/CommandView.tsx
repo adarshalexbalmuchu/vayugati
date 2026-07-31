@@ -5,7 +5,6 @@ import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import DataSourceConfidenceStrip from '../components/overview/DataSourceConfidenceStrip'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
-import CityStatusStrip from '../components/overview/CityStatusStrip'
 import CityStatusHero from '../components/overview/CityStatusHero'
 import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
@@ -185,31 +184,31 @@ export default function CommandView() {
                 )
               : null
 
+            const coverageProp = accuracy.coverage.totalPairs > 0
+              ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
+              : null
+
             return (
               <>
-                {/* Steps 2+3 preview — hero + KPI row as separate blocks before Step 4 merges them */}
-                <div className="flex items-center rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
-                  <CityStatusHero
-                    aqi={worstWard?.aqi ?? null}
-                    wardName={worstWard?.name ?? null}
-                    trend={worstTrend}
-                    source={worstWard?.dominant_source ?? null}
-                  />
+                {/* Hero area: gauge + ward context left, KPI cards right — single card */}
+                <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-8">
+                    <CityStatusHero
+                      aqi={worstWard?.aqi ?? null}
+                      wardName={worstWard?.name ?? null}
+                      trend={worstTrend}
+                      source={worstWard?.dominant_source ?? null}
+                    />
+                    <div className="h-px w-full bg-slate-100 lg:h-16 lg:w-px lg:flex-shrink-0" aria-hidden />
+                    <div className="flex-1 min-w-0">
+                      <CityKpiRow
+                        reviewCount={reviewWards.length}
+                        openIncidents={metrics.openCount}
+                        coverage={coverageProp}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <CityKpiRow
-                  reviewCount={reviewWards.length}
-                  openIncidents={metrics.openCount}
-                  coverage={accuracy.coverage.totalPairs > 0
-                    ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
-                    : null}
-                />
-                <CityStatusStrip
-                  worstWard={sortedWards[0]?.aqi != null ? { name: sortedWards[0].name, aqi: sortedWards[0].aqi } : null}
-                  reviewCount={reviewWards.length}
-                  severeInWindowCount={severeAlerts.length}
-                  openIncidents={metrics.openCount}
-                  windowHours={windowHours}
-                />
                 <HotspotsRiskTable
                   wards={displayWards}
                   forecasts={forecasts}
