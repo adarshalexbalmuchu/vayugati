@@ -43,11 +43,13 @@ def get_active_cities(city_code: str | None = None) -> list[dict]:
 
 
 def get_all_stations() -> list[dict]:
-    """[{id, name, ward_id}, ...] - every station, for the CPCB/data.gov
-    latest-reading reconciliation (station_matching.py + latest_readings.py).
-    Not scoped to hotspot wards like get_hotspot_wards() - a station can
+    """[{id, name, ward_id, external_ref}, ...] - every station, for the
+    CPCB/data.gov latest-reading reconciliation (station_matching.py +
+    latest_readings.py) and the ingest OpenAQ-fallback dedup check.
+    external_ref is the OpenAQ location id string (or None for stations
+    not sourced from OpenAQ). Not scoped to hotspot wards — a station can
     exist without its ward being in the monitored hotspot set."""
-    return client().table("stations").select("id, name, ward_id").execute().data
+    return client().table("stations").select("id, name, ward_id, external_ref").execute().data
 
 
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:

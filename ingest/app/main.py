@@ -30,7 +30,7 @@ from . import (
     transit_activity,
 )
 from .health_checks import compute_health
-from .logging_utils import run_tracked
+from .logging_utils import cleanup_stuck_jobs, run_tracked
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 # httpx logs the full request URL (including query-string params) at INFO -
@@ -194,6 +194,10 @@ def run_cpcb_reconcile() -> list[dict]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.require_env()
+    # Clear any job_runs rows that are stuck 'running' from a previous process
+    # crash. Must run before the scheduler or bootstrap start so the lock is
+    # released before the first ingest attempt.
+    cleanup_stuck_jobs()
     scheduler = BackgroundScheduler(timezone="UTC")
     # minute 10 each hour: CPCB/DPCC stations publish on the hour, give them a head start
     scheduler.add_job(run_ingest, "cron", minute=10)

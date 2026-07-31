@@ -71,10 +71,14 @@ def require_env() -> None:
         for name, val in [
             ("SUPABASE_URL", SUPABASE_URL),
             ("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY),
-            ("OPENAQ_API_KEY", OPENAQ_API_KEY),
+            ("DATA_GOV_API_KEY", DATA_GOV_API_KEY),
         ]
         if not val
     ]
+    # OPENAQ_API_KEY is now optional — it only runs as a fallback for stations
+    # that CPCB's name-match doesn't cover. A deployment with only
+    # DATA_GOV_API_KEY is fully functional; OPENAQ_API_KEY is kept for
+    # stations that may fall through (e.g. Mayapuri, which has no CPCB match).
     if missing:
         raise RuntimeError(
             f"Missing env vars: {', '.join(missing)}. Copy .env.example to .env and fill it in."
