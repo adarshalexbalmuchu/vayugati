@@ -381,7 +381,7 @@ export default function OpsView() {
 
   return (
     <AppShell subtitle="Operations & pilot admin">
-      <div className="mx-auto w-full max-w-5xl flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3 sm:p-4">
+      <div className="mx-auto w-full max-w-5xl flex-1 space-y-3 overflow-y-auto bg-sky-50 p-3 sm:p-4">
         <SystemHealthSection />
 
         {citiesState.loading ? (

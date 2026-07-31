@@ -137,7 +137,7 @@ export default function TasksView() {
 
   return (
     <AppShell subtitle="Tasks">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-slate-50 p-3 sm:p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sky-50 p-3 sm:p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
           <div>
             <h1 className="text-base font-bold text-slate-900">Tasks / Dispatch</h1>

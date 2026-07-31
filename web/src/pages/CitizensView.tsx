@@ -91,7 +91,7 @@ export default function CitizensView() {
 
   return (
     <AppShell subtitle="Citizens">
-      <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50 p-3 sm:p-4">
+      <div className="flex-1 space-y-4 overflow-y-auto bg-sky-50 p-3 sm:p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
           <div>
             <h1 className="text-base font-bold text-slate-900">Citizen Reports</h1>
