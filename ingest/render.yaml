@@ -22,6 +22,8 @@ services:
         sync: false # Required — primary AQ ingest source (CPCB/data.gov.in)
       - key: OPENAQ_API_KEY
         sync: false # Optional — fallback for stations CPCB name-match doesn't cover
+      - key: OPEN_METEO_API_KEY
+        sync: false # Optional — switches to commercial endpoint (customer-api.open-meteo.com) with higher rate limits; free key at open-meteo.com/en/pricing
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: SMTP_HOST
