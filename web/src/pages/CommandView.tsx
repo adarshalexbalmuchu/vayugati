@@ -45,7 +45,7 @@ export default function CommandView() {
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [windowHours, setWindowHours] = useState<TimeWindowHours>(36)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
-  const { readingDegraded, forecastDegraded } = useIngestHealth()
+  const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh } = useIngestHealth()
 
   const state = useAsync(
     () =>
@@ -131,15 +131,20 @@ export default function CommandView() {
               if (b.aqi === null) return -1
               return b.aqi - a.aqi
             })
-            // When data is degraded, suppress derived outputs that imply certainty.
-            // Reading degraded: null out dominant_source so the "Likely Source"
-            // column doesn't show stale attribution as current fact.
-            // Forecast degraded: empty forecasts map causes forecast columns and
-            // PriorityAlertsPanel to show "—" / no alerts rather than stale peaks.
-            const displayWards = readingDegraded
+            // Suppress derived outputs unless health has loaded AND confirmed fresh.
+            // healthLoaded gates the initial-load window (avoids a flash where
+            // data renders for ~8s looking degraded before the health check settles).
+            // After that window closes, only confirmed-ok lifts suppression —
+            // health=null (endpoint unreachable) is treated as "unknown" and keeps
+            // outputs suppressed, not as "ok" (which would rebuild the original bug:
+            // Wazirpur showing "230 · Likely source: industrial" with full confidence
+            // despite 9-day staleness simply because the health check timed out).
+            const suppressReading = healthLoaded && !readingConfirmedFresh
+            const suppressForecast = healthLoaded && !forecastConfirmedFresh
+            const displayWards = suppressReading
               ? sortedWards.map((w) => ({ ...w, dominant_source: null as string | null }))
               : sortedWards
-            const forecasts = forecastDegraded ? new Map() : rawForecasts
+            const forecasts = suppressForecast ? new Map() : rawForecasts
             const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
             const slaBuckets = bucketDispatchSla(dispatchPage.rows)
             const sourceMix = tallySourceMix(wards)
