@@ -204,8 +204,12 @@ async def lifespan(app: FastAPI):
     # Without this, a job_runs row orphaned by a mid-run crash (killed before
     # complete_job_run/fail_job_run) sits at status='running' until the next
     # deploy, silently skipping that job's every future run via lock_contention
-    # for however long this process happens to stay up.
-    scheduler.add_job(cleanup_stuck_jobs, "interval", minutes=10)
+    # for however long this process happens to stay up. Uses a larger 60-minute
+    # cutoff than the startup call's default 30 — once this process's own jobs
+    # are running, "definitely orphaned" can no longer be inferred from
+    # ordering alone, so the margin has to outlast every job's realistic
+    # worst case instead (see cleanup_stuck_jobs' own docstring).
+    scheduler.add_job(cleanup_stuck_jobs, "interval", minutes=10, kwargs={"stale_after_minutes": 60})
     # minute 10 each hour: CPCB/DPCC stations publish on the hour, give them a head start
     scheduler.add_job(run_ingest, "cron", minute=10)
     # minute 25: recompute forecast + attribution on the freshly-ingested data

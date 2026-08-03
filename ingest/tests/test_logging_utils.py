@@ -4,6 +4,7 @@ re-raised), and a bookkeeping failure (still runs fn, doesn't lose the
 job). All against a fully mocked db.client() — no live Supabase."""
 
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -99,3 +100,78 @@ def test_categorize_error_maps_common_exception_types():
     assert logging_utils.categorize_error(TimeoutError("x")) == "timeout"
     assert logging_utils.categorize_error(ConnectionError("x")) == "network"
     assert logging_utils.categorize_error(RuntimeError("x")) == "unknown"
+
+
+class _FakeTableQuery:
+    """Captures the .lt() cutoff and .update() payload cleanup_stuck_jobs sends,
+    for a single table().select()/update() chain."""
+
+    def __init__(self, rows, captured):
+        self._rows = rows
+        self._captured = captured
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def lt(self, _col, cutoff):
+        self._captured["cutoff"] = cutoff
+        return self
+
+    def update(self, payload):
+        self._captured["update_payload"] = payload
+        return self
+
+    def in_(self, *_a, **_k):
+        return self
+
+    def execute(self):
+        return _FakeResponse(self._rows)
+
+
+class _FakeTableClient:
+    def __init__(self, rows, captured):
+        self._rows = rows
+        self._captured = captured
+
+    def table(self, _name):
+        return _FakeTableQuery(self._rows, self._captured)
+
+
+def test_cleanup_stuck_jobs_default_cutoff_is_30_minutes(monkeypatch):
+    captured = {}
+    fake = _FakeTableClient([{"id": 1, "job_name": "escalation"}], captured)
+    monkeypatch.setattr(logging_utils.db, "client", lambda: fake)
+
+    cleared = logging_utils.cleanup_stuck_jobs()
+
+    assert cleared == 1
+    cutoff = datetime.fromisoformat(captured["cutoff"])
+    expected = datetime.now(timezone.utc) - timedelta(minutes=30)
+    assert abs((cutoff - expected).total_seconds()) < 5
+    assert "30" in captured["update_payload"]["error_message"]
+
+
+def test_cleanup_stuck_jobs_honors_custom_stale_after_minutes(monkeypatch):
+    captured = {}
+    fake = _FakeTableClient([{"id": 2, "job_name": "ingest"}], captured)
+    monkeypatch.setattr(logging_utils.db, "client", lambda: fake)
+
+    cleared = logging_utils.cleanup_stuck_jobs(stale_after_minutes=60)
+
+    assert cleared == 1
+    cutoff = datetime.fromisoformat(captured["cutoff"])
+    expected = datetime.now(timezone.utc) - timedelta(minutes=60)
+    assert abs((cutoff - expected).total_seconds()) < 5
+    assert "60" in captured["update_payload"]["error_message"]
+
+
+def test_cleanup_stuck_jobs_no_stuck_rows_is_a_noop(monkeypatch):
+    captured = {}
+    fake = _FakeTableClient([], captured)
+    monkeypatch.setattr(logging_utils.db, "client", lambda: fake)
+
+    assert logging_utils.cleanup_stuck_jobs() == 0
+    assert "update_payload" not in captured  # never touches .update() with nothing stuck
