@@ -77,25 +77,35 @@ def categorize_error(e: Exception) -> str:
     return "unknown"
 
 
-def cleanup_stuck_jobs() -> int:
-    """On service startup, mark job_runs rows stuck 'running' for >30 min as
-    failed so their unique-index lock is released.
+def cleanup_stuck_jobs(stale_after_minutes: int = 30) -> int:
+    """Mark job_runs rows stuck 'running' for longer than `stale_after_minutes`
+    as failed so their unique-index lock is released.
 
     The partial unique index `(job_name, coalesce(city_code, '')) WHERE
-    status='running'` allows only one concurrent run per job. If the previous
-    process was killed (OOM, SIGKILL, Render rolling restart) while a job was
-    in flight, that row stays 'running' forever — its lock blocks every
+    status='running'` allows only one concurrent run per job. If a process
+    was killed (OOM, SIGKILL, Render rolling restart) while a job was in
+    flight, that row stays 'running' forever — its lock blocks every
     subsequent attempt, which `run_tracked` silently skips as "lock
     contention". This is why a crashed service can look healthy (health check
     passes, scheduler fires on time) but never actually ingests anything.
 
-    Called once at the top of `lifespan()`, before the bootstrap thread
-    starts, so any 'running' row older than 30 minutes is definitively from a
-    previous process, not from a parallel instance of this one.
+    Called twice, with different safety margins for different guarantees:
 
-    Returns the count of rows cleared (normally 0 on a clean restart)."""
+    - Once at the top of `lifespan()`, before the bootstrap thread starts,
+      with the default 30-minute cutoff — safe because nothing in *this*
+      process has run yet, so any 'running' row is definitely orphaned by a
+      previous one, regardless of how long that prior job normally takes.
+    - On a recurring interval thereafter (see `main.py`), with a larger
+      cutoff — that ordering guarantee no longer holds once this process's
+      own jobs are running, so the cutoff must instead safely outlast every
+      job's realistic worst-case duration (all of them are bounded,
+      network-timeout-limited operations - see ingest.py/notifications.py/
+      dispatch.py - so this is a generous, not a tight, margin) to avoid
+      reaping a run that is still genuinely in progress.
+
+    Returns the count of rows cleared (normally 0)."""
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=stale_after_minutes)).isoformat()
         stuck = (
             db.client()
             .table("job_runs")
@@ -112,18 +122,19 @@ def cleanup_stuck_jobs() -> int:
             {
                 "status": "failed",
                 "completed_at": datetime.now(timezone.utc).isoformat(),
-                "error_message": "Process crash/restart — marked failed on startup cleanup",
+                "error_message": f"Running >{stale_after_minutes} min — cleared as stuck/orphaned",
                 "error_category": "unknown",
             }
         ).in_("id", ids).execute()
         log.warning(
-            "startup: cleared %d stuck job_run(s) from prior crash: %s",
+            "cleared %d stuck job_run(s) (running >%d min): %s",
             len(stuck),
+            stale_after_minutes,
             [r["job_name"] for r in stuck],
         )
         return len(stuck)
     except Exception:
-        log.exception("startup: stuck-job cleanup failed — jobs may still be locked (proceeding anyway)")
+        log.exception("stuck-job cleanup failed — jobs may still be locked (proceeding anyway)")
         return 0
 
 
