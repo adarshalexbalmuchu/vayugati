@@ -200,6 +200,12 @@ async def lifespan(app: FastAPI):
     # released before the first ingest attempt.
     cleanup_stuck_jobs()
     scheduler = BackgroundScheduler(timezone="UTC")
+    # every 10 minutes: re-run the same stuck-row cleanup, not just at startup.
+    # Without this, a job_runs row orphaned by a mid-run crash (killed before
+    # complete_job_run/fail_job_run) sits at status='running' until the next
+    # deploy, silently skipping that job's every future run via lock_contention
+    # for however long this process happens to stay up.
+    scheduler.add_job(cleanup_stuck_jobs, "interval", minutes=10)
     # minute 10 each hour: CPCB/DPCC stations publish on the hour, give them a head start
     scheduler.add_job(run_ingest, "cron", minute=10)
     # minute 25: recompute forecast + attribution on the freshly-ingested data
