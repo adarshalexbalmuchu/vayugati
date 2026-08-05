@@ -13,7 +13,16 @@ const SEVERITY_TONE: Record<Severity, string> = {
 /** Deliberately thin - the Incidents page's own detail workspace
  *  (IncidentStatusHeader/tabs) is the authoritative place for the full
  *  picture. This is a map-context preview with a prominent link out. */
-export default function SelectedIncidentPanel({ incident, onClose }: { incident: Incident; onClose: () => void }) {
+export default function SelectedIncidentPanel({
+  incident,
+  nearestStation = null,
+  onClose,
+}: {
+  incident: Incident
+  /** Nearest AQ station to this incident's location - null when unavailable. */
+  nearestStation?: { name: string; distanceMeters: number } | null
+  onClose: () => void
+}) {
   const severity = (incident.severity ?? null) as Severity | null
 
   return (
@@ -57,6 +66,19 @@ export default function SelectedIncidentPanel({ incident, onClose }: { incident:
           <dt className="text-slate-400">Status</dt>
           <dd className="font-semibold capitalize text-slate-800">{incident.status.replace(/_/g, ' ')}</dd>
         </div>
+        {nearestStation != null && (
+          <div className="col-span-2">
+            <dt className="text-slate-400">Nearest AQ station</dt>
+            <dd className="font-semibold text-slate-800">
+              {nearestStation.name}{' '}
+              <span className="font-normal text-slate-400">
+                ({nearestStation.distanceMeters < 1000
+                  ? `${Math.round(nearestStation.distanceMeters)} m`
+                  : `${(nearestStation.distanceMeters / 1000).toFixed(1)} km`})
+              </span>
+            </dd>
+          </div>
+        )}
       </dl>
 
       <Link

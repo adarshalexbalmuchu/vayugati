@@ -527,6 +527,18 @@ export default function MapPage() {
         })()
       : undefined
 
+  const nearbyIncidentsCount = useMemo(() => {
+    if (!selectedStation?.wardName) return 0
+    return incidents.filter((i) => i.ward_name === selectedStation.wardName).length
+  }, [selectedStation, incidents])
+
+  const incidentNearestStation = useMemo(() => {
+    if (!selectedIncident) return null
+    const result = nearestStationTo(selectedIncident.lat ?? null, selectedIncident.lng ?? null, stations)
+    if (!result) return null
+    return { name: result.station.name, distanceMeters: result.distanceMeters }
+  }, [selectedIncident, stations])
+
   // Enrichment for a clicked ward-boundary polygon (one of the 250 non-
   // hotspot municipal wards, or NDMC/Cantonment) - real station/incident/
   // forecast context where it exists, honest null/"no data" where it
@@ -690,10 +702,11 @@ export default function MapPage() {
                     forecastPollutantLabel={MAP_POLLUTANT_LABEL[forecastPollutant]}
                     latestForecastRun={latestForecastRunState.data}
                     latestForecastRunLoading={latestForecastRunState.loading}
+                    nearbyIncidentsCount={nearbyIncidentsCount}
                     onClose={() => setSelection(null)}
                   />
                 ) : selectedIncident ? (
-                  <SelectedIncidentPanel incident={selectedIncident} onClose={() => setSelection(null)} />
+                  <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
                 ) : selection?.kind === 'wardBoundary' && wardBoundaryDetail ? (
                   <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
                 ) : (

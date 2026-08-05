@@ -1,4 +1,5 @@
-import { X } from 'lucide-react'
+import { ArrowUpRight, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import type { ForecastRunRow } from '../../lib/incidents'
 import { MAP_POLLUTANT_LABEL, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
@@ -39,6 +40,7 @@ export default function SelectedStationPanel({
   forecastPollutantLabel,
   latestForecastRun,
   latestForecastRunLoading,
+  nearbyIncidentsCount = 0,
   onClose,
 }: {
   station: SelectedStation
@@ -53,6 +55,8 @@ export default function SelectedStationPanel({
    *  PredictedIncidentPanel.tsx already uses, just surfaced here too. */
   latestForecastRun: ForecastRunRow | null | undefined
   latestForecastRunLoading: boolean
+  /** Active incidents linked to this station's ward — 0 when none or ward unknown. */
+  nearbyIncidentsCount?: number
   onClose: () => void
 }) {
   return (
@@ -154,6 +158,16 @@ export default function SelectedStationPanel({
           <p className="mt-1 text-xs text-slate-400">No forecast validation record for this station's ward yet.</p>
         )}
       </div>
+
+      {station.wardName && (
+        <Link
+          to={`/incidents?ward=${encodeURIComponent(station.wardName)}`}
+          className="focus-ring mt-4 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          {nearbyIncidentsCount > 0 ? `${nearbyIncidentsCount} active incident${nearbyIncidentsCount > 1 ? 's' : ''} in ward` : 'No active incidents in ward'}
+          <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+        </Link>
+      )}
     </div>
   )
 }
