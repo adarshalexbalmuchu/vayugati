@@ -29,6 +29,7 @@ import {
   type WardSummary,
 } from '../lib/data'
 import type { Severity, SourceCategory } from '../lib/incidentRules'
+import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
   fetchLatestForecastRun,
   listActiveTaskDispatches,
@@ -104,6 +105,24 @@ export default function MapPage() {
   const [selection, setSelection] = useState<Selection>(null)
   const [resetToken, setResetToken] = useState(0)
 
+  const { healthLoaded, forecastConfirmedFresh } = useIngestHealth()
+  const forecastSuppressed = healthLoaded && !forecastConfirmedFresh
+
+  // When forecast becomes unavailable, snap timeMode back to 'now' so the
+  // map doesn't stay on a forecast time horizon that has no data.
+  useEffect(() => {
+    if (forecastSuppressed && timeMode !== 'now') setTimeMode('now')
+  }, [forecastSuppressed, timeMode])
+
+  // Escape key clears any active selection.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelection(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   // Warm the browser's cache for every basemap the user hasn't picked yet,
   // so a later manual switch is instant instead of paying its real
   // first-visit network cost (measured: 1.6-2.5s even on a fast connection
@@ -147,7 +166,7 @@ export default function MapPage() {
   // one-shot fetch).
   const forecastPollutant = forecastPollutantFor(pollutant)
   const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant])
-  const forecasts = forecastsState.data ?? EMPTY_FORECASTS
+  const forecasts = (forecastSuppressed ? new Map() : forecastsState.data) ?? EMPTY_FORECASTS
 
   // Ward boundary polygons are ~8MB of real OSM-derived GeoJSON across all
   // 250+ wards (measured) - loaded separately from the rest of the page's
@@ -224,6 +243,21 @@ export default function MapPage() {
   const severeWardIds = useMemo(() => new Set(severeWards.map((s) => s.wardId)), [severeWards])
   const sourceMix = useMemo(() => tallySourceMix(wards), [wards])
   const healthRollup = useMemo(() => rollupStationHealth(stationHealth), [stationHealth])
+
+  const latestStationReadingAgeMinutes = useMemo(() => {
+    const ages = stationHealth
+      .filter((s) => s.latest_reading_age_minutes != null)
+      .map((s) => s.latest_reading_age_minutes as number)
+    return ages.length > 0 ? Math.min(...ages) : null
+  }, [stationHealth])
+
+  const wardsWithCoverage = useMemo(() => wards.filter((w) => w.aqi != null).length, [wards])
+
+  const highestAqiWard = useMemo(() => {
+    const sorted = [...wards].filter((w) => w.aqi != null).sort((a, b) => (b.aqi ?? 0) - (a.aqi ?? 0))
+    const top = sorted[0]
+    return top ? { name: top.name, aqi: top.aqi as number } : null
+  }, [wards])
 
   // ── marker construction ──────────────────────────────────────────────────
   const wardMarkers: MapMarker[] = useMemo(
@@ -522,7 +556,7 @@ export default function MapPage() {
   return (
     <AppShell subtitle="Map">
       <div className="flex min-h-0 flex-1 flex-col">
-        <MapPageHeader stale={state.stale} fetchedAt={state.fetchedAt} refreshing={state.refreshing} onRefresh={refreshAll} />
+        <MapPageHeader stale={state.stale} fetchedAt={state.fetchedAt} refreshing={state.refreshing} onRefresh={refreshAll} latestStationReadingAgeMinutes={latestStationReadingAgeMinutes} />
 
         {state.loading ? (
           <div className="flex-1 p-4">
@@ -544,8 +578,7 @@ export default function MapPage() {
               severityFilter={severityFilter}
               onSeverityFilterChange={setSeverityFilter}
               onResetView={() => setResetToken((t) => t + 1)}
-              onRefresh={refreshAll}
-              refreshing={state.refreshing}
+              forecastSuppressed={forecastSuppressed}
             />
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 flex-1">
@@ -571,8 +604,9 @@ export default function MapPage() {
                     dispatchZonesAvailable={dispatchIncidentIds.size > 0}
                     citizenReportsAvailable={reports.length > 0}
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard.length ?? 0) > 0}
+                    forecastSuppressed={forecastSuppressed}
                   />
-                  <MapLegend sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} />
+                  <MapLegend sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} />
                 </div>
                 <BasemapSwitcher mode={basemap} onChange={setBasemap} />
               </div>
@@ -580,8 +614,6 @@ export default function MapPage() {
               <div className="w-80 flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
                 {selection == null ? (
                   <SpatialSummaryPanel
-                    municipalBoundaryCount={wardBoundariesState.loading ? null : wardBoundaries.length}
-                    hotspotWardCount={wards.length}
                     stationsTotal={healthRollup.total}
                     stationsFresh={healthRollup.active - healthRollup.stale}
                     stationsStale={healthRollup.stale}
@@ -589,6 +621,9 @@ export default function MapPage() {
                     forecastAlerts={severeWards.length}
                     dominantSource={sourceMix[0] ?? null}
                     locationsUnavailable={locationsUnavailable}
+                    forecastSuppressed={forecastSuppressed}
+                    highestAqiWard={highestAqiWard}
+                    wardsWithCoverage={wardsWithCoverage}
                   />
                 ) : selectedWard ? (
                   <SelectedWardPanel
@@ -620,8 +655,6 @@ export default function MapPage() {
                   <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
                 ) : (
                   <SpatialSummaryPanel
-                    municipalBoundaryCount={wardBoundariesState.loading ? null : wardBoundaries.length}
-                    hotspotWardCount={wards.length}
                     stationsTotal={healthRollup.total}
                     stationsFresh={healthRollup.active - healthRollup.stale}
                     stationsStale={healthRollup.stale}
@@ -629,6 +662,9 @@ export default function MapPage() {
                     forecastAlerts={severeWards.length}
                     dominantSource={sourceMix[0] ?? null}
                     locationsUnavailable={locationsUnavailable}
+                    forecastSuppressed={forecastSuppressed}
+                    highestAqiWard={highestAqiWard}
+                    wardsWithCoverage={wardsWithCoverage}
                   />
                 )}
               </div>

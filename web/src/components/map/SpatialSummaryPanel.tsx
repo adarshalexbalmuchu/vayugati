@@ -1,16 +1,12 @@
 import { Compass, TriangleAlert } from 'lucide-react'
+import { sourceCategoryLabel } from '../../lib/incidentRules'
 import { Stat } from '../ui'
 
 /** City-level summary shown in the right panel when nothing is selected -
  *  every figure is a straight pass-through of already-computed data (no new
  *  aggregation logic; rollupStationHealth/severeWardsWithin are the same
- *  overviewRules.ts functions the Overview page uses). Deliberately
- *  distinguishes "252 municipal boundaries" from "13 monitored hotspot
- *  wards" - two real, different counts that read as contradictory if only
- *  one is shown without the other. */
+ *  overviewRules.ts functions the Overview page uses). */
 export default function SpatialSummaryPanel({
-  municipalBoundaryCount,
-  hotspotWardCount,
   stationsTotal,
   stationsFresh,
   stationsStale,
@@ -18,11 +14,10 @@ export default function SpatialSummaryPanel({
   forecastAlerts,
   dominantSource,
   locationsUnavailable,
+  forecastSuppressed,
+  highestAqiWard,
+  wardsWithCoverage,
 }: {
-  /** Real count from fetchAllWardBoundaries() - null while that fetch is
-   *  still in flight, shown as "—" rather than a misleading 0. */
-  municipalBoundaryCount: number | null
-  hotspotWardCount: number
   stationsTotal: number
   stationsFresh: number
   stationsStale: number
@@ -36,6 +31,12 @@ export default function SpatialSummaryPanel({
   /** Count of wards/stations/incidents/reports with missing or out-of-Delhi
    *  coordinates - dropped from the map rather than plotted incorrectly. */
   locationsUnavailable: number
+  /** When true, forecast-derived values are suppressed and shown as '—'. */
+  forecastSuppressed: boolean
+  /** The ward with the highest observed AQI (or null if none available). */
+  highestAqiWard: { name: string; aqi: number } | null
+  /** Number of wards that have a non-null AQI. */
+  wardsWithCoverage: number
 }) {
   return (
     <div className="p-4">
@@ -46,23 +47,38 @@ export default function SpatialSummaryPanel({
       <p className="mb-3 text-xs text-slate-400">Select a ward, station, or incident marker for detail.</p>
 
       <div className="grid grid-cols-2 gap-2">
-        <Stat value={municipalBoundaryCount ?? '—'} label="Municipal boundaries" />
-        <Stat value={hotspotWardCount} label="Hotspot wards" />
+        <Stat value={wardsWithCoverage} label="Wards monitored" />
         <Stat value={stationsTotal} label="AQ stations" />
         <Stat value={stationsFresh} label="Fresh stations" accent={stationsFresh > 0 ? 'text-status-success' : 'text-slate-900'} />
         <Stat value={stationsStale} label="Stale stations" accent={stationsStale > 0 ? 'text-status-warning' : 'text-slate-900'} />
         <Stat value={activeIncidents} label="Active incidents" accent={activeIncidents > 0 ? 'text-status-critical' : 'text-slate-900'} />
-        <Stat value={forecastAlerts} label="Forecast alerts" accent={forecastAlerts > 0 ? 'text-status-warning' : 'text-slate-900'} />
+        <Stat
+          value={forecastSuppressed ? '—' : forecastAlerts}
+          label="Forecast alerts"
+          accent={forecastSuppressed ? 'text-slate-900' : forecastAlerts > 0 ? 'text-status-warning' : 'text-slate-900'}
+        />
       </div>
 
-      {/* Full-width, smaller type - this value is a word ("construction
-          dust"), not a short number like the tiles above, so it needs more
-          room than the shared Stat component's text-2xl numeric sizing. */}
-      <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2.5 text-center">
-        <p className="truncate text-base font-bold capitalize text-slate-900" title={dominantSource?.source.replace(/_/g, ' ')}>
-          {dominantSource ? dominantSource.source.replace(/_/g, ' ') : '—'}
-        </p>
-        <p className="mt-0.5 text-xs text-slate-500">Dominant suspected source signal (preliminary, citywide)</p>
+      {/* Full-width info box — dominant source + highest AQI ward stacked */}
+      <div className="mt-2 space-y-2">
+        <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-center">
+          <p
+            className="truncate text-base font-bold capitalize text-slate-900"
+            title={dominantSource ? sourceCategoryLabel(dominantSource.source as Parameters<typeof sourceCategoryLabel>[0]) : undefined}
+          >
+            {dominantSource ? sourceCategoryLabel(dominantSource.source as Parameters<typeof sourceCategoryLabel>[0]) : '—'}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">Dominant suspected source signal (preliminary, citywide)</p>
+        </div>
+
+        {highestAqiWard != null && (
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-center">
+            <p className="text-base font-bold text-slate-900">{highestAqiWard.aqi}</p>
+            <p className="mt-0.5 truncate text-xs text-slate-500" title={highestAqiWard.name}>
+              Highest observed AQI · {highestAqiWard.name}
+            </p>
+          </div>
+        )}
       </div>
 
       {locationsUnavailable > 0 && (
@@ -71,6 +87,8 @@ export default function SpatialSummaryPanel({
           {locationsUnavailable} location{locationsUnavailable > 1 ? 's' : ''} unavailable - missing or outside Delhi/NCR.
         </p>
       )}
+
+      <p className="mt-3 text-[10px] text-slate-400">252 municipal boundaries in the GIS layer</p>
     </div>
   )
 }

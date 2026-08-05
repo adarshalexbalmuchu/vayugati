@@ -35,20 +35,22 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
   )
 }
 
-/** Floating legend, paired with MapLayerControl. Collapsed by default -
- *  reference material, looked up less often than the layer toggles, so it
- *  shouldn't cost map real estate until asked for. Only shows keys for
- *  layers that can genuinely appear - no invented categories. */
+/** Floating legend, paired with MapLayerControl. Open by default -
+ *  reference material visible at a glance; user can collapse to recover
+ *  map real estate. Only shows keys for layers that can genuinely appear -
+ *  no invented categories. */
 export default function MapLegend({
   sourceAttributionOn,
   pollutant,
   transitActivityOn,
+  forecastSuppressed = false,
 }: {
   sourceAttributionOn: boolean
   pollutant: MapPollutant
   transitActivityOn: boolean
+  forecastSuppressed?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
 
   return (
     <div className="w-52 rounded-lg border border-slate-200 bg-white shadow-card">
@@ -123,6 +125,9 @@ export default function MapLegend({
             <li className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-status-warning/50" aria-hidden />
               Forecast alert (pulsing halo - ward forecast to cross severe)
+              {forecastSuppressed && (
+                <span className="ml-1 text-[9px] text-slate-400">(Forecast layer unavailable)</span>
+              )}
             </li>
             <li className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm border border-sky-500 bg-sky-500/20" aria-hidden />

@@ -1,6 +1,14 @@
 import { MapPin, RefreshCw } from 'lucide-react'
 import { StaleBadge } from '../ui'
 
+function formatAge(minutes: number): string {
+  if (minutes >= 60) {
+    const hours = Math.round(minutes / 60)
+    return `${hours}h ago`
+  }
+  return `${Math.round(minutes)}m ago`
+}
+
 /** Page header - title, city context, last-updated timestamp, refresh.
  *  Same pattern as the Overview/Incidents page headers. */
 export default function MapPageHeader({
@@ -8,11 +16,15 @@ export default function MapPageHeader({
   fetchedAt,
   refreshing,
   onRefresh,
+  latestStationReadingAgeMinutes = null,
 }: {
   stale: boolean
   fetchedAt: number | null
   refreshing: boolean
   onRefresh: () => void
+  /** Age in minutes of the most recent station reading (minimum across all
+   *  stations). Null if not yet computed or unavailable. */
+  latestStationReadingAgeMinutes?: number | null
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
@@ -23,7 +35,12 @@ export default function MapPageHeader({
           Delhi City Pack
           {stale && <StaleBadge />}
           {fetchedAt != null && (
-            <span>· Updated {new Date(fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+            <span>
+              · Updated {new Date(fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              {latestStationReadingAgeMinutes != null && (
+                <> · Latest station reading {formatAge(latestStationReadingAgeMinutes)}</>
+              )}
+            </span>
           )}
         </p>
       </div>

@@ -1,4 +1,4 @@
-import { Crosshair, Info, RefreshCw } from 'lucide-react'
+import { Crosshair, Info } from 'lucide-react'
 import { SOURCE_CATEGORY_LABEL, sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { MAP_POLLUTANT_LABEL, markerMeaningLabel, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
 
@@ -15,25 +15,39 @@ function SegmentedGroup<T extends string>({
   value,
   options,
   onChange,
+  disabledKeys,
+  disabledTitle,
 }: {
   value: T
   options: { key: T; label: string }[]
   onChange: (v: T) => void
+  disabledKeys?: T[]
+  disabledTitle?: string
 }) {
   return (
     <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          onClick={() => onChange(o.key)}
-          className={`focus-ring rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-            value === o.key ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
+      {options.map((o) => {
+        const isDisabled = disabledKeys?.includes(o.key) ?? false
+        const isActive = value === o.key && !isDisabled
+        return (
+          <button
+            key={o.key}
+            type="button"
+            disabled={isDisabled}
+            title={isDisabled ? disabledTitle : undefined}
+            onClick={() => !isDisabled && onChange(o.key)}
+            className={`focus-ring rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+              isDisabled
+                ? 'cursor-not-allowed opacity-40 text-slate-400'
+                : isActive
+                  ? 'bg-accent-500 text-white'
+                  : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -48,8 +62,7 @@ export default function MapToolbar({
   severityFilter,
   onSeverityFilterChange,
   onResetView,
-  onRefresh,
-  refreshing,
+  forecastSuppressed = false,
 }: {
   pollutant: MapPollutant
   onPollutantChange: (p: MapPollutant) => void
@@ -60,9 +73,11 @@ export default function MapToolbar({
   severityFilter: Severity | null
   onSeverityFilterChange: (s: Severity | null) => void
   onResetView: () => void
-  onRefresh: () => void
-  refreshing: boolean
+  forecastSuppressed?: boolean
 }) {
+  const forecastDisabledKeys: MapTimeMode[] = forecastSuppressed ? ['24h', '48h'] : []
+  const forecastDisabledTitle = 'Unavailable until a successful forecast run completes.'
+
   return (
     <div className="border-b border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-2 px-4 py-2">
@@ -71,7 +86,13 @@ export default function MapToolbar({
           onChange={onPollutantChange}
           options={POLLUTANTS.map((p) => ({ key: p, label: MAP_POLLUTANT_LABEL[p] }))}
         />
-        <SegmentedGroup value={timeMode} onChange={onTimeModeChange} options={TIME_MODES} />
+        <SegmentedGroup
+          value={forecastSuppressed ? 'now' : timeMode}
+          onChange={onTimeModeChange}
+          options={TIME_MODES}
+          disabledKeys={forecastDisabledKeys}
+          disabledTitle={forecastDisabledTitle}
+        />
 
         <select
           value={sourceFilter ?? ''}
@@ -107,15 +128,6 @@ export default function MapToolbar({
           >
             <Crosshair className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
             Reset to Delhi
-          </button>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
-            Refresh
           </button>
         </div>
       </div>
