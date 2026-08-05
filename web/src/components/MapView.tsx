@@ -21,13 +21,12 @@ const BOUNDARY_FILL_LAYER_ID = 'ward-boundaries-fill'
 const BOUNDARY_LINE_LAYER_ID = 'ward-boundaries-line'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
-const FILL_OPACITY_DEFAULT = 0.04
-const FILL_OPACITY_HOVER = 0.10
-const FILL_OPACITY_SELECTED = 0.18
-const LINE_WIDTH_DEFAULT = 0.7
+const FILL_OPACITY_DEFAULT = 0.03
+const FILL_OPACITY_HOVER = 0.08
+const FILL_OPACITY_SELECTED = 0.15
 const LINE_WIDTH_HOVER = 1.5
 const LINE_WIDTH_SELECTED = 2.5
-const COLOR_DEFAULT = '#94a3b8'  // neutral slate
+const COLOR_DEFAULT = '#8da6c0'  // muted slate-blue (not interaction blue)
 const COLOR_HOVER = '#3b82f6'    // blue-500
 const COLOR_SELECTED = '#2563eb' // blue-600
 
@@ -57,10 +56,13 @@ function featureLineColorExpr(): maplibregl.ExpressionSpecification {
   ]
 }
 function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
+  // Default case uses zoom-interpolation so outlines thin at citywide view
+  // and widen slightly when zoomed to ward level — interaction blue stays
+  // reserved for hover and selected states.
   return ['case',
     ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
     ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
-    LINE_WIDTH_DEFAULT,
+    ['interpolate', ['linear'], ['zoom'], 9, 0.45, 12, 0.65, 14, 1.0],
   ]
 }
 
@@ -278,7 +280,11 @@ export default function MapView({
         paint: {
           'line-color': featureLineColorExpr(),
           'line-width': featureLineWidthExpr(),
-          'line-opacity': 0.55,
+          'line-opacity': ['case',
+            ['boolean', ['feature-state', 'selected'], false], 0.9,
+            ['boolean', ['feature-state', 'hover'], false], 0.7,
+            0.38,
+          ] as maplibregl.ExpressionSpecification,
         },
       })
     }
@@ -345,7 +351,9 @@ export default function MapView({
     // minZoom is defense in depth on top of MapPage's own coordinate
     // validation - a bad point should never be able to zoom this out past
     // city scale, even in theory.
-    map.fitBounds(bounds, { padding: 56, minZoom: 9, maxZoom: 13, duration: 600 })
+    // Extra right padding accounts for the ~256px contextual right panel so
+    // selected features are not hidden behind it on fitBounds / Reset to Delhi.
+    map.fitBounds(bounds, { padding: { top: 48, bottom: 48, left: 48, right: 280 }, minZoom: 9, maxZoom: 13, duration: 600 })
   }, [fitBoundsTo])
 
   // sync markers whenever they change (or map is ready)

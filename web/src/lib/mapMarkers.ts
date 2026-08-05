@@ -131,36 +131,61 @@ function wrapper(): HTMLDivElement {
   return el
 }
 
-/** Circular pin - wards (area centroid) and stations (fixed installation)
- *  share this base shape but are visually distinguished by corner radius:
- *  fully round for a ward, a rounded square for a station (a common GIS
- *  convention for "area" vs "fixed point instrument"). */
-function pinElement(colorHex: string, badgeText: string, shape: 'circle' | 'square', faded: boolean): HTMLDivElement {
+/** Ward centroid pin — 26px full circle with AQI fill. */
+function wardCircle(colorHex: string, badgeText: string): HTMLDivElement {
   const pin = document.createElement('div')
-  const radius = shape === 'circle' ? '50%' : '8px'
   pin.style.cssText = `
-    width:26px; height:26px; border-radius:${radius};
+    width:26px; height:26px; border-radius:50%;
     background:${colorHex}; border:2px solid #fff;
     box-shadow:0 1px 4px rgba(15,23,42,.35);
     display:flex; align-items:center; justify-content:center;
-    font-size:9px; font-weight:700; color:#fff;
-    ${faded ? 'opacity:.55; border-style:dashed;' : ''}
+    font-size:9px; font-weight:700; color:#fff; letter-spacing:-0.5px;
   `
   pin.textContent = badgeText
   return pin
 }
 
-/** Teardrop pin - incidents. Built from a rotated square (CSS-only, no SVG
- *  asset) so it reads as "point of interest" distinct from the round sensor
- *  pins, per the brief's "professional operational markers" requirement. */
-function teardropElement(colorHex: string, hollow: boolean): HTMLDivElement {
+/** AQ station — compact circle (22px) visually distinct from ward circles by
+ *  size; freshness encoded via border style (solid = fresh, dashed orange = stale).
+ *  No teardrop or pin silhouette: one self-contained circle. */
+function stationCircle(colorHex: string, badgeText: string, isStale: boolean): HTMLDivElement {
   const pin = document.createElement('div')
   pin.style.cssText = `
-    width:20px; height:20px; border-radius:50% 50% 50% 0;
+    width:22px; height:22px; border-radius:50%;
+    background:${colorHex};
+    border:2px ${isStale ? 'dashed' : 'solid'} ${isStale ? '#D97706' : 'rgba(255,255,255,0.95)'};
+    box-shadow:0 1px 4px rgba(15,23,42,.35);
+    display:flex; align-items:center; justify-content:center;
+    font-size:8px; font-weight:700; color:#fff; letter-spacing:-0.5px;
+    ${isStale ? 'opacity:.6;' : ''}
+  `
+  pin.textContent = badgeText
+  return pin
+}
+
+/** Incident — rotated square (diamond) clearly different from both circle
+ *  types. Severity colour fills the interior; white border stays readable
+ *  over both light and satellite basemaps. */
+function diamondElement(colorHex: string): HTMLDivElement {
+  const pin = document.createElement('div')
+  pin.style.cssText = `
+    width:13px; height:13px;
+    background:${colorHex}; border:2px solid rgba(255,255,255,0.9);
+    box-shadow:0 1px 3px rgba(15,23,42,.3);
+    transform:rotate(45deg);
+  `
+  return pin
+}
+
+/** Citizen report — hollow teardrop shape, visually separate from all official markers. */
+function teardropElement(colorHex: string): HTMLDivElement {
+  const pin = document.createElement('div')
+  pin.style.cssText = `
+    width:18px; height:18px; border-radius:50% 50% 50% 0;
     transform:rotate(-45deg);
-    background:${hollow ? 'transparent' : colorHex};
-    border:2.5px solid ${colorHex};
-    box-shadow:0 1px 4px rgba(15,23,42,.3);
+    background:transparent;
+    border:2px solid ${colorHex};
+    box-shadow:0 1px 3px rgba(15,23,42,.25);
   `
   return pin
 }
@@ -187,20 +212,20 @@ export function createMarkerElement(marker: MapMarker): HTMLDivElement {
   el.dataset.markerId = marker.id
   el.style.zIndex = String(MARKER_Z_INDEX[marker.kind])
 
-  if (marker.kind === 'ward' || marker.kind === 'station') {
+  if (marker.kind === 'ward') {
     const color = marker.colorOverride ?? aqiLevel(marker.aqi ?? null).hex
     if (marker.pulsing) el.appendChild(haloElement(color))
-    const pin = pinElement(color, marker.badgeText ?? (marker.aqi != null ? String(marker.aqi) : '-'), marker.kind === 'ward' ? 'circle' : 'square', !!marker.isStale)
-    el.appendChild(pin)
-    if (marker.isStale) {
-      const dot = document.createElement('span')
-      dot.style.cssText = `position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:50%; background:${status.warning}; border:1.5px solid #fff;`
-      el.appendChild(dot)
-    }
+    el.appendChild(wardCircle(color, marker.badgeText ?? (marker.aqi != null ? String(marker.aqi) : '-')))
+    return el
+  }
+
+  if (marker.kind === 'station') {
+    const color = marker.colorOverride ?? aqiLevel(marker.aqi ?? null).hex
+    el.appendChild(stationCircle(color, marker.badgeText ?? (marker.aqi != null ? String(marker.aqi) : '-'), !!marker.isStale))
     if (marker.isCpcbSourced) {
       const dot = document.createElement('span')
       dot.title = 'CPCB/data.gov preferred'
-      dot.style.cssText = `position:absolute; bottom:-2px; left:-2px; width:8px; height:8px; border-radius:50%; background:${accent[500]}; border:1.5px solid #fff;`
+      dot.style.cssText = `position:absolute; bottom:-1px; left:-1px; width:7px; height:7px; border-radius:50%; background:${accent[500]}; border:1.5px solid #fff;`
       el.appendChild(dot)
     }
     return el
@@ -208,12 +233,11 @@ export function createMarkerElement(marker: MapMarker): HTMLDivElement {
 
   if (marker.kind === 'incident') {
     const color = marker.colorOverride ?? (marker.severity ? SEVERITY_HEX[marker.severity] : status.neutral)
-    el.style.marginTop = '-8px' // teardrop's point should touch the coordinate, not its center
-    el.appendChild(teardropElement(color, false))
+    el.appendChild(diamondElement(color))
     if (marker.hasDispatch) {
       const flag = document.createElement('span')
       flag.style.cssText = `
-        position:absolute; top:-6px; right:-8px; width:14px; height:14px; border-radius:3px;
+        position:absolute; top:-5px; right:-7px; width:8px; height:8px; border-radius:50%;
         background:${accent[600]}; border:1.5px solid #fff; box-shadow:0 1px 2px rgba(15,23,42,.3);
       `
       el.appendChild(flag)
@@ -221,9 +245,9 @@ export function createMarkerElement(marker: MapMarker): HTMLDivElement {
     return el
   }
 
-  // citizen report - light-outline teardrop, visually distinct from official markers
-  el.style.marginTop = '-6px'
-  el.appendChild(teardropElement(accent[500], true))
+  // citizen report — hollow teardrop, visually separate from all official markers
+  el.style.marginTop = '-4px'
+  el.appendChild(teardropElement(accent[500]))
   return el
 }
 

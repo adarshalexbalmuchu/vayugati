@@ -659,6 +659,7 @@ export default function MapPage() {
                     dominantSource={sourceMix[0] ?? null}
                     locationsUnavailable={locationsUnavailable}
                     forecastSuppressed={forecastSuppressed}
+                    forecastLoading={forecastsState.loading}
                     highestAqiWard={highestAqiWard}
                     wardsWithCoverage={wardsWithCoverage}
                   />
@@ -700,6 +701,7 @@ export default function MapPage() {
                     dominantSource={sourceMix[0] ?? null}
                     locationsUnavailable={locationsUnavailable}
                     forecastSuppressed={forecastSuppressed}
+                    forecastLoading={forecastsState.loading}
                     highestAqiWard={highestAqiWard}
                     wardsWithCoverage={wardsWithCoverage}
                   />

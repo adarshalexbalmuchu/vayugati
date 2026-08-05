@@ -23,7 +23,7 @@ export function forecastPollutantFor(pollutant: MapPollutant): ForecastPollutant
  *  docs/IMPLEMENTATION_STATUS.md), so a real, fixed default rather than a
  *  computed one is honest, not a shortcut. */
 export const DELHI_CENTER: [number, number] = [77.209, 28.6139]
-export const DELHI_DEFAULT_ZOOM = 11
+export const DELHI_DEFAULT_ZOOM = 10
 
 /** A generous Delhi/NCR bounding box (covers Delhi proper plus the
  *  Gurugram/Noida/Faridabad/Ghaziabad edges) - a real geographic constant,

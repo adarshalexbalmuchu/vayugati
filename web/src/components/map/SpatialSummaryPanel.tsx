@@ -15,6 +15,7 @@ export default function SpatialSummaryPanel({
   dominantSource,
   locationsUnavailable,
   forecastSuppressed,
+  forecastLoading = false,
   highestAqiWard,
   wardsWithCoverage,
 }: {
@@ -33,6 +34,9 @@ export default function SpatialSummaryPanel({
   locationsUnavailable: number
   /** When true, forecast-derived values are suppressed and shown as '—'. */
   forecastSuppressed: boolean
+  /** When true the forecast fetch is still in flight — show '—' rather than
+   *  the premature '0' that appears before any data arrives. */
+  forecastLoading?: boolean
   /** The ward with the highest observed AQI (or null if none available). */
   highestAqiWard: { name: string; aqi: number } | null
   /** Number of wards that have a non-null AQI. */
@@ -47,15 +51,19 @@ export default function SpatialSummaryPanel({
       <p className="mb-3 text-xs text-slate-400">Select a ward, station, or incident marker for detail.</p>
 
       <div className="grid grid-cols-2 gap-2">
-        <Stat value={wardsWithCoverage} label="Wards monitored" />
+        <Stat
+          value={wardsWithCoverage}
+          label="Wards with AQ support"
+          title="Wards that have a non-null AQI reading from an assigned monitoring station"
+        />
         <Stat value={stationsTotal} label="AQ stations" />
         <Stat value={stationsFresh} label="Fresh stations" accent={stationsFresh > 0 ? 'text-status-success' : 'text-slate-900'} />
         <Stat value={stationsStale} label="Stale stations" accent={stationsStale > 0 ? 'text-status-warning' : 'text-slate-900'} />
         <Stat value={activeIncidents} label="Active incidents" accent={activeIncidents > 0 ? 'text-status-critical' : 'text-slate-900'} />
         <Stat
-          value={forecastSuppressed ? '—' : forecastAlerts}
-          label="Forecast alerts"
-          accent={forecastSuppressed ? 'text-slate-900' : forecastAlerts > 0 ? 'text-status-warning' : 'text-slate-900'}
+          value={forecastSuppressed || forecastLoading ? '—' : forecastAlerts}
+          label={forecastSuppressed ? 'Forecast unavailable' : 'Forecast alerts'}
+          accent={forecastSuppressed || forecastLoading ? 'text-slate-400' : forecastAlerts > 0 ? 'text-status-warning' : 'text-slate-900'}
         />
       </div>
 
