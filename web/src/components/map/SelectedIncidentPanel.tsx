@@ -20,7 +20,13 @@ export default function SelectedIncidentPanel({
 }: {
   incident: Incident
   /** Nearest AQ station to this incident's location - null when unavailable. */
-  nearestStation?: { name: string; distanceMeters: number } | null
+  nearestStation?: {
+    name: string
+    distanceMeters: number
+    isStale: boolean
+    ageMinutes: number | null
+    readingSource: string
+  } | null
   onClose: () => void
 }) {
   const severity = (incident.severity ?? null) as Severity | null
@@ -69,13 +75,21 @@ export default function SelectedIncidentPanel({
         {nearestStation != null && (
           <div className="col-span-2">
             <dt className="text-slate-400">Nearest AQ station</dt>
-            <dd className="font-semibold text-slate-800">
-              {nearestStation.name}{' '}
+            <dd>
+              <span className="font-semibold text-slate-800">{nearestStation.name}</span>
+              {' '}
               <span className="font-normal text-slate-400">
-                ({nearestStation.distanceMeters < 1000
+                — {nearestStation.distanceMeters < 1000
                   ? `${Math.round(nearestStation.distanceMeters)} m`
-                  : `${(nearestStation.distanceMeters / 1000).toFixed(1)} km`})
+                  : `${(nearestStation.distanceMeters / 1000).toFixed(1)} km`} straight-line
               </span>
+              <br />
+              <span className={`text-[10px] ${nearestStation.isStale ? 'text-status-warning' : 'text-status-success'}`}>
+                {nearestStation.isStale
+                  ? `Stale · last reading ${nearestStation.ageMinutes != null ? nearestStation.ageMinutes < 60 ? `${nearestStation.ageMinutes}m ago` : `${Math.round(nearestStation.ageMinutes / 60)}h ago` : 'unknown'}`
+                  : 'Fresh'}
+              </span>
+              <span className="text-[10px] text-slate-400"> · {nearestStation.readingSource}</span>
             </dd>
           </div>
         )}

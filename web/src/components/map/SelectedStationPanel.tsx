@@ -9,6 +9,9 @@ export interface SelectedStation {
   id: number
   name: string
   wardName: string | null
+  /** Stable DB id for this station's ward — preferred over wardName for
+   *  filtering since names can differ in capitalisation/punctuation. */
+  wardId: number | null
   sensorType: string
   aqi: number | null
   pm25: number | null
@@ -159,12 +162,14 @@ export default function SelectedStationPanel({
         )}
       </div>
 
-      {station.wardName && (
+      {(station.wardId != null || station.wardName) && (
         <Link
-          to={`/incidents?ward=${encodeURIComponent(station.wardName)}`}
+          to={station.wardId != null ? `/incidents?wardId=${station.wardId}` : `/incidents?ward=${encodeURIComponent(station.wardName!)}`}
           className="focus-ring mt-4 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
         >
-          {nearbyIncidentsCount > 0 ? `${nearbyIncidentsCount} active incident${nearbyIncidentsCount > 1 ? 's' : ''} in ward` : 'No active incidents in ward'}
+          {nearbyIncidentsCount > 0
+            ? `${nearbyIncidentsCount} active incident${nearbyIncidentsCount > 1 ? 's' : ''} in this ward`
+            : 'No active incidents in this ward'}
           <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
         </Link>
       )}

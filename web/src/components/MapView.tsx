@@ -289,7 +289,7 @@ export default function MapView({
           'line-opacity': ['case',
             ['boolean', ['feature-state', 'selected'], false], 0.9,
             ['boolean', ['feature-state', 'hover'], false], 0.7,
-            0.38,
+            0.28,
           ] as maplibregl.ExpressionSpecification,
         },
       })

@@ -514,6 +514,7 @@ export default function MapPage() {
             id: s.id,
             name: s.name,
             wardName: health?.ward_name ?? null,
+            wardId: health?.ward_id ?? null,
             sensorType: health?.sensor_type ?? 'unknown',
             aqi: usingCpcb ? preferred!.cpcbAqi : s.aqi,
             pm25: s.pm25,
@@ -528,16 +529,28 @@ export default function MapPage() {
       : undefined
 
   const nearbyIncidentsCount = useMemo(() => {
-    if (!selectedStation?.wardName) return 0
-    return incidents.filter((i) => i.ward_name === selectedStation.wardName).length
+    if (!selectedStation) return 0
+    if (selectedStation.wardId != null) {
+      return incidents.filter((i) => i.ward_id === selectedStation.wardId).length
+    }
+    return 0
   }, [selectedStation, incidents])
 
   const incidentNearestStation = useMemo(() => {
     if (!selectedIncident) return null
     const result = nearestStationTo(selectedIncident.lat ?? null, selectedIncident.lng ?? null, stations)
     if (!result) return null
-    return { name: result.station.name, distanceMeters: result.distanceMeters }
-  }, [selectedIncident, stations])
+    const health = stationHealthById.get(result.station.id)
+    const preferred = latestReadingByStationId.get(result.station.id)
+    const readingSource = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null ? 'CPCB' : 'OpenAQ'
+    return {
+      name: result.station.name,
+      distanceMeters: result.distanceMeters,
+      isStale: health?.is_stale ?? false,
+      ageMinutes: health?.latest_reading_age_minutes ?? null,
+      readingSource,
+    }
+  }, [selectedIncident, stations, stationHealthById, latestReadingByStationId])
 
   // Enrichment for a clicked ward-boundary polygon (one of the 250 non-
   // hotspot municipal wards, or NDMC/Cantonment) - real station/incident/

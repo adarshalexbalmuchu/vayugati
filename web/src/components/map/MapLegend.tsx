@@ -46,7 +46,7 @@ export default function MapLegend({
   transitActivityOn: boolean
   forecastSuppressed?: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
 
   return (
@@ -86,43 +86,15 @@ export default function MapLegend({
             </p>
           )}
 
-          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Severity (incidents)</p>
-          <ul className="mt-0.5 space-y-0.5">
-            {SEVERITY_ORDER.map((s) => (
-              <li key={s} className="flex items-center gap-1.5 text-[10px] capitalize text-slate-600">
-                <Swatch color={SEVERITY_HEX[s]} shape="diamond" />
-                {s}
-              </li>
-            ))}
-          </ul>
-
           <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Markers</p>
           <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-600">
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="circle" />
-              Ward hotspot (circle)
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Swatch color="#64748B" shape="square" />
-              AQ station (square)
+              AQ station
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="diamond" />
-              Incident (diamond)
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Swatch color="#0F6CBD" shape="ring" />
-              Citizen report (ring)
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-status-warning/50" aria-hidden />
-              {forecastSuppressed
-                ? <span className="text-slate-400">Forecast alert (unavailable)</span>
-                : 'Forecast alert (pulsing halo)'}
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Swatch color="#D97706" shape="ring" />
-              Stale station (dashed ring)
+              Active incident
             </li>
           </ul>
 
@@ -172,12 +144,45 @@ export default function MapLegend({
               : <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />}
           </button>
           {infoOpen && (
-            <ul className="mt-0.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
-              <li>• Ward markers show AQI from the nearest assigned station — not an independent ward-level calculation.</li>
-              <li>• AQ station squares show actual monitoring locations. A blue dot means CPCB data.gov.in was preferred over the OpenAQ fallback.</li>
-              <li>• Ward boundaries (polygon outlines) are official MCD/NDMC/cantonment divisions.</li>
-              <li>• Forecast alerts pulse when the ward is projected to cross Severe (AQI 400+) within the selected time window.</li>
-            </ul>
+            <div className="mt-0.5 space-y-1.5">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Incident severity</p>
+              <ul className="space-y-0.5">
+                {SEVERITY_ORDER.map((s) => (
+                  <li key={s} className="flex items-center gap-1.5 text-[10px] capitalize text-slate-600">
+                    <Swatch color={SEVERITY_HEX[s]} shape="diamond" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Other markers</p>
+              <ul className="space-y-0.5 text-[10px] text-slate-600">
+                <li className="flex items-center gap-1.5">
+                  <Swatch color="#64748B" shape="circle" />
+                  Ward hotspot (circle with halo)
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Swatch color="#0F6CBD" shape="ring" />
+                  Citizen report (hollow ring)
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Swatch color="#D97706" shape="ring" />
+                  Stale station (dashed orange ring)
+                </li>
+                {!forecastSuppressed && (
+                  <li className="flex items-center gap-1.5">
+                    <span className="inline-block h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-status-warning/50" aria-hidden />
+                    Forecast alert (pulsing halo)
+                  </li>
+                )}
+              </ul>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">How readings are assigned</p>
+              <ul className="space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+                <li>• Ward AQI comes from the nearest assigned station — not an independent ward-level calculation.</li>
+                <li>• A blue dot on a station means CPCB/data.gov.in data was preferred over the OpenAQ fallback.</li>
+                <li>• Ward boundaries are official MCD/NDMC/cantonment divisions.</li>
+                <li>• Forecast alerts pulse when the ward is projected to cross Severe (AQI 400+) within the selected time window.</li>
+              </ul>
+            </div>
           )}
         </div>
       )}
