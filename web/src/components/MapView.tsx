@@ -19,29 +19,49 @@ export interface WardBoundaryFeatureProps {
 const BOUNDARY_SOURCE_ID = 'ward-boundaries'
 const BOUNDARY_FILL_LAYER_ID = 'ward-boundaries-fill'
 const BOUNDARY_LINE_LAYER_ID = 'ward-boundaries-line'
-const NO_SELECTION = -1 // sentinel: no real ward.id is ever <= 0 (serial starts at 1)
+// Quieter defaults let markers remain the primary focal point at city zoom;
+// hover/select progressively reveal the polygon for spatial orientation.
+const FILL_OPACITY_DEFAULT = 0.04
+const FILL_OPACITY_HOVER = 0.10
+const FILL_OPACITY_SELECTED = 0.18
+const LINE_WIDTH_DEFAULT = 0.7
+const LINE_WIDTH_HOVER = 1.5
+const LINE_WIDTH_SELECTED = 2.5
+const COLOR_DEFAULT = '#94a3b8'  // neutral slate
+const COLOR_HOVER = '#3b82f6'    // blue-500
+const COLOR_SELECTED = '#2563eb' // blue-600
 
-// 250 small municipal wards packed into one city view means each polygon is
-// only a handful of screen pixels at the app's default zoom - 0.08/1px (the
-// original values) survives a zoomed-in screenshot but is genuinely
-// imperceptible at that scale (confirmed with a pixel-diff: the layer WAS
-// rendering correctly, just too faint to see). These are deliberately more
-// visible without overwhelming the markers drawn on top.
-const FILL_OPACITY_DEFAULT = 0.18
-const FILL_OPACITY_SELECTED = 0.4
-const LINE_WIDTH_DEFAULT = 1.5
-const LINE_WIDTH_SELECTED = 3
-
-// MapLibre's paint-property types want a mutable tuple, not the readonly
-// array `as const` would produce - a plain function returning a fresh
-// array literal each call satisfies that without duplicating the
-// ['case', ...] shape at all four call sites (initial paint x2, later
-// setPaintProperty x2) below.
-function fillOpacityExpr(selectedId: number): maplibregl.ExpressionSpecification {
-  return ['case', ['==', ['get', 'id'], selectedId], FILL_OPACITY_SELECTED, FILL_OPACITY_DEFAULT]
+// Feature-state expressions: MapLibre evaluates these per-feature at render
+// time, so hover/selected state changes without any setPaintProperty() call.
+// Requires promoteId:'id' on the source (below) so feature state keyed by
+// ward.id resolves correctly.
+function featureFillColorExpr(): maplibregl.ExpressionSpecification {
+  return ['case',
+    ['boolean', ['feature-state', 'selected'], false], COLOR_SELECTED,
+    ['boolean', ['feature-state', 'hover'], false], COLOR_HOVER,
+    COLOR_DEFAULT,
+  ]
 }
-function lineWidthExpr(selectedId: number): maplibregl.ExpressionSpecification {
-  return ['case', ['==', ['get', 'id'], selectedId], LINE_WIDTH_SELECTED, LINE_WIDTH_DEFAULT]
+function featureFillOpacityExpr(): maplibregl.ExpressionSpecification {
+  return ['case',
+    ['boolean', ['feature-state', 'selected'], false], FILL_OPACITY_SELECTED,
+    ['boolean', ['feature-state', 'hover'], false], FILL_OPACITY_HOVER,
+    FILL_OPACITY_DEFAULT,
+  ]
+}
+function featureLineColorExpr(): maplibregl.ExpressionSpecification {
+  return ['case',
+    ['boolean', ['feature-state', 'selected'], false], COLOR_SELECTED,
+    ['boolean', ['feature-state', 'hover'], false], COLOR_HOVER,
+    COLOR_DEFAULT,
+  ]
+}
+function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
+  return ['case',
+    ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
+    ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
+    LINE_WIDTH_DEFAULT,
+  ]
 }
 
 interface Props {
@@ -103,6 +123,9 @@ export default function MapView({
   // arrival of data can create the source/layers for the first time, not
   // just update one that (incorrectly) assumed to already exist.
   const ensureBoundaryLayersRef = useRef<(() => void) | null>(null)
+  // Tracks the last-highlighted ward so its selected feature state can be
+  // cleared before the next one is set (setFeatureState doesn't auto-clear).
+  const prevSelectedBoundaryIdRef = useRef<number | null>(null)
   // Latched true exactly once, by the map's own one-time 'load' event (set
   // in the mount effect below). Deliberately NOT map.isStyleLoaded(): that
   // check also goes false whenever a GeoJSON source is mid-reprocessing
@@ -199,6 +222,32 @@ export default function MapView({
       map.getCanvas().style.cursor = ''
     })
 
+    // Hover state: track which feature is under the pointer and toggle
+    // feature state so the paint expressions above (featureFill/LineColorExpr)
+    // re-render the hovered ward without any setPaintProperty() call.
+    let hoveredBoundaryId: number | null = null
+    map.on('mousemove', BOUNDARY_FILL_LAYER_ID, (e) => {
+      const id = e.features?.[0]?.properties?.id as number | undefined
+      if (id == null) return
+      if (hoveredBoundaryId !== null && hoveredBoundaryId !== id) {
+        if (map.getSource(BOUNDARY_SOURCE_ID)) {
+          map.setFeatureState({ source: BOUNDARY_SOURCE_ID, id: hoveredBoundaryId }, { hover: false })
+        }
+      }
+      hoveredBoundaryId = id
+      if (map.getSource(BOUNDARY_SOURCE_ID)) {
+        map.setFeatureState({ source: BOUNDARY_SOURCE_ID, id }, { hover: true })
+      }
+    })
+    map.on('mouseleave', BOUNDARY_FILL_LAYER_ID, () => {
+      if (hoveredBoundaryId !== null) {
+        if (map.getSource(BOUNDARY_SOURCE_ID)) {
+          map.setFeatureState({ source: BOUNDARY_SOURCE_ID, id: hoveredBoundaryId }, { hover: false })
+        }
+        hoveredBoundaryId = null
+      }
+    })
+
     const addBoundaryLayers = () => {
       const data = wardBoundariesRef.current
       if (!data) return
@@ -207,17 +256,18 @@ export default function MapView({
         existingSource.setData(data)
         return
       }
-      map.addSource(BOUNDARY_SOURCE_ID, { type: 'geojson', data })
+      // promoteId:'id' tells MapLibre to use properties.id as the feature ID,
+      // which is required for setFeatureState() keyed by ward.id to work.
+      map.addSource(BOUNDARY_SOURCE_ID, { type: 'geojson', data, promoteId: 'id' })
       const visibility = showWardBoundariesRef.current ? 'visible' : 'none'
-      const selectedId = selectedBoundaryIdRef.current ?? NO_SELECTION
       map.addLayer({
         id: BOUNDARY_FILL_LAYER_ID,
         type: 'fill',
         source: BOUNDARY_SOURCE_ID,
         layout: { visibility },
         paint: {
-          'fill-color': '#0ea5e9',
-          'fill-opacity': fillOpacityExpr(selectedId),
+          'fill-color': featureFillColorExpr(),
+          'fill-opacity': featureFillOpacityExpr(),
         },
       })
       map.addLayer({
@@ -226,8 +276,9 @@ export default function MapView({
         source: BOUNDARY_SOURCE_ID,
         layout: { visibility },
         paint: {
-          'line-color': '#0284c7',
-          'line-width': lineWidthExpr(selectedId),
+          'line-color': featureLineColorExpr(),
+          'line-width': featureLineWidthExpr(),
+          'line-opacity': 0.55,
         },
       })
     }
@@ -380,16 +431,24 @@ export default function MapView({
     else map.once('load', apply)
   }, [showWardBoundaries])
 
-  // Highlight the selected ward's polygon without touching the source/data.
-  // Gated on mapReadyRef, not isStyleLoaded() - see that ref's declaration.
+  // Highlight the selected ward's polygon via feature state so the
+  // paint expressions respond without any setPaintProperty() call.
+  // Tracks the previous id in a ref to clear the old feature's state
+  // before setting the new one (MapLibre doesn't auto-clear on change).
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const id = selectedBoundaryId ?? NO_SELECTION
+    const id = selectedBoundaryId ?? null
     const apply = () => {
-      if (!map.getLayer(BOUNDARY_FILL_LAYER_ID)) return
-      map.setPaintProperty(BOUNDARY_FILL_LAYER_ID, 'fill-opacity', fillOpacityExpr(id))
-      map.setPaintProperty(BOUNDARY_LINE_LAYER_ID, 'line-width', lineWidthExpr(id))
+      if (!map.getSource(BOUNDARY_SOURCE_ID)) return
+      const prev = prevSelectedBoundaryIdRef.current
+      if (prev !== null) {
+        map.setFeatureState({ source: BOUNDARY_SOURCE_ID, id: prev }, { selected: false })
+      }
+      if (id !== null) {
+        map.setFeatureState({ source: BOUNDARY_SOURCE_ID, id }, { selected: true })
+      }
+      prevSelectedBoundaryIdRef.current = id
     }
     if (mapReadyRef.current) apply()
     else map.once('load', apply)

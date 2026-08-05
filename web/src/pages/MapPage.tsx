@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
 import MapView, { type WardBoundaryFeatureProps } from '../components/MapView'
 import { ErrorState, Skeleton } from '../components/ui'
@@ -81,6 +82,48 @@ const EMPTY_DATA: [WardSummary[], StationMarker[], Incident[], Report[], Station
 
 const EMPTY_BOUNDARIES: WardBoundary[] = []
 const EMPTY_FORECASTS: Map<number, WardForecastSummary> = new Map()
+
+function fmtAge(minutes: number): string {
+  if (minutes < 2) return 'just now'
+  if (minutes < 60) return `${Math.round(minutes)}m ago`
+  return `${Math.round(minutes / 60)}h ago`
+}
+
+function wardPopup(name: string, value: number | null | undefined, unit: string, aqi: number | null | undefined, ts: string | null): string {
+  const level = aqi != null ? aqiLevel(aqi) : null
+  const age = ts ? fmtAge((Date.now() - new Date(ts).getTime()) / 60_000) : null
+  const valStr = value != null ? `${Math.round(value)} ${unit}` : '—'
+  return (
+    `<div style="font-size:13px;font-weight:600">${name}</div>` +
+    (level
+      ? `<div style="font-size:12px;color:${level.hex}">${valStr} · ${level.label}</div>`
+      : `<div style="font-size:12px;color:#9ca3af">${valStr}</div>`) +
+    (age ? `<div style="font-size:11px;color:#9ca3af">${age}</div>` : '')
+  )
+}
+
+function stationPopup(name: string, displayAqi: number | null | undefined, usingCpcb: boolean, ageMinutes: number | null | undefined): string {
+  const level = displayAqi != null ? aqiLevel(displayAqi) : null
+  const source = usingCpcb ? 'CPCB · data.gov.in' : 'OpenAQ'
+  const age = ageMinutes != null ? fmtAge(ageMinutes) : null
+  return (
+    `<div style="font-size:13px;font-weight:600">${name}</div>` +
+    (level
+      ? `<div style="font-size:12px;color:${level.hex}">AQI ${displayAqi} · ${level.label}</div>`
+      : `<div style="font-size:12px;color:#9ca3af">No reading</div>`) +
+    `<div style="font-size:11px;color:#9ca3af">${source}${age ? ` · ${age}` : ''}</div>`
+  )
+}
+
+function incidentPopup(summary: string, wardName: string | null, status: string, createdAt: string | null): string {
+  const age = createdAt ? fmtAge((Date.now() - new Date(createdAt).getTime()) / 60_000) : null
+  const statusLabel = status.replace(/_/g, ' ')
+  return (
+    `<div style="font-size:13px;font-weight:600">${summary}</div>` +
+    (wardName ? `<div style="font-size:12px;color:#555">${wardName}</div>` : '') +
+    `<div style="font-size:11px;color:#9ca3af">${statusLabel}${age ? ` · ${age}` : ''}</div>`
+  )
+}
 
 function popup(title: string, lines: string[]): string {
   return (
@@ -284,7 +327,7 @@ export default function MapPage() {
                 badgeText: reading.value != null ? String(Math.round(reading.value)) : '-',
                 pulsing: layers.predictedHotspots && severeWardIds.has(w.id),
                 colorOverride,
-                popupHtml: popup(w.name, [`${reading.value ?? '-'} ${reading.unit}`]),
+                popupHtml: wardPopup(w.name, reading.value, reading.unit, w.aqi, w.ts ?? null),
               }
             })
         : [],
@@ -311,13 +354,7 @@ export default function MapPage() {
                 aqi: displayAqi,
                 isStale,
                 isCpcbSourced: usingCpcb,
-                popupHtml: popup(s.name, [
-                  `AQI ${displayAqi ?? '-'}`,
-                  health?.ward_name ? health.ward_name : '',
-                  `Latest source: ${usingCpcb ? 'CPCB/data.gov preferred' : 'OpenAQ fallback'}`,
-                  'Forecast history: OpenAQ',
-                  'AQI computed using CPCB breakpoint logic.',
-                ]),
+                popupHtml: stationPopup(s.name, displayAqi, usingCpcb, health?.latest_reading_age_minutes),
               }
             })
         : [],
@@ -345,7 +382,7 @@ export default function MapPage() {
           severity: (i.severity ?? null) as Severity | null,
           hasDispatch: layers.dispatchZones && dispatchIncidentIds.has(i.id),
           colorOverride,
-          popupHtml: popup(i.summary ?? `Incident #${i.id}`, [i.ward_name ?? '', i.status.replace(/_/g, ' ')]),
+          popupHtml: incidentPopup(i.summary ?? `Incident #${i.id}`, i.ward_name, i.status, i.created_at ?? null),
         }
       })
   }, [layers.incidents, layers.sourceAttribution, layers.dispatchZones, incidents, severityFilter, sourceFilter, leadingSourceById, dispatchIncidentIds])

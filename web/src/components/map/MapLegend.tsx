@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, ListTree } from 'lucide-react'
+import { ChevronDown, ChevronRight, Info, ListTree } from 'lucide-react'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { SEVERITY_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX } from '../../lib/mapMarkers'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
@@ -35,10 +35,6 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
   )
 }
 
-/** Floating legend, paired with MapLayerControl. Open by default -
- *  reference material visible at a glance; user can collapse to recover
- *  map real estate. Only shows keys for layers that can genuinely appear -
- *  no invented categories. */
 export default function MapLegend({
   sourceAttributionOn,
   pollutant,
@@ -51,6 +47,7 @@ export default function MapLegend({
   forecastSuppressed?: boolean
 }) {
   const [open, setOpen] = useState(true)
+  const [infoOpen, setInfoOpen] = useState(false)
 
   return (
     <div className="w-52 rounded-lg border border-slate-200 bg-white shadow-card">
@@ -99,55 +96,33 @@ export default function MapLegend({
             ))}
           </ul>
 
-          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Marker types</p>
-          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-            AQ station readings show actual monitoring station locations. Ward-linked AQI shows the reading assigned
-            to each operational hotspot ward via its own station - not an independent ward-level calculation, so the
-            two often show the same number at nearby coordinates.
-          </p>
-          <ul className="mt-1 space-y-0.5 text-[10px] text-slate-600">
+          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Markers</p>
+          <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-600">
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="circle" />
-              Ward-linked AQI (hotspot ward)
+              Ward hotspot (circle)
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="square" />
-              AQ station (actual location)
+              AQ station (square)
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#64748B" shape="diamond" />
-              Incident
+              Incident (diamond)
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#0F6CBD" shape="ring" />
-              Citizen report
+              Citizen report (ring)
             </li>
             <li className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 flex-shrink-0 animate-pulse rounded-full bg-status-warning/50" aria-hidden />
-              Forecast alert (pulsing halo - ward forecast to cross severe)
-              {forecastSuppressed && (
-                <span className="ml-1 text-[9px] text-slate-400">(Forecast layer unavailable)</span>
-              )}
-            </li>
-            <li className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm border border-sky-500 bg-sky-500/20" aria-hidden />
-              Ward boundary polygon
-            </li>
-          </ul>
-
-          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Sensor state</p>
-          <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-600">
-            <li className="flex items-center gap-1.5">
-              <Swatch color="#64748B" shape="square" />
-              Fresh
+              {forecastSuppressed
+                ? <span className="text-slate-400">Forecast alert (unavailable)</span>
+                : 'Forecast alert (pulsing halo)'}
             </li>
             <li className="flex items-center gap-1.5">
               <Swatch color="#D97706" shape="ring" />
-              Stale (dashed ring + warning dot)
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Swatch color="#0F6CBD" shape="square" />
-              CPCB/data.gov preferred (blue dot, bottom-left) - no dot means OpenAQ fallback
+              Stale station (dashed ring)
             </li>
           </ul>
 
@@ -168,25 +143,41 @@ export default function MapLegend({
           {transitActivityOn && (
             <>
               <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Transit activity</p>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
-                Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or
-                congestion. Marker number is nearby live vehicle count, not AQI.
-              </p>
               <ul className="mt-0.5 space-y-0.5">
                 <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
                   <Swatch color={TRANSIT_ACTIVITY_HEX.low} />
-                  Low activity
+                  Low
                 </li>
                 <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
                   <Swatch color={TRANSIT_ACTIVITY_HEX.medium} />
-                  Medium activity
+                  Medium
                 </li>
                 <li className="flex items-center gap-1.5 text-[10px] text-slate-600">
                   <Swatch color={TRANSIT_ACTIVITY_HEX.high} />
-                  High activity
+                  High
                 </li>
               </ul>
             </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setInfoOpen((v) => !v)}
+            className="focus-ring mt-1.5 flex w-full items-center gap-1 text-left"
+          >
+            <Info className="h-3 w-3 flex-shrink-0 text-slate-400" aria-hidden />
+            <span className="flex-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">How this map works</span>
+            {infoOpen
+              ? <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden />
+              : <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />}
+          </button>
+          {infoOpen && (
+            <ul className="mt-0.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+              <li>• Ward markers show AQI from the nearest assigned station — not an independent ward-level calculation.</li>
+              <li>• AQ station squares show actual monitoring locations. A blue dot means CPCB data.gov.in was preferred over the OpenAQ fallback.</li>
+              <li>• Ward boundaries (polygon outlines) are official MCD/NDMC/cantonment divisions.</li>
+              <li>• Forecast alerts pulse when the ward is projected to cross Severe (AQI 400+) within the selected time window.</li>
+            </ul>
           )}
         </div>
       )}
