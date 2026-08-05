@@ -5,6 +5,7 @@ import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import DataSourceConfidenceStrip from '../components/overview/DataSourceConfidenceStrip'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
+import { CityAqiGauge } from '../components/overview/CityAqiGauge'
 import CityStatusHero from '../components/overview/CityStatusHero'
 import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
@@ -188,27 +189,52 @@ export default function CommandView() {
               ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
               : null
 
+            // Label for the forecast pollutant shown in the hero intel panel.
+            // Tracks the pollutant toggle so the label stays honest when the
+            // user switches from the default AQI/PM2.5 proxy to PM10 or NO2.
+            const forecastLabel =
+              forecastPollutant === 'pm25' ? 'PM₂.₅' :
+              forecastPollutant === 'pm10' ? 'PM₁₀' : 'NO₂'
+
             return (
               <>
-                {/* Hero area: gauge + ward context left, KPI cards right — single card */}
+                {/* Hero area — three sections: gauge | ward intelligence | KPI grid */}
                 <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-8">
-                    <div className="lg:basis-[42%] lg:shrink-0">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-0">
+
+                    {/* 1: Radial gauge */}
+                    <div className="flex-shrink-0 lg:pr-6">
+                      <CityAqiGauge aqi={worstWard?.aqi ?? null} />
+                    </div>
+
+                    {/* Vertical divider — desktop only */}
+                    <div className="hidden h-20 w-px flex-shrink-0 bg-slate-100 lg:block" aria-hidden />
+
+                    {/* 2: Ward intelligence panel */}
+                    <div className="min-w-0 flex-1 lg:px-6">
                       <CityStatusHero
                         aqi={worstWard?.aqi ?? null}
                         wardName={worstWard?.name ?? null}
                         trend={worstTrend}
                         source={worstWard?.dominant_source ?? null}
+                        forecastPeak={worstWindowed?.value ?? null}
+                        readingAgeMinutes={worstReadingAge}
+                        forecastLabel={forecastLabel}
                       />
                     </div>
-                    <div className="h-px w-full bg-slate-100 lg:h-16 lg:w-px lg:flex-shrink-0" aria-hidden />
-                    <div className="flex-1 min-w-0">
+
+                    {/* Vertical divider — desktop only */}
+                    <div className="hidden h-20 w-px flex-shrink-0 bg-slate-100 lg:block" aria-hidden />
+
+                    {/* 3: KPI 2×2 grid */}
+                    <div className="lg:pl-6 lg:flex-shrink-0">
                       <CityKpiRow
                         reviewCount={reviewWards.length}
                         openIncidents={metrics.openCount}
                         coverage={coverageProp}
                       />
                     </div>
+
                   </div>
                 </div>
                 <HotspotsRiskTable

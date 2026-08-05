@@ -7,6 +7,7 @@ const R = 44
 const CX = 60
 const CY = 60
 const SW = 10
+const SW_TRACK = 8  // unfilled track slightly thinner so the filled arc pops
 const CIRCUMFERENCE = 2 * Math.PI * R          // 276.46
 const TRACK_LEN = CIRCUMFERENCE * (270 / 360)   // 207.35
 const START_ROT = 135
@@ -18,16 +19,15 @@ export function CityAqiGauge({ aqi, size = 160 }: { aqi: number | null; size?: n
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 120 120" className="absolute inset-0 h-full w-full" aria-hidden>
-        {/* Gauge face — ink.800 (#341F14) so the brown brand warm dark sits
-            behind the AQI arc rather than the default near-black */}
+        {/* Gauge face — ink.800 (#341F14) warm dark brown */}
         <circle cx={CX} cy={CY} r={58} fill="#341F14" />
-        {/* Unfilled track — ink.600 (#6B4A2A), lighter than the face so the
-            empty portion of the arc reads as a groove, not a void */}
+        {/* Unfilled track — ink.600 (#6B4A2A), narrower than the fill arc
+            so the active arc visually sits proud of the groove */}
         <circle
           cx={CX} cy={CY} r={R}
           fill="none"
           stroke="#6B4A2A"
-          strokeWidth={SW}
+          strokeWidth={SW_TRACK}
           strokeLinecap="round"
           strokeDasharray={`${TRACK_LEN} ${CIRCUMFERENCE - TRACK_LEN}`}
           transform={`rotate(${START_ROT}, ${CX}, ${CY})`}
@@ -54,7 +54,8 @@ export function CityAqiGauge({ aqi, size = 160 }: { aqi: number | null; size?: n
         >
           {aqi ?? '—'}
         </span>
-        <span className="mt-1 text-[11px] font-medium tracking-wide text-slate-400">
+        {/* ink-200 (#DEC7A0) warm cream — higher contrast than slate-400 on dark face */}
+        <span className="mt-1 text-[11px] font-medium tracking-wide text-ink-200">
           {level.label}
         </span>
       </div>

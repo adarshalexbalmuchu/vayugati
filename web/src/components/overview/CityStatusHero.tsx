@@ -1,4 +1,4 @@
-import { CityAqiGauge } from './CityAqiGauge'
+import { aqiLevel } from '../AqiBadge'
 import type { HotspotStatus } from '../../lib/overviewRules'
 
 const TREND_STYLE: Record<HotspotStatus, { color: string; dot: string }> = {
@@ -10,7 +10,15 @@ const TREND_STYLE: Record<HotspotStatus, { color: string; dot: string }> = {
 }
 
 function formatSource(s: string | null) {
-  return s ? s.replace(/_/g, ' ') : null
+  if (!s) return null
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function formatAge(minutes: number): string {
+  if (minutes < 2) return 'Just now'
+  if (minutes < 60) return `${Math.round(minutes)}m ago`
+  const h = Math.round(minutes / 60)
+  return `${h}h ago`
 }
 
 export default function CityStatusHero({
@@ -18,38 +26,69 @@ export default function CityStatusHero({
   wardName,
   trend,
   source,
+  forecastPeak,
+  readingAgeMinutes,
+  forecastLabel = 'PM₂.₅',
 }: {
   aqi: number | null
   wardName: string | null
   trend: HotspotStatus | null
   source: string | null
+  forecastPeak: number | null
+  readingAgeMinutes: number | null
+  forecastLabel?: string
 }) {
+  const level = aqiLevel(aqi)
   const ts = trend ? TREND_STYLE[trend] : null
-  const trendLabel = trend ? (
-    trend === 'watch' ? 'Trending up' :
+  const trendLabel =
+    trend === 'watch'  ? 'Trending up' :
     trend === 'severe' ? 'Severe imminent' :
     trend === 'stable' ? 'Stable' :
-    trend === 'stale' ? 'Stale reading' : null
-  ) : null
+    trend === 'stale'  ? 'Stale reading' : null
 
   const formattedSource = formatSource(source)
-  const trendLine = [trendLabel, formattedSource].filter(Boolean).join(', ')
 
   return (
-    <div className="flex items-center gap-6 sm:gap-8">
-      <CityAqiGauge aqi={aqi} />
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+        Worst ward right now
+      </span>
 
-      <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          Worst ward right now
+      <span className="text-2xl font-extrabold tracking-tight text-slate-900 leading-tight truncate">
+        {wardName ?? '—'}
+      </span>
+
+      {aqi !== null && (
+        <span className="text-sm font-semibold leading-none" style={{ color: level.hex }}>
+          {aqi} · {level.label}
         </span>
-        <span className="text-2xl font-extrabold text-slate-900 tracking-tight leading-none truncate">
-          {wardName ?? '—'}
+      )}
+
+      {ts && trendLabel && (
+        <span className={`mt-0.5 flex items-center gap-1.5 text-sm font-medium ${ts.color}`}>
+          <span className={`h-2 w-2 flex-shrink-0 rounded-sm ${ts.dot}`} aria-hidden />
+          {trendLabel}
         </span>
-        {ts && trendLine && (
-          <span className={`flex items-center gap-1.5 text-sm font-medium ${ts.color}`}>
-            <span className={`h-2 w-2 flex-shrink-0 rounded-sm ${ts.dot}`} aria-hidden />
-            {trendLine}
+      )}
+
+      {/* Metadata rows — source, forecast, age */}
+      <div className="mt-2 flex flex-col gap-0.5">
+        {formattedSource && (
+          <span className="text-xs text-slate-500 leading-snug">
+            Likely source:{' '}
+            <span className="font-medium text-slate-700">{formattedSource}</span>
+          </span>
+        )}
+        {forecastPeak !== null && (
+          <span className="text-xs text-slate-500 leading-snug">
+            Forecast {forecastLabel} peak:{' '}
+            <span className="font-medium text-slate-700">{Math.round(forecastPeak)} µg/m³</span>
+          </span>
+        )}
+        {readingAgeMinutes !== null && (
+          <span className="text-xs text-slate-500 leading-snug">
+            Last reading:{' '}
+            <span className="font-medium text-slate-600">{formatAge(readingAgeMinutes)}</span>
           </span>
         )}
       </div>

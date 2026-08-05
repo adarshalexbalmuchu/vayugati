@@ -3,20 +3,24 @@ import { useIngestHealth } from '../../contexts/IngestHealthContext'
 function KpiCard({
   label,
   value,
-  valueColor = 'text-white',
+  valueColor = 'text-slate-900',
 }: {
   label: string
   value: React.ReactNode
   valueColor?: string
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl bg-ink-800 px-4 py-3.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-        {label}
-      </span>
-      <span className={`text-2xl font-extrabold tabular-nums leading-none ${valueColor}`}>
-        {value}
-      </span>
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* Brown brand accent stripe at the top of each card */}
+      <div className="h-0.5 bg-ink-700" aria-hidden />
+      <div className="flex flex-col gap-1.5 px-4 py-3">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        <span className={`text-2xl font-extrabold tabular-nums leading-none ${valueColor}`}>
+          {value}
+        </span>
+      </div>
     </div>
   )
 }
@@ -33,19 +37,15 @@ export default function CityKpiRow({
 }) {
   const { readingConfirmedFresh, healthLoaded } = useIngestHealth()
 
-  const freshnessValue = !healthLoaded
-    ? '—'
-    : readingConfirmedFresh
-    ? 'Live'
-    : 'Degraded'
+  const freshnessValue = !healthLoaded ? '—' : readingConfirmedFresh ? 'Live' : 'Degraded'
   const freshnessColor = !healthLoaded
-    ? 'text-slate-500'
+    ? 'text-slate-400'
     : readingConfirmedFresh
     ? 'text-status-success'
     : 'text-status-warning'
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3">
       <KpiCard
         label="Wards flagged"
         value={reviewCount}
@@ -59,7 +59,7 @@ export default function CityKpiRow({
       <KpiCard
         label="Forecast coverage"
         value={coverage ? `${coverage.fresh}/${coverage.total}` : '—'}
-        valueColor={coverage ? 'text-white' : 'text-slate-500'}
+        valueColor={coverage ? 'text-slate-900' : 'text-slate-400'}
       />
       <KpiCard
         label="Data freshness"
