@@ -12,7 +12,7 @@ const CIRCUMFERENCE = 2 * Math.PI * R          // 276.46
 const TRACK_LEN = CIRCUMFERENCE * (270 / 360)   // 207.35
 const START_ROT = 135
 
-export function CityAqiGauge({ aqi, size = 160 }: { aqi: number | null; size?: number }) {
+export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: number }) {
   const level = aqiLevel(aqi)
   const fillLen = aqi !== null ? Math.min(aqi / 500, 1) * TRACK_LEN : 0
 

@@ -17,6 +17,17 @@ import { Card, CardHeader } from '../ui'
 const POLLUTANT_OPTIONS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
 const WINDOW_OPTIONS: TimeWindowHours[] = [12, 24, 36, 48]
 
+const SOURCE_LABELS: Record<string, string> = {
+  construction_dust: 'Construction dust',
+  road_dust:         'Road dust',
+  industrial:        'Industrial activity',
+  vehicular:         'Vehicular emissions',
+  waste:             'Waste burning',
+}
+function formatSource(s: string): string {
+  return SOURCE_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function ageMinutes(ts: string | null): number | null {
   return ts ? (Date.now() - new Date(ts).getTime()) / 60_000 : null
 }
@@ -291,7 +302,9 @@ export default function HotspotsRiskTable({
                     </td>
                     <td className="px-3 py-1.5 text-slate-600">
                       {dataBacked ? (
-                        (ward.dominant_source ?? 'Unknown')
+                        ward.dominant_source
+                          ? formatSource(ward.dominant_source)
+                          : <span className="text-slate-400">Unknown</span>
                       ) : (
                         <span className="text-slate-400" title="No station-backed data for this ward - a source cannot be assessed">
                           Not assessed

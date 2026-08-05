@@ -198,20 +198,21 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero area — three sections: gauge | ward intelligence | KPI grid */}
+                {/* Hero area — three sections: gauge | ward intelligence | KPI rail */}
                 <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-0">
 
-                    {/* 1: Radial gauge */}
+                    {/* 1: Radial gauge — fixed width, slightly smaller than before */}
                     <div className="flex-shrink-0 lg:pr-6">
                       <CityAqiGauge aqi={worstWard?.aqi ?? null} />
                     </div>
 
-                    {/* Vertical divider — desktop only */}
-                    <div className="hidden h-20 w-px flex-shrink-0 bg-slate-100 lg:block" aria-hidden />
+                    {/* Vertical divider — desktop only, self-stretch to match row height */}
+                    <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
 
-                    {/* 2: Ward intelligence panel */}
-                    <div className="min-w-0 flex-1 lg:px-6">
+                    {/* 2: Ward intelligence — constrained to 300 px on desktop so KPI
+                        section gets the remaining space rather than stretching to fill */}
+                    <div className="min-w-0 flex-1 lg:w-[300px] lg:flex-none lg:px-6">
                       <CityStatusHero
                         aqi={worstWard?.aqi ?? null}
                         wardName={worstWard?.name ?? null}
@@ -224,10 +225,10 @@ export default function CommandView() {
                     </div>
 
                     {/* Vertical divider — desktop only */}
-                    <div className="hidden h-20 w-px flex-shrink-0 bg-slate-100 lg:block" aria-hidden />
+                    <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
 
-                    {/* 3: KPI 2×2 grid */}
-                    <div className="lg:pl-6 lg:flex-shrink-0">
+                    {/* 3: KPI flat rail — flex-1 on desktop to fill remaining width */}
+                    <div className="lg:flex-1 lg:pl-6">
                       <CityKpiRow
                         reviewCount={reviewWards.length}
                         openIncidents={metrics.openCount}

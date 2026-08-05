@@ -9,9 +9,19 @@ const TREND_STYLE: Record<HotspotStatus, { color: string; dot: string }> = {
   no_data: { color: 'text-slate-400',       dot: 'bg-slate-300'       },
 }
 
-function formatSource(s: string | null) {
+// Human-readable labels for known source enum values.
+// Fallback: underscore → space + title-case for any unknown value.
+const SOURCE_LABELS: Record<string, string> = {
+  construction_dust: 'Construction dust',
+  road_dust:         'Road dust',
+  industrial:        'Industrial activity',
+  vehicular:         'Vehicular emissions',
+  waste:             'Waste burning',
+}
+
+function formatSource(s: string | null): string | null {
   if (!s) return null
-  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return SOURCE_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function formatAge(minutes: number): string {
@@ -58,9 +68,10 @@ export default function CityStatusHero({
         {wardName ?? '—'}
       </span>
 
+      {/* AQI category label only — the number already lives inside the gauge */}
       {aqi !== null && (
         <span className="text-sm font-semibold leading-none" style={{ color: level.hex }}>
-          {aqi} · {level.label}
+          {level.label}
         </span>
       )}
 
@@ -71,12 +82,12 @@ export default function CityStatusHero({
         </span>
       )}
 
-      {/* Metadata rows — source, forecast, age */}
+      {/* Contextual metadata rows */}
       <div className="mt-2 flex flex-col gap-0.5">
         {formattedSource && (
-          <span className="text-xs text-slate-500 leading-snug">
-            Likely source:{' '}
-            <span className="font-medium text-slate-700">{formattedSource}</span>
+          <span className="text-xs text-slate-600 leading-snug">
+            <span className="font-medium">{formattedSource}</span>
+            {' '}source signal
           </span>
         )}
         {forecastPeak !== null && (
@@ -87,7 +98,7 @@ export default function CityStatusHero({
         )}
         {readingAgeMinutes !== null && (
           <span className="text-xs text-slate-500 leading-snug">
-            Last reading:{' '}
+            Last observation:{' '}
             <span className="font-medium text-slate-600">{formatAge(readingAgeMinutes)}</span>
           </span>
         )}
