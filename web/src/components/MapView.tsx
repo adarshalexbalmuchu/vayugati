@@ -3,7 +3,7 @@ import maplibregl, { type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
 import { FALLBACK_STYLE } from '../lib/basemaps'
-import { createMarkerElement, ensurePulseStyle, type MapMarker } from '../lib/mapMarkers'
+import { createMarkerElement, ensurePulseStyle, ensureSelectedMarkerStyle, type MapMarker } from '../lib/mapMarkers'
 
 export type { MapMarker, MapMarkerKind } from '../lib/mapMarkers'
 
@@ -21,9 +21,9 @@ const BOUNDARY_FILL_LAYER_ID = 'ward-boundaries-fill'
 const BOUNDARY_LINE_LAYER_ID = 'ward-boundaries-line'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
-const FILL_OPACITY_DEFAULT = 0.03
-const FILL_OPACITY_HOVER = 0.08
-const FILL_OPACITY_SELECTED = 0.15
+const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
+const FILL_OPACITY_HOVER = 0.07
+const FILL_OPACITY_SELECTED = 0.14
 const LINE_WIDTH_HOVER = 1.5
 const LINE_WIDTH_SELECTED = 2.5
 const COLOR_DEFAULT = '#8da6c0'  // muted slate-blue (not interaction blue)
@@ -86,6 +86,10 @@ interface Props {
   showWardBoundaries?: boolean
   selectedBoundaryId?: number | null
   onBoundaryClick?: (ward: WardBoundaryFeatureProps) => void
+  /** DOM-marker selection highlight (stations + incidents). Ward boundaries
+   *  use MapLibre feature state instead; this prop drives a CSS class toggle
+   *  without recreating markers — safe to change on every selection. */
+  selectedMarkerId?: string | null
 }
 
 /**
@@ -108,6 +112,7 @@ export default function MapView({
   showWardBoundaries = false,
   selectedBoundaryId = null,
   onBoundaryClick,
+  selectedMarkerId = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -155,6 +160,7 @@ export default function MapView({
 
   useEffect(() => {
     ensurePulseStyle()
+    ensureSelectedMarkerStyle()
     if (!containerRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -461,6 +467,21 @@ export default function MapView({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [selectedBoundaryId])
+
+  // Toggle the selected CSS class on the appropriate DOM marker element.
+  // Uses a querySelectorAll on the map container rather than recreating all
+  // markers — safe to run on every selection change with no flicker.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    container.querySelectorAll<HTMLElement>('.vg-marker-selected').forEach((el) => {
+      el.classList.remove('vg-marker-selected')
+    })
+    if (selectedMarkerId) {
+      const el = container.querySelector<HTMLElement>(`[data-marker-id="${CSS.escape(selectedMarkerId)}"]`)
+      el?.classList.add('vg-marker-selected')
+    }
+  }, [selectedMarkerId])
 
   return <div ref={containerRef} className="h-full w-full" />
 }

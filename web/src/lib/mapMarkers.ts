@@ -145,33 +145,50 @@ function wardCircle(colorHex: string, badgeText: string): HTMLDivElement {
   return pin
 }
 
-/** AQ station — compact circle (22px) visually distinct from ward circles by
- *  size; freshness encoded via border style (solid = fresh, dashed orange = stale).
- *  No teardrop or pin silhouette: one self-contained circle. */
+/** AQ station — compact two-ring circle: outer freshness ring (solid=fresh,
+ *  dashed-orange=stale) + inner AQI circle. The outer ring differentiates
+ *  stations from ward circles (which have no outer ring) even when they
+ *  overlap at the same coordinate. The container is sized to 26px so the
+ *  CPCB dot appended to the wrapper is positioned relative to its full area. */
 function stationCircle(colorHex: string, badgeText: string, isStale: boolean): HTMLDivElement {
-  const pin = document.createElement('div')
-  pin.style.cssText = `
-    width:22px; height:22px; border-radius:50%;
+  const container = document.createElement('div')
+  container.style.cssText = `
+    position:relative; width:26px; height:26px;
+    display:flex; align-items:center; justify-content:center;
+  `
+
+  const ring = document.createElement('div')
+  ring.style.cssText = `
+    position:absolute; inset:0; border-radius:50%;
+    border:1.5px ${isStale ? 'dashed' : 'solid'} ${isStale ? '#D97706' : 'rgba(200,220,255,0.75)'};
+    ${isStale ? 'opacity:.85;' : ''}
+  `
+  container.appendChild(ring)
+
+  const core = document.createElement('div')
+  core.style.cssText = `
+    width:19px; height:19px; border-radius:50%;
     background:${colorHex};
-    border:2px ${isStale ? 'dashed' : 'solid'} ${isStale ? '#D97706' : 'rgba(255,255,255,0.95)'};
-    box-shadow:0 1px 4px rgba(15,23,42,.35);
+    box-shadow:0 1px 3px rgba(15,23,42,.3);
     display:flex; align-items:center; justify-content:center;
     font-size:8px; font-weight:700; color:#fff; letter-spacing:-0.5px;
     ${isStale ? 'opacity:.6;' : ''}
   `
-  pin.textContent = badgeText
-  return pin
+  core.textContent = badgeText
+  container.appendChild(core)
+
+  return container
 }
 
 /** Incident — rotated square (diamond) clearly different from both circle
- *  types. Severity colour fills the interior; white border stays readable
- *  over both light and satellite basemaps. */
+ *  types. Sized at 15px so 29 incidents remain individually readable at
+ *  citywide zoom without dominating the station layer. */
 function diamondElement(colorHex: string): HTMLDivElement {
   const pin = document.createElement('div')
   pin.style.cssText = `
-    width:13px; height:13px;
-    background:${colorHex}; border:2px solid rgba(255,255,255,0.9);
-    box-shadow:0 1px 3px rgba(15,23,42,.3);
+    width:15px; height:15px;
+    background:${colorHex}; border:2px solid rgba(255,255,255,0.95);
+    box-shadow:0 1px 4px rgba(15,23,42,.35);
     transform:rotate(45deg);
   `
   return pin
@@ -263,6 +280,40 @@ export function ensurePulseStyle() {
       0% { transform: scale(.85); opacity: .35; }
       70% { transform: scale(1.6); opacity: 0; }
       100% { transform: scale(1.6); opacity: 0; }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+/** Injects a single <style> block that handles the selected-marker blue ring.
+ *  Uses ::before pseudo-elements so no DOM mutation is needed — just toggle
+ *  the 'vg-marker-selected' class on the marker wrapper element. */
+let selectedStyleInjected = false
+export function ensureSelectedMarkerStyle() {
+  if (selectedStyleInjected || typeof document === 'undefined') return
+  selectedStyleInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    .maplibregl-marker.vg-marker-selected {
+      z-index: 100 !important;
+    }
+    /* Blue ring: circular halo around stations */
+    .maplibregl-marker.vg-marker-selected[data-marker-kind="station"]::before {
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 2.5px solid #2563eb;
+      pointer-events: none;
+    }
+    /* Blue ring: circular halo around incident diamonds */
+    .maplibregl-marker.vg-marker-selected[data-marker-kind="incident"]::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2.5px solid #2563eb;
+      pointer-events: none;
     }
   `
   document.head.appendChild(style)

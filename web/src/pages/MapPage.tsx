@@ -631,6 +631,11 @@ export default function MapPage() {
                   showWardBoundaries={layers.wardBoundaries && wardBoundariesAvailable}
                   selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
                   onBoundaryClick={handleBoundaryClick}
+                  selectedMarkerId={
+                    selection?.kind === 'station' ? `station-${selection.id}`
+                    : selection?.kind === 'incident' ? `incident-${selection.id}`
+                    : null
+                  }
                 />
                 <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
                   <MapLayerControl
