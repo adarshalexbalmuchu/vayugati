@@ -39,6 +39,7 @@ export default function CityStatusHero({
   forecastPeak,
   readingAgeMinutes,
   forecastLabel = 'PM₂.₅',
+  forecastSuppressed = false,
 }: {
   aqi: number | null
   wardName: string | null
@@ -47,20 +48,26 @@ export default function CityStatusHero({
   forecastPeak: number | null
   readingAgeMinutes: number | null
   forecastLabel?: string
+  /** When true, the forecast-derived trend label ('Stable' or 'Trending up')
+   *  is suppressed — it would reflect the absence of forecast data, not an
+   *  evaluated result, and would contradict the "Forecast unavailable" banner. */
+  forecastSuppressed?: boolean
 }) {
   const level = aqiLevel(aqi)
   const ts = trend ? TREND_STYLE[trend] : null
+  // 'stable' during forecast failure means "no forecast checked", not
+  // "evaluated and found stable" — suppress it when forecasts are unavailable.
   const trendLabel =
     trend === 'watch'  ? 'Trending up' :
     trend === 'severe' ? 'Severe imminent' :
-    trend === 'stable' ? 'Stable' :
+    trend === 'stable' ? (forecastSuppressed ? null : 'Stable') :
     trend === 'stale'  ? 'Stale reading' : null
 
   const formattedSource = formatSource(source)
 
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
         Worst ward right now
       </span>
 

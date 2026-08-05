@@ -185,6 +185,16 @@ export default function CommandView() {
                 )
               : null
 
+            // Most-recent ward reading across all wards — used by CityKpiRow to
+            // show a concrete age alongside the pipeline freshness status.
+            // Suppressed when readings are flagged degraded (suppressReading=true).
+            const latestReadingTs = suppressReading ? null : sortedWards
+              .flatMap((w) => (w.ts ? [w.ts] : []))
+              .reduce<string | null>((best, ts) => (!best || ts > best ? ts : best), null)
+            const latestReadingAgeMinutes = latestReadingTs
+              ? (Date.now() - new Date(latestReadingTs).getTime()) / 60_000
+              : null
+
             const coverageProp = accuracy.coverage.totalPairs > 0
               ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
               : null
@@ -221,6 +231,7 @@ export default function CommandView() {
                         forecastPeak={worstWindowed?.value ?? null}
                         readingAgeMinutes={worstReadingAge}
                         forecastLabel={forecastLabel}
+                        forecastSuppressed={suppressForecast}
                       />
                     </div>
 
@@ -233,6 +244,7 @@ export default function CommandView() {
                         reviewCount={reviewWards.length}
                         openIncidents={metrics.openCount}
                         coverage={coverageProp}
+                        latestReadingAgeMinutes={latestReadingAgeMinutes}
                       />
                     </div>
 
@@ -248,6 +260,7 @@ export default function CommandView() {
                   selectedWardId={selectedWardId}
                   onSelectWard={setSelectedWardId}
                   latestReadingsByWard={latestReadingsByWard}
+                  forecastSuppressed={suppressForecast}
                 />
 
                 <DataSourceConfidenceStrip />

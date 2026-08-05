@@ -163,6 +163,7 @@ export default function HotspotsRiskTable({
   selectedWardId,
   onSelectWard,
   latestReadingsByWard,
+  forecastSuppressed,
 }: {
   wards: WardSummary[]
   /** Keyed by ward id, values already scoped to whichever real forecast
@@ -179,11 +180,15 @@ export default function HotspotsRiskTable({
    *  by ward id. Missing/unmatched/stale all fall back to the existing
    *  OpenAQ-sourced ward.aqi unchanged - see CurrentReadingBadge above. */
   latestReadingsByWard?: Map<number, LatestReadingReconciliation>
+  /** When true: forecast cells show "—", window buttons are disabled,
+   *  Status column shows "No forecast" for forecast-derived 'stable' badges. */
+  forecastSuppressed?: boolean
 }) {
   const forecastPollutant = forecastPollutantFor(pollutant)
   const forecastPollutantLabel = MAP_POLLUTANT_LABEL[forecastPollutant]
   const isProxy = pollutant === 'aqi'
   const [infoOpen, setInfoOpen] = useState(false)
+  const isForecastSuppressed = forecastSuppressed ?? false
 
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
@@ -211,15 +216,23 @@ export default function HotspotsRiskTable({
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
-              <Clock className="ml-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden />
+            <div
+              className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5"
+              title={isForecastSuppressed ? 'Horizon filter unavailable until the next successful forecast run' : undefined}
+            >
+              <Clock className={`ml-1.5 h-3.5 w-3.5 ${isForecastSuppressed ? 'text-slate-300' : 'text-slate-400'}`} aria-hidden />
               {WINDOW_OPTIONS.map((h) => (
                 <button
                   key={h}
                   type="button"
+                  disabled={isForecastSuppressed}
                   onClick={() => onWindowHoursChange(h)}
                   className={`focus-ring rounded-md px-2 py-1 text-xs font-semibold transition ${
-                    windowHours === h ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                    isForecastSuppressed
+                      ? 'cursor-not-allowed text-slate-300'
+                      : windowHours === h
+                      ? 'bg-accent-500 text-white'
+                      : 'text-slate-500 hover:bg-slate-100'
                   }`}
                 >
                   {h}h
@@ -232,7 +245,7 @@ export default function HotspotsRiskTable({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-1.5 font-semibold">#</th>
               <th className="px-3 py-1.5 font-semibold">Ward</th>
               <th className="px-3 py-1.5 font-semibold">
@@ -241,13 +254,15 @@ export default function HotspotsRiskTable({
               </th>
               <th
                 className="px-3 py-1.5 font-semibold"
-                title={`Forecast peak within ${windowHours}h, local excess in parentheses. Hover a value for forecast confidence.`}
+                title={isForecastSuppressed ? 'Forecast unavailable — latest run failed' : `Forecast peak within ${windowHours}h, local excess in parentheses. Hover a value for forecast confidence.`}
               >
-                Forecast {forecastPollutantLabel} Peak <span className="normal-case">(Δ excess)</span>
-                {isProxy && <span className="normal-case"> - risk signal</span>}
+                Forecast {forecastPollutantLabel} Peak{' '}
+                <span className="normal-case">(Δ excess)</span>
+                {isProxy && !isForecastSuppressed && <span className="normal-case"> - risk signal</span>}
+                {isForecastSuppressed && <span className="normal-case font-normal text-slate-400"> · unavailable</span>}
               </th>
               <th className="px-3 py-1.5 font-semibold">Likely Source</th>
-              <th className="px-3 py-1.5 font-semibold">Status</th>
+              <th className="px-3 py-1.5 font-semibold">AQI Trend</th>
               <th className="px-3 py-1.5 font-semibold">Age</th>
               <th className="w-8 px-2 py-1.5" />
             </tr>
@@ -279,7 +294,7 @@ export default function HotspotsRiskTable({
                     onClick={() => onSelectWard(ward.id)}
                     className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                   >
-                    <td className="px-3 py-1.5 tabular-nums text-slate-400">{i + 1}</td>
+                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{i + 1}</td>
                     <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
                     <td className="px-3 py-1.5">
                       <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={latestReadingsByWard?.get(ward.id)} />
@@ -297,7 +312,9 @@ export default function HotspotsRiskTable({
                           )}
                         </>
                       ) : (
-                        <span className="text-slate-400">Unavailable</span>
+                        // Em dash when suppressed — "Unavailable" repeated 13 times
+                        // creates visual noise; the column header already flags the failure.
+                        <span className="text-slate-400">{isForecastSuppressed ? '—' : 'Unavailable'}</span>
                       )}
                     </td>
                     <td className="px-3 py-1.5 text-slate-600">
@@ -312,10 +329,19 @@ export default function HotspotsRiskTable({
                       )}
                     </td>
                     <td className="px-3 py-1.5">
-                      <StatusBadge
-                        status={status}
-                        title={status === 'stale' ? `Last fresh reading ${timeAgo(ward.ts)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
-                      />
+                      {isForecastSuppressed && status === 'stable' ? (
+                        // 'stable' with no forecast data means "nothing in the (empty)
+                        // forecast map triggered watch/severe" — not that risk was
+                        // evaluated and found low. Show a neutral indicator instead.
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
+                          No forecast
+                        </span>
+                      ) : (
+                        <StatusBadge
+                          status={status}
+                          title={status === 'stale' ? `Last fresh reading ${timeAgo(ward.ts)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(ward.ts)}</td>
                     <td className="px-2 py-1.5 text-slate-300">
