@@ -7,7 +7,10 @@ import BasemapSwitcher from '../components/map/BasemapSwitcher'
 import MapLayerControl, { DEFAULT_LAYER_STATE, type MapLayerKey } from '../components/map/MapLayerControl'
 import MapLegend from '../components/map/MapLegend'
 import MapPageHeader from '../components/map/MapPageHeader'
-import MapToolbar from '../components/map/MapToolbar'
+import MapToolbar, { type MapViewMode } from '../components/map/MapToolbar'
+import DataQualityStationPanel, { type DataQualityStationInfo } from '../components/map/DataQualityStationPanel'
+import DataQualitySummaryPanel from '../components/map/DataQualitySummaryPanel'
+import DataQualityWardPanel from '../components/map/DataQualityWardPanel'
 import SelectedIncidentPanel from '../components/map/SelectedIncidentPanel'
 import SelectedStationPanel, { type SelectedStation } from '../components/map/SelectedStationPanel'
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
@@ -40,6 +43,16 @@ import {
   type Incident,
 } from '../lib/incidents'
 import { HOTSPOT_STATUS_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX, type MapMarker } from '../lib/mapMarkers'
+import {
+  auditIncidentCoordinates,
+  classifyWardCoverage,
+  FRESHNESS_HEX,
+  rollupStationQuality,
+  stationFreshnessClass,
+  type FreshnessClass,
+  type WardCoverageClass,
+  type WardCoverageDetail,
+} from '../lib/dataQualityRules'
 import {
   DELHI_BOUNDS,
   DELHI_CENTER,
@@ -145,6 +158,8 @@ export default function MapPage() {
   const [timeMode, setTimeMode] = useState<MapTimeMode>('now')
   const [sourceFilter, setSourceFilter] = useState<SourceCategory | null>(null)
   const [severityFilter, setSeverityFilter] = useState<Severity | null>(null)
+  const [viewMode, setViewMode] = useState<MapViewMode>('pollution')
+  const [freshnessFilter, setFreshnessFilter] = useState<FreshnessClass | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [resetToken, setResetToken] = useState(0)
 
@@ -248,6 +263,25 @@ export default function MapPage() {
 
   const stationHealthById = useMemo(() => new Map(stationHealth.map((s) => [s.id, s])), [stationHealth])
 
+  // ── Data Quality mode derivations ────────────────────────────────────────
+  const stationQuality = useMemo(() => rollupStationQuality(stationHealth), [stationHealth])
+
+  const wardCoverageById = useMemo<Map<number, WardCoverageDetail>>(() => {
+    const map = new Map<number, WardCoverageDetail>()
+    for (const b of wardBoundaries) {
+      map.set(b.id, classifyWardCoverage(b, stationHealth, stations))
+    }
+    return map
+  }, [wardBoundaries, stationHealth, stations])
+
+  const wardCoverageSummary = useMemo<Record<WardCoverageClass, number>>(() => {
+    const acc: Record<WardCoverageClass, number> = { direct: 0, nearby: 0, insufficient: 0, unavailable: 0 }
+    for (const detail of wardCoverageById.values()) acc[detail.class]++
+    return acc
+  }, [wardCoverageById])
+
+  const incidentAudit = useMemo(() => auditIncidentCoordinates(incidents), [incidents])
+
   const selectedWardId = selection?.kind === 'ward' ? selection.id : null
   const attributionState = useAsync(
     () => (selectedWardId == null ? Promise.resolve(null) : fetchAttribution(selectedWardId)),
@@ -339,12 +373,41 @@ export default function MapPage() {
       layers.stations
         ? stations
             .filter((s) => isValidDelhiCoordinate(s.lat, s.lng))
+            .filter((s) => {
+              // In quality mode, apply freshness filter
+              if (viewMode === 'data_quality' && freshnessFilter != null) {
+                const h = stationHealthById.get(s.id)
+                return h ? stationFreshnessClass(h) === freshnessFilter : freshnessFilter === 'unavailable'
+              }
+              return true
+            })
             .map((s) => {
               const health = stationHealthById.get(s.id)
               const isStale = layers.sensorFreshness && !!health?.is_stale
               const preferred = latestReadingByStationId.get(s.id)
               const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
               const displayAqi = usingCpcb ? preferred!.cpcbAqi : s.aqi
+              if (viewMode === 'data_quality' && health) {
+                const cls = stationFreshnessClass(health)
+                return {
+                  id: `station-${s.id}`,
+                  kind: 'station' as const,
+                  lat: s.lat,
+                  lng: s.lng,
+                  label: s.name,
+                  aqi: null,  // suppress AQI colour in quality mode
+                  isStale: cls === 'stale',
+                  isCpcbSourced: usingCpcb,
+                  // Badge shows reading age; color shows freshness state
+                  badgeText: health.latest_reading_age_minutes != null
+                    ? health.latest_reading_age_minutes < 60
+                      ? `${health.latest_reading_age_minutes}m`
+                      : `${Math.round(health.latest_reading_age_minutes / 60)}h`
+                    : '—',
+                  colorOverride: FRESHNESS_HEX[cls],
+                  popupHtml: stationPopup(s.name, displayAqi, usingCpcb, health.latest_reading_age_minutes),
+                }
+              }
               return {
                 id: `station-${s.id}`,
                 kind: 'station' as const,
@@ -358,7 +421,7 @@ export default function MapPage() {
               }
             })
         : [],
-    [layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId],
+    [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId],
   )
 
   const incidentMarkers: MapMarker[] = useMemo(() => {
@@ -552,6 +615,36 @@ export default function MapPage() {
     }
   }, [selectedIncident, stations, stationHealthById, latestReadingByStationId])
 
+  const dataQualityStationInfo: DataQualityStationInfo | null = useMemo(() => {
+    if (viewMode !== 'data_quality' || selection?.kind !== 'station') return null
+    const s = stations.find((st) => st.id === selection.id)
+    const health = stationHealthById.get(selection.id)
+    if (!health) return null
+    const preferred = latestReadingByStationId.get(selection.id)
+    const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+    const availablePollutants: string[] = []
+    if ((usingCpcb ? preferred!.cpcbAqi : s?.aqi) != null) availablePollutants.push('aqi')
+    if (s?.pm25 != null) availablePollutants.push('pm25')
+    if (s?.pm10 != null) availablePollutants.push('pm10')
+    if (s?.no2 != null) availablePollutants.push('no2')
+    return {
+      health,
+      lat: s?.lat ?? null,
+      lng: s?.lng ?? null,
+      availablePollutants,
+      readingSource: usingCpcb ? 'CPCB' : 'OpenAQ',
+      cpcbLastUpdate: preferred?.cpcbLastUpdate ?? null,
+      openaqLastUpdate: preferred?.openaqLastUpdate ?? null,
+      cpcbMatched: preferred?.matched ?? false,
+      flags: preferred?.flags ?? [],
+    }
+  }, [viewMode, selection, stations, stationHealthById, latestReadingByStationId])
+
+  const dataQualityWardCoverage: WardCoverageDetail | null = useMemo(() => {
+    if (viewMode !== 'data_quality' || selection?.kind !== 'wardBoundary') return null
+    return wardCoverageById.get(selection.id) ?? null
+  }, [viewMode, selection, wardCoverageById])
+
   // Enrichment for a clicked ward-boundary polygon (one of the 250 non-
   // hotspot municipal wards, or NDMC/Cantonment) - real station/incident/
   // forecast context where it exists, honest null/"no data" where it
@@ -631,6 +724,8 @@ export default function MapPage() {
         ) : (
           <>
             <MapToolbar
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
               pollutant={pollutant}
               onPollutantChange={setPollutant}
               timeMode={timeMode}
@@ -639,6 +734,8 @@ export default function MapPage() {
               onSourceFilterChange={setSourceFilter}
               severityFilter={severityFilter}
               onSeverityFilterChange={setSeverityFilter}
+              freshnessFilter={freshnessFilter}
+              onFreshnessFilterChange={setFreshnessFilter}
               onResetView={() => setResetToken((t) => t + 1)}
               forecastSuppressed={forecastSuppressed}
             />
@@ -673,69 +770,98 @@ export default function MapPage() {
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard.length ?? 0) > 0}
                     forecastSuppressed={forecastSuppressed}
                   />
-                  <MapLegend sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} />
+                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} />
                 </div>
                 <BasemapSwitcher mode={basemap} onChange={setBasemap} />
               </div>
 
               <div className="w-80 flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
-                {selection == null ? (
-                  <SpatialSummaryPanel
-                    stationsTotal={healthRollup.total}
-                    stationsFresh={healthRollup.active - healthRollup.stale}
-                    stationsStale={healthRollup.stale}
-                    activeIncidents={incidents.length}
-                    forecastAlerts={severeWards.length}
-                    dominantSource={sourceMix[0] ?? null}
-                    locationsUnavailable={locationsUnavailable}
-                    forecastSuppressed={forecastSuppressed}
-                    forecastLoading={forecastsState.loading}
-                    highestAqiWard={highestAqiWard}
-                    wardsWithCoverage={wardsWithCoverage}
-                  />
-                ) : selectedWard ? (
-                  <SelectedWardPanel
-                    ward={selectedWard}
-                    forecast={forecasts.get(selectedWard.id)}
-                    pollutant={pollutant}
-                    linkedIncidents={incidents.filter((i) => i.ward_id === selectedWard.id)}
-                    linkedDispatches={dispatchPage.rows.filter((d) => d.ward_name === selectedWard.name)}
-                    attribution={attributionState.data}
-                    attributionLoading={attributionState.loading}
-                    latestForecastRun={latestForecastRunState.data}
-                    latestForecastRunLoading={latestForecastRunState.loading}
-                    onClose={() => setSelection(null)}
-                  />
-                ) : selectedStation ? (
-                  <SelectedStationPanel
-                    station={selectedStation}
-                    pollutant={pollutant}
-                    timeMode={timeMode}
-                    forecastPeak={stationForecastValue}
-                    forecastPollutantLabel={MAP_POLLUTANT_LABEL[forecastPollutant]}
-                    latestForecastRun={latestForecastRunState.data}
-                    latestForecastRunLoading={latestForecastRunState.loading}
-                    nearbyIncidentsCount={nearbyIncidentsCount}
-                    onClose={() => setSelection(null)}
-                  />
-                ) : selectedIncident ? (
-                  <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
-                ) : selection?.kind === 'wardBoundary' && wardBoundaryDetail ? (
-                  <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
+                {viewMode === 'data_quality' ? (
+                  /* ── Data Quality mode panels ───────────────────────── */
+                  dataQualityStationInfo ? (
+                    <DataQualityStationPanel info={dataQualityStationInfo} onClose={() => setSelection(null)} />
+                  ) : selection?.kind === 'wardBoundary' && dataQualityWardCoverage ? (
+                    (() => {
+                      const b = wardBoundaries.find((w) => w.id === selection.id)
+                      return b ? (
+                        <DataQualityWardPanel
+                          wardId={b.id}
+                          wardName={b.name}
+                          wardNumber={b.wardNumber}
+                          coverage={dataQualityWardCoverage}
+                          onClose={() => setSelection(null)}
+                        />
+                      ) : null
+                    })()
+                  ) : selectedIncident ? (
+                    <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
+                  ) : (
+                    <DataQualitySummaryPanel
+                      stationQuality={stationQuality}
+                      wardCoverage={wardCoverageSummary}
+                      incidentAudit={incidentAudit}
+                    />
+                  )
                 ) : (
-                  <SpatialSummaryPanel
-                    stationsTotal={healthRollup.total}
-                    stationsFresh={healthRollup.active - healthRollup.stale}
-                    stationsStale={healthRollup.stale}
-                    activeIncidents={incidents.length}
-                    forecastAlerts={severeWards.length}
-                    dominantSource={sourceMix[0] ?? null}
-                    locationsUnavailable={locationsUnavailable}
-                    forecastSuppressed={forecastSuppressed}
-                    forecastLoading={forecastsState.loading}
-                    highestAqiWard={highestAqiWard}
-                    wardsWithCoverage={wardsWithCoverage}
-                  />
+                  /* ── Pollution mode panels (existing) ───────────────── */
+                  selection == null ? (
+                    <SpatialSummaryPanel
+                      stationsTotal={healthRollup.total}
+                      stationsFresh={healthRollup.active - healthRollup.stale}
+                      stationsStale={healthRollup.stale}
+                      activeIncidents={incidents.length}
+                      forecastAlerts={severeWards.length}
+                      dominantSource={sourceMix[0] ?? null}
+                      locationsUnavailable={locationsUnavailable}
+                      forecastSuppressed={forecastSuppressed}
+                      forecastLoading={forecastsState.loading}
+                      highestAqiWard={highestAqiWard}
+                      wardsWithCoverage={wardsWithCoverage}
+                    />
+                  ) : selectedWard ? (
+                    <SelectedWardPanel
+                      ward={selectedWard}
+                      forecast={forecasts.get(selectedWard.id)}
+                      pollutant={pollutant}
+                      linkedIncidents={incidents.filter((i) => i.ward_id === selectedWard.id)}
+                      linkedDispatches={dispatchPage.rows.filter((d) => d.ward_name === selectedWard.name)}
+                      attribution={attributionState.data}
+                      attributionLoading={attributionState.loading}
+                      latestForecastRun={latestForecastRunState.data}
+                      latestForecastRunLoading={latestForecastRunState.loading}
+                      onClose={() => setSelection(null)}
+                    />
+                  ) : selectedStation ? (
+                    <SelectedStationPanel
+                      station={selectedStation}
+                      pollutant={pollutant}
+                      timeMode={timeMode}
+                      forecastPeak={stationForecastValue}
+                      forecastPollutantLabel={MAP_POLLUTANT_LABEL[forecastPollutant]}
+                      latestForecastRun={latestForecastRunState.data}
+                      latestForecastRunLoading={latestForecastRunState.loading}
+                      nearbyIncidentsCount={nearbyIncidentsCount}
+                      onClose={() => setSelection(null)}
+                    />
+                  ) : selectedIncident ? (
+                    <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
+                  ) : selection?.kind === 'wardBoundary' && wardBoundaryDetail ? (
+                    <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
+                  ) : (
+                    <SpatialSummaryPanel
+                      stationsTotal={healthRollup.total}
+                      stationsFresh={healthRollup.active - healthRollup.stale}
+                      stationsStale={healthRollup.stale}
+                      activeIncidents={incidents.length}
+                      forecastAlerts={severeWards.length}
+                      dominantSource={sourceMix[0] ?? null}
+                      locationsUnavailable={locationsUnavailable}
+                      forecastSuppressed={forecastSuppressed}
+                      forecastLoading={forecastsState.loading}
+                      highestAqiWard={highestAqiWard}
+                      wardsWithCoverage={wardsWithCoverage}
+                    />
+                  )
                 )}
               </div>
             </div>

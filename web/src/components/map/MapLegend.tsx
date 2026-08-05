@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Info, ListTree } from 'lucide-react'
+import { FRESHNESS_HEX, FRESHNESS_LABEL, WARD_COVERAGE_HEX, WARD_COVERAGE_LABEL, type FreshnessClass, type WardCoverageClass } from '../../lib/dataQualityRules'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { SEVERITY_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX } from '../../lib/mapMarkers'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
+import type { MapViewMode } from './MapToolbar'
 
 const SEVERITY_ORDER: Severity[] = ['severe', 'high', 'moderate', 'low']
 const PHYSICAL_SOURCES: SourceCategory[] = ['vehicular', 'industrial', 'construction_dust', 'road_dust', 'open_burning', 'waste']
@@ -36,11 +38,13 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
 }
 
 export default function MapLegend({
+  viewMode = 'pollution',
   sourceAttributionOn,
   pollutant,
   transitActivityOn,
   forecastSuppressed = false,
 }: {
+  viewMode?: MapViewMode
   sourceAttributionOn: boolean
   pollutant: MapPollutant
   transitActivityOn: boolean
@@ -65,7 +69,41 @@ export default function MapLegend({
         )}
       </button>
 
-      {open && (
+      {open && viewMode === 'data_quality' && (
+        <div className="px-1.5 pb-1.5">
+          <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Station freshness</p>
+          <ul className="mt-0.5 space-y-0.5">
+            {(['fresh', 'delayed', 'stale', 'no_reading', 'unavailable'] as FreshnessClass[]).map((cls) => (
+              <li key={cls} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                <span
+                  className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                  style={{ background: FRESHNESS_HEX[cls] }}
+                  aria-hidden
+                />
+                {FRESHNESS_LABEL[cls]}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Ward coverage</p>
+          <ul className="mt-0.5 space-y-0.5">
+            {(['direct', 'nearby', 'insufficient', 'unavailable'] as WardCoverageClass[]).map((cls) => (
+              <li key={cls} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                <span
+                  className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm"
+                  style={{ background: WARD_COVERAGE_HEX[cls] }}
+                  aria-hidden
+                />
+                {WARD_COVERAGE_LABEL[cls]}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
+            Station colour = data freshness. Ward fill = monitoring coverage class.
+          </p>
+        </div>
+      )}
+
+      {open && viewMode === 'pollution' && (
         <div className="px-1.5 pb-1.5">
           {pollutant === 'aqi' ? (
             <>
