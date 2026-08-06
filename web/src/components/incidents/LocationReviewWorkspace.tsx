@@ -152,7 +152,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
         <div>
