@@ -121,41 +121,69 @@ function ringSignedAreaCentroid(ring: number[][]): { lng: number; lat: number; a
   return { lng: cx / (6 * area), lat: cy / (6 * area), area: Math.abs(area) }
 }
 
-/** Derive a representative interior point from GeoJSON polygon or multipolygon
- *  geometry. The returned point is suitable as a proximity reference for the
- *  5 km ward coverage threshold.
+/** Horizontal scanline interior point for an exterior ring.
+ *  Casts a ray at the ring's vertical midpoint, collects edge intersections,
+ *  and returns the midpoint of the widest inside span. Guaranteed to be inside
+ *  the exterior ring (holes are not considered). Null for degenerate rings. */
+function scanlinePoint(ring: number[][]): { lat: number; lng: number } | null {
+  const n = ring.length
+  if (n < 3) return null
+  const lats = ring.map((p) => p[1])
+  const latMin = Math.min(...lats)
+  const latMax = Math.max(...lats)
+  // Tiny offset moves the scanline away from horizontal edges or vertex hits
+  const scanLat = (latMin + latMax) / 2 + (latMax - latMin) * 1e-6
+  const xs: number[] = []
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const y1 = ring[j][1], x1 = ring[j][0]
+    const y2 = ring[i][1], x2 = ring[i][0]
+    if ((y1 <= scanLat && y2 > scanLat) || (y2 <= scanLat && y1 > scanLat)) {
+      xs.push(x1 + ((scanLat - y1) * (x2 - x1)) / (y2 - y1))
+    }
+  }
+  if (xs.length < 2) return null
+  xs.sort((a, b) => a - b)
+  let bestMid = 0, bestWidth = -1
+  for (let i = 0; i + 1 < xs.length; i += 2) {
+    const w = xs[i + 1] - xs[i]
+    if (w > bestWidth) { bestWidth = w; bestMid = (xs[i] + xs[i + 1]) / 2 }
+  }
+  return bestWidth > 0 ? { lat: scanLat, lng: bestMid } : null
+}
+
+/** Interior point for a single Polygon. Uses the shoelace centroid when it
+ *  lies inside (confirmed by PIP), otherwise falls back to scanlinePoint. */
+function polygonInteriorPoint(
+  geometry: GeoJSON.Polygon,
+): { lat: number; lng: number } | null {
+  const ring = geometry.coordinates[0] as number[][]
+  const c = ringSignedAreaCentroid(ring)
+  if (!c) return null
+  const candidate = { lat: c.lat, lng: c.lng }
+  if (pointInGeometry(candidate.lat, candidate.lng, geometry)) return candidate
+  return scanlinePoint(ring)
+}
+
+/** Derive a guaranteed-interior reference point from GeoJSON polygon or
+ *  multipolygon geometry, suitable as a proximity reference for the 5 km
+ *  ward coverage threshold.
  *
- *  For Polygon: signed-area (shoelace) centroid of the exterior ring. If the
- *  centroid falls outside the polygon (possible for highly concave shapes), the
- *  bounding-box centre is returned as a best-effort interior approximation.
+ *  For Polygon: shoelace centroid when PIP confirms it lies inside; scanline
+ *  interior point otherwise (handles L-, U-, C-shaped and other concave wards).
  *
- *  For MultiPolygon: centroid of the sub-polygon with the largest area. Using
- *  the area-weighted mean would place the reference point in empty space between
- *  disconnected sub-polygons (e.g. exclave wards), making distances meaningless.
+ *  For MultiPolygon: interior point of the sub-polygon with the largest area.
+ *  Area-weighted centroid can land in empty space between disconnected parts
+ *  (e.g. exclave wards); the largest-component approach stays geographically
+ *  representative.
  *
  *  Returns null only for genuinely degenerate geometry. */
 export function geometryCentroid(
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
 ): { lat: number; lng: number } | null {
   if (geometry.type === 'Polygon') {
-    const c = ringSignedAreaCentroid(geometry.coordinates[0] as number[][])
-    if (!c) return null
-    const result = { lat: c.lat, lng: c.lng }
-    // Concave ward: shoelace centroid may fall outside the polygon. Bounding-box
-    // centre is a more robust fallback for the 5 km proximity threshold.
-    if (!pointInGeometry(result.lat, result.lng, geometry)) {
-      const ring = geometry.coordinates[0] as number[][]
-      if (ring.length < 2) return null
-      const lats = ring.map((p) => p[1])
-      const lngs = ring.map((p) => p[0])
-      return {
-        lat: (Math.min(...lats) + Math.max(...lats)) / 2,
-        lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-      }
-    }
-    return result
+    return polygonInteriorPoint(geometry)
   }
-  // MultiPolygon: centroid of the sub-polygon with the largest area.
+  // MultiPolygon: interior point of the sub-polygon with the largest area.
   let largest: { lat: number; lng: number } | null = null
   let largestArea = 0
   for (const poly of geometry.coordinates as number[][][][]) {
@@ -163,7 +191,7 @@ export function geometryCentroid(
     if (!c) continue
     if (c.area > largestArea) {
       largestArea = c.area
-      largest = { lat: c.lat, lng: c.lng }
+      largest = polygonInteriorPoint({ type: 'Polygon', coordinates: poly as number[][][] })
     }
   }
   return largest
