@@ -3,12 +3,11 @@
  * No I/O here — mirrors mapRules.ts's convention. Every input comes from
  * data already fetched by MapPage.tsx's existing queries.
  *
- * Ward coverage threshold (5 km) follows WMO/CPCB guidance for urban
- * air-quality monitoring density in dense environments. It is the maximum
- * straight-line distance at which a station can reasonably be considered
- * "supporting" a ward it is not directly assigned to. This constant is
- * documented and exported — callers can display it honestly rather than
- * showing a coverage classification without disclosing the basis.
+ * Ward coverage threshold (5 km) is a configurable operational proximity rule:
+ * the maximum straight-line distance at which an active station is considered
+ * to "support" a ward it does not lie inside. It can be changed by adjusting
+ * NEARBY_COVERAGE_THRESHOLD_METERS. This constant is exported so callers can
+ * display the basis rather than showing coverage class without disclosure.
  */
 import type { StationMarker } from './data'
 import type { Incident } from './incidents'
@@ -122,33 +121,52 @@ function ringSignedAreaCentroid(ring: number[][]): { lng: number; lat: number; a
   return { lng: cx / (6 * area), lat: cy / (6 * area), area: Math.abs(area) }
 }
 
-/** Derive a representative centroid from GeoJSON polygon or multipolygon
- *  geometry using the signed-area (shoelace) formula.
+/** Derive a representative interior point from GeoJSON polygon or multipolygon
+ *  geometry. The returned point is suitable as a proximity reference for the
+ *  5 km ward coverage threshold.
  *
- *  For Polygon: centroid of the exterior ring.
- *  For MultiPolygon: area-weighted centroid of each sub-polygon's exterior ring.
+ *  For Polygon: signed-area (shoelace) centroid of the exterior ring. If the
+ *  centroid falls outside the polygon (possible for highly concave shapes), the
+ *  bounding-box centre is returned as a best-effort interior approximation.
  *
- *  The mathematical centroid may fall outside concave or donut-shaped wards,
- *  but for the 5 km proximity threshold used here, the positional error is
- *  operationally acceptable for all real Delhi ward shapes. Returns null only
- *  for genuinely degenerate geometry (empty rings, zero-area polygons). */
+ *  For MultiPolygon: centroid of the sub-polygon with the largest area. Using
+ *  the area-weighted mean would place the reference point in empty space between
+ *  disconnected sub-polygons (e.g. exclave wards), making distances meaningless.
+ *
+ *  Returns null only for genuinely degenerate geometry. */
 export function geometryCentroid(
   geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
 ): { lat: number; lng: number } | null {
   if (geometry.type === 'Polygon') {
     const c = ringSignedAreaCentroid(geometry.coordinates[0] as number[][])
-    return c ? { lat: c.lat, lng: c.lng } : null
+    if (!c) return null
+    const result = { lat: c.lat, lng: c.lng }
+    // Concave ward: shoelace centroid may fall outside the polygon. Bounding-box
+    // centre is a more robust fallback for the 5 km proximity threshold.
+    if (!pointInGeometry(result.lat, result.lng, geometry)) {
+      const ring = geometry.coordinates[0] as number[][]
+      if (ring.length < 2) return null
+      const lats = ring.map((p) => p[1])
+      const lngs = ring.map((p) => p[0])
+      return {
+        lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+        lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+      }
+    }
+    return result
   }
-  // MultiPolygon: area-weighted centroid across all sub-polygon exterior rings
-  let totalArea = 0, wLat = 0, wLng = 0
+  // MultiPolygon: centroid of the sub-polygon with the largest area.
+  let largest: { lat: number; lng: number } | null = null
+  let largestArea = 0
   for (const poly of geometry.coordinates as number[][][][]) {
     const c = ringSignedAreaCentroid(poly[0] as number[][])
     if (!c) continue
-    wLat += c.lat * c.area
-    wLng += c.lng * c.area
-    totalArea += c.area
+    if (c.area > largestArea) {
+      largestArea = c.area
+      largest = { lat: c.lat, lng: c.lng }
+    }
   }
-  return totalArea === 0 ? null : { lat: wLat / totalArea, lng: wLng / totalArea }
+  return largest
 }
 
 // ── Ward coverage classification ───────────────────────────────────────────────

@@ -241,13 +241,25 @@ describe('geometryCentroid', () => {
     expect(c.lng).toBeCloseTo(77.21, 1)   // lng ≈ 77, not ≈ 28
   })
 
-  it('returns area-weighted centroid of a MultiPolygon', () => {
+  it('returns centroid of the largest sub-polygon of a MultiPolygon (not the empty-space midpoint)', () => {
     const geom = twoPartMultiPolygon(28.55, 77.15, 28.65, 77.21)
     const c = geometryCentroid(geom)
     expect(c).not.toBeNull()
-    // Centroid should be between the two sub-polygon centres (equal area, so the midpoint)
-    expect(c!.lat).toBeCloseTo((28.55 + 28.65) / 2, 1)
-    expect(c!.lng).toBeCloseTo((77.15 + 77.21) / 2, 1)
+    // Area-weighted midpoint (28.60, 77.18) would fall between the two sub-polygons.
+    // Instead we get the first (largest by first-wins for equal area) sub-polygon's centroid.
+    expect(c!.lat).toBeCloseTo(28.55, 1)
+    expect(c!.lng).toBeCloseTo(77.15, 1)
+  })
+
+  it('centroid of a square Polygon lies inside the polygon', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const c = geometryCentroid(geom)!
+    // Import pointInGeometry indirectly by checking the output is within the known bounds
+    const halfDeg = 0.02
+    expect(c.lat).toBeGreaterThan(28.62 - halfDeg)
+    expect(c.lat).toBeLessThan(28.62 + halfDeg)
+    expect(c.lng).toBeGreaterThan(77.21 - halfDeg)
+    expect(c.lng).toBeLessThan(77.21 + halfDeg)
   })
 
   it('returns null for a degenerate Polygon with an empty ring', () => {
