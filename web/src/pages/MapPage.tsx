@@ -605,11 +605,16 @@ export default function MapPage() {
   const selectedWard = selection?.kind === 'ward' ? wards.find((w) => w.id === selection.id) : undefined
   const selectedIncident: Incident | undefined =
     selection?.kind === 'incident' ? incidents.find((i) => i.id === selection.id) : undefined
+  // Derive overlay coords from the filtered GeoJSON, not the full incidents
+  // list — this way the overlay naturally disappears when the selected
+  // incident is excluded by a severity/source filter or the layer is off.
   const selectedIncidentCoords = useMemo<[number, number] | null>(() => {
-    if (!selectedIncident) return null
-    if (!isValidDelhiCoordinate(selectedIncident.lat, selectedIncident.lng)) return null
-    return [selectedIncident.lng as number, selectedIncident.lat as number]
-  }, [selectedIncident])
+    if (selection?.kind !== 'incident') return null
+    const feature = incidentGeoJSON.features.find((f) => f.id === selection.id)
+    if (!feature) return null
+    const [lng, lat] = feature.geometry.coordinates
+    return [lng, lat]
+  }, [selection, incidentGeoJSON])
   const selectedStation: SelectedStation | undefined =
     selection?.kind === 'station'
       ? (() => {
