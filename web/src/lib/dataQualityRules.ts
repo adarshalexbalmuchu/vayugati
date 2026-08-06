@@ -121,19 +121,11 @@ function ringSignedAreaCentroid(ring: number[][]): { lng: number; lat: number; a
   return { lng: cx / (6 * area), lat: cy / (6 * area), area: Math.abs(area) }
 }
 
-/** Horizontal scanline interior point for an exterior ring.
- *  Casts a ray at the ring's vertical midpoint, collects edge intersections,
- *  and returns the midpoint of the widest inside span. Guaranteed to be inside
- *  the exterior ring (holes are not considered). Null for degenerate rings. */
-function scanlinePoint(ring: number[][]): { lat: number; lng: number } | null {
-  const n = ring.length
-  if (n < 3) return null
-  const lats = ring.map((p) => p[1])
-  const latMin = Math.min(...lats)
-  const latMax = Math.max(...lats)
-  // Tiny offset moves the scanline away from horizontal edges or vertex hits
-  const scanLat = (latMin + latMax) / 2 + (latMax - latMin) * 1e-6
+/** Candidate midpoint of the widest interior span at a given latitude.
+ *  Only checks the exterior ring — caller must PIP-verify against full geometry. */
+function scanlineAtLat(ring: number[][], scanLat: number): { lat: number; lng: number } | null {
   const xs: number[] = []
+  const n = ring.length
   for (let i = 0, j = n - 1; i < n; j = i++) {
     const y1 = ring[j][1], x1 = ring[j][0]
     const y2 = ring[i][1], x2 = ring[i][0]
@@ -151,8 +143,28 @@ function scanlinePoint(ring: number[][]): { lat: number; lng: number } | null {
   return bestWidth > 0 ? { lat: scanLat, lng: bestMid } : null
 }
 
-/** Interior point for a single Polygon. Uses the shoelace centroid when it
- *  lies inside (confirmed by PIP), otherwise falls back to scanlinePoint. */
+/** Scan multiple horizontal lines (50 %, 40 %, 60 %, 25 %, 75 % of the bounding-box
+ *  height) and return the first candidate that passes full-geometry PIP.
+ *  Handles polygons-with-holes and self-intersecting exterior rings that the
+ *  ring-only scanline cannot guard against. */
+function scanForInteriorPoint(
+  ring: number[][],
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+): { lat: number; lng: number } | null {
+  const lats = ring.map((p) => p[1])
+  const latMin = Math.min(...lats)
+  const span = Math.max(...lats) - latMin
+  for (const f of [0.5, 0.4, 0.6, 0.25, 0.75]) {
+    const scanLat = latMin + span * f + span * 1e-6  // tiny offset avoids vertex/horizontal-edge hits
+    const candidate = scanlineAtLat(ring, scanLat)
+    if (candidate && pointInGeometry(candidate.lat, candidate.lng, geometry)) return candidate
+  }
+  return null
+}
+
+/** Interior point for a single Polygon. Uses the shoelace centroid when PIP
+ *  confirms it lies inside the full geometry (handles holes); otherwise runs
+ *  multi-position scanlines, each verified against the full geometry. */
 function polygonInteriorPoint(
   geometry: GeoJSON.Polygon,
 ): { lat: number; lng: number } | null {
@@ -161,20 +173,21 @@ function polygonInteriorPoint(
   if (!c) return null
   const candidate = { lat: c.lat, lng: c.lng }
   if (pointInGeometry(candidate.lat, candidate.lng, geometry)) return candidate
-  return scanlinePoint(ring)
+  return scanForInteriorPoint(ring, geometry)
 }
 
-/** Derive a guaranteed-interior reference point from GeoJSON polygon or
+/** Derive a PIP-verified interior reference point from GeoJSON polygon or
  *  multipolygon geometry, suitable as a proximity reference for the 5 km
  *  ward coverage threshold.
  *
- *  For Polygon: shoelace centroid when PIP confirms it lies inside; scanline
- *  interior point otherwise (handles L-, U-, C-shaped and other concave wards).
+ *  For Polygon: shoelace centroid first; if PIP (full geometry, including holes)
+ *  says it lies outside, falls back to multi-position scanlines each confirmed
+ *  by the same PIP check. Handles L-, U-, C-shaped concave wards and
+ *  polygons-with-holes.
  *
- *  For MultiPolygon: interior point of the sub-polygon with the largest area.
- *  Area-weighted centroid can land in empty space between disconnected parts
- *  (e.g. exclave wards); the largest-component approach stays geographically
- *  representative.
+ *  For MultiPolygon: applies the Polygon logic to the sub-polygon with the
+ *  largest area. Area-weighted centroid can land in empty space between
+ *  disconnected parts (e.g. exclave wards).
  *
  *  Returns null only for genuinely degenerate geometry. */
 export function geometryCentroid(

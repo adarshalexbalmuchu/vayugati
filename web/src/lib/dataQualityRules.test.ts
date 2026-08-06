@@ -10,6 +10,7 @@ import {
   rollupStationQuality,
   stationFreshnessClass,
 } from './dataQualityRules'
+import { pointInGeometry } from './incidentLocationRules'
 import type { StationMarker } from './data'
 import type { StationHealthRow } from './ops'
 
@@ -276,17 +277,16 @@ describe('geometryCentroid', () => {
     expect(c.lng).toBeLessThan(77.21 + halfDeg)
   })
 
-  it('returns a point inside a U-shaped concave polygon (shoelace centroid falls in notch)', () => {
-    // Shoelace centroid ≈ (77.21, 28.615) — inside the open notch, outside the polygon.
-    // scanlinePoint at lat≈28.62 finds spans [77.19,77.20] and [77.22,77.23] and
-    // picks the midpoint of the first (widest or first-wins for equal widths).
+  it('returns a PIP-verified point inside a U-shaped concave polygon (shoelace centroid falls in notch)', () => {
+    // Shoelace centroid ≈ (28.615, 77.21) — inside the open notch, outside the polygon.
+    // scanForInteriorPoint tries at 50% of height (lat≈28.62), finds spans [77.19,77.20]
+    // and [77.22,77.23], verifies each candidate passes full-geometry PIP, and returns.
     const geom = uShapePolygon()
     const c = geometryCentroid(geom)
     expect(c).not.toBeNull()
-    // Must NOT be in the notch (77.20-77.22 lng, 28.61-28.64 lat)
-    const inNotch = c!.lng > 77.20 && c!.lng < 77.22 && c!.lat > 28.61
-    expect(inNotch).toBe(false)
-    // Must be within the outer bounding box
+    // Full-geometry PIP confirms the point is inside the ward — not in the notch
+    expect(pointInGeometry(c!.lat, c!.lng, geom)).toBe(true)
+    // Sanity: within the outer bounding box
     expect(c!.lat).toBeGreaterThanOrEqual(28.60)
     expect(c!.lat).toBeLessThanOrEqual(28.64)
     expect(c!.lng).toBeGreaterThanOrEqual(77.19)
@@ -294,13 +294,21 @@ describe('geometryCentroid', () => {
   })
 
   it('classifies a station in one arm of a U-shaped ward as direct coverage', () => {
-    // The station is in the left arm of the U (lng 77.19-77.20, lat 28.60-28.64).
-    // PIP on the full geometry must confirm direct regardless of centroid position.
     const geom = uShapePolygon()
     const h = healthRow({ id: 80, is_active: true })
     const s = station({ id: 80, lat: 28.62, lng: 77.195 })
     const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
     expect(result.class).toBe('direct')
+  })
+
+  it('returns a PIP-verified point inside a polygon-with-hole (avoids landing in the hole)', () => {
+    // polygonWithHole: outer square centred at (28.62, 77.21), hole centred at same point.
+    // The shoelace centroid of the outer ring hits the hole, so the scanline fallback
+    // must find a point that passes full-geometry PIP (outside the hole = inside the ward).
+    const geom = polygonWithHole(28.62, 77.21, 0.02, 0.01)
+    const c = geometryCentroid(geom)
+    expect(c).not.toBeNull()
+    expect(pointInGeometry(c!.lat, c!.lng, geom)).toBe(true)
   })
 
   it('returns null for a degenerate Polygon with an empty ring', () => {
