@@ -128,6 +128,34 @@ describe('aqSourceLabel', () => {
   })
 })
 
+describe('Fresh · OpenAQ fallback provenance combinations', () => {
+  it('"Fresh · OpenAQ": matched fallback row with no stale/mismatch flags', () => {
+    // Station reads from OpenAQ but the reading is current — this combination
+    // appears as "Fresh · OpenAQ" in DataQualityStationPanel's FreshnessBadge.
+    const r = row({ sourceUsed: 'openaq_fallback', matched: true, flags: [] })
+    expect(aqSourceLabel(r)).toBe('OpenAQ')
+    expect(dataConfidenceLevel(r)).toBe('matched')
+  })
+
+  it('"Stale · OpenAQ": OpenAQ fallback with its own stale flag', () => {
+    const r = row({ sourceUsed: 'openaq_fallback', flags: ['openaq_stale'] })
+    expect(aqSourceLabel(r)).toBe('OpenAQ')
+    expect(dataConfidenceLevel(r)).toBe('stale')
+  })
+
+  it('"Review" wins over source label on any value_mismatch, regardless of fallback state', () => {
+    const r = row({ sourceUsed: 'openaq_fallback', flags: ['value_mismatch'] })
+    expect(aqSourceLabel(r)).toBe('Review')
+    expect(dataConfidenceLevel(r)).toBe('mismatch')
+  })
+
+  it('CPCB-sourced station is never labelled as OpenAQ', () => {
+    const r = row({ sourceUsed: 'cpcb', matched: true, flags: [] })
+    expect(aqSourceLabel(r)).toBe('CPCB')
+    expect(dataConfidenceLevel(r)).toBe('matched')
+  })
+})
+
 describe('tallyDataSourceConfidence', () => {
   it('counts cpcb vs fallback correctly', () => {
     const rows = [row({ sourceUsed: 'cpcb' }), row({ sourceUsed: 'cpcb' }), row({ sourceUsed: 'openaq_fallback' })]

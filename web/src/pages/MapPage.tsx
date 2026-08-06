@@ -398,6 +398,8 @@ export default function MapPage() {
                   aqi: null,  // suppress AQI colour in quality mode
                   isStale: cls === 'stale',
                   isCpcbSourced: usingCpcb,
+                  freshnessClass: cls,
+                  isOpenAqFallback: preferred?.sourceUsed === 'openaq_fallback',
                   // Badge shows reading age; color shows freshness state
                   badgeText: health.latest_reading_age_minutes != null
                     ? health.latest_reading_age_minutes < 60

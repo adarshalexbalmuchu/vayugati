@@ -28,7 +28,7 @@ export interface DataQualityStationInfo {
   flags: string[]
 }
 
-function FreshnessBadge({ cls }: { cls: FreshnessClass }) {
+function FreshnessBadge({ cls, fallback }: { cls: FreshnessClass; fallback?: boolean }) {
   const isGood = cls === 'fresh'
   const isWarn = cls === 'delayed'
   const isBad = cls === 'stale' || cls === 'no_reading' || cls === 'unavailable'
@@ -43,7 +43,7 @@ function FreshnessBadge({ cls }: { cls: FreshnessClass }) {
       style={{ color: FRESHNESS_HEX[cls] }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: FRESHNESS_HEX[cls] }} aria-hidden />
-      {FRESHNESS_LABEL[cls]}
+      {FRESHNESS_LABEL[cls]}{fallback ? ' · OpenAQ' : ''}
     </span>
   )
 }
@@ -80,7 +80,7 @@ export default function DataQualityStationPanel({
 
       {/* Freshness */}
       <div className="mb-3 flex items-center gap-2">
-        <FreshnessBadge cls={cls} />
+        <FreshnessBadge cls={cls} fallback={info.readingSource === 'OpenAQ'} />
         <span className="text-[11px] text-slate-400">{formatReadingAge(age)}</span>
         {!info.health.is_active && (
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">

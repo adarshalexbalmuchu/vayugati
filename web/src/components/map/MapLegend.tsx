@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Info, ListTree } from 'lucide-react'
-import { FRESHNESS_HEX, FRESHNESS_LABEL, WARD_COVERAGE_HEX, WARD_COVERAGE_LABEL, type FreshnessClass, type WardCoverageClass } from '../../lib/dataQualityRules'
+import { FRESHNESS_HEX, FRESHNESS_LABEL, NEARBY_COVERAGE_THRESHOLD_METERS, WARD_COVERAGE_HEX, WARD_COVERAGE_LABEL, type FreshnessClass, type WardCoverageClass } from '../../lib/dataQualityRules'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { SEVERITY_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX } from '../../lib/mapMarkers'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
@@ -20,6 +20,36 @@ const AQI_BANDS: { label: string; hex: string }[] = [
   { label: 'Very Poor (301-400)', hex: '#ef4444' },
   { label: 'Severe (400+)', hex: '#9333ea' },
 ]
+
+/** Miniature station marker matching mapMarkers.ts's stationCircle() ring
+ *  styles per freshness class — ring shape encodes freshness so colour alone
+ *  is never the only signal (WCAG 1.4.1). */
+function FreshnessRingSwatch({ cls }: { cls: FreshnessClass }) {
+  const color = FRESHNESS_HEX[cls]
+  const outerStyle: React.CSSProperties = {
+    width: 12, height: 12, borderRadius: '50%',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+    ...(cls === 'fresh'
+      ? { border: '1.5px solid rgba(34,197,94,0.6)' }
+      : cls === 'delayed'
+        ? { border: `1.5px dashed ${color}` }
+        : cls === 'stale'
+          ? { border: `1.5px solid ${color}`, boxShadow: `0 0 0 2.5px rgba(239,68,68,0.2)` }
+          : cls === 'no_reading'
+            ? { border: `1.5px dashed ${color}`, opacity: 0.7 }
+            : /* unavailable */ { border: `1px solid ${color}`, opacity: 0.5 }),
+  }
+  const coreStyle: React.CSSProperties = {
+    width: 7, height: 7, borderRadius: '50%', background: color,
+    opacity: cls === 'stale' ? 0.75 : cls === 'unavailable' ? 0.45 : cls === 'no_reading' ? 0.65 : 1,
+  }
+  return (
+    <span style={outerStyle} aria-hidden>
+      <span style={coreStyle} />
+    </span>
+  )
+}
 
 function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' | 'square' | 'diamond' | 'ring' }) {
   const radius = shape === 'circle' ? '50%' : shape === 'square' ? '3px' : shape === 'diamond' ? '2px' : '50%'
@@ -75,15 +105,23 @@ export default function MapLegend({
           <ul className="mt-0.5 space-y-0.5">
             {(['fresh', 'delayed', 'stale', 'no_reading', 'unavailable'] as FreshnessClass[]).map((cls) => (
               <li key={cls} className="flex items-center gap-1.5 text-[10px] text-slate-600">
-                <span
-                  className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                  style={{ background: FRESHNESS_HEX[cls] }}
-                  aria-hidden
-                />
+                <FreshnessRingSwatch cls={cls} />
                 {FRESHNESS_LABEL[cls]}
               </li>
             ))}
           </ul>
+          <li className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500 list-none">
+            <span
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 10, height: 10, borderRadius: 2,
+                border: '1.5px solid #f59e0b', background: '#fff',
+                fontSize: 5.5, fontWeight: 700, color: '#f59e0b', flexShrink: 0,
+              }}
+              aria-hidden
+            >F</span>
+            OpenAQ fallback source
+          </li>
           <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">Ward coverage</p>
           <ul className="mt-0.5 space-y-0.5">
             {(['direct', 'nearby', 'insufficient', 'unavailable'] as WardCoverageClass[]).map((cls) => (
@@ -97,9 +135,12 @@ export default function MapLegend({
               </li>
             ))}
           </ul>
-          <p className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
-            Station colour = data freshness. Ward fill = monitoring coverage class.
-          </p>
+          <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">How coverage is determined</p>
+          <ul className="mt-0.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+            <li>• Straight-line distance from ward centroid to nearest active station.</li>
+            <li>• {(NEARBY_COVERAGE_THRESHOLD_METERS / 1000).toFixed(0)} km threshold follows WMO/CPCB guidance for dense urban monitoring.</li>
+            <li>• Inactive stations never count toward coverage, even if assigned.</li>
+          </ul>
         </div>
       )}
 

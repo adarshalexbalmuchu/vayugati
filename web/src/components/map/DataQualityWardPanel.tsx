@@ -95,6 +95,11 @@ export default function DataQualityWardPanel({
                 ? `No active station exists within the ${thresholdKm} km support threshold. Any AQI shown is not defensibly attributable to this ward.`
                 : 'Ward geometry exists but no valid centroid is available to calculate nearest-station distance.'}
         </p>
+        {(coverage.class === 'direct' || coverage.class === 'nearby' || coverage.class === 'insufficient') && (
+          <p className="mt-1.5 text-[10px] text-slate-400">
+            The {thresholdKm} km threshold is straight-line distance from the ward centroid to the nearest active station, following WMO/CPCB guidance for dense urban monitoring networks. Only active stations count toward coverage.
+          </p>
+        )}
       </div>
 
       {/* Actions */}

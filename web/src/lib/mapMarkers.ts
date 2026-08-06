@@ -13,6 +13,7 @@ import { aqiLevel } from '../components/AqiBadge'
 import { status, accent } from '../design/tokens'
 import type { Severity, SourceCategory } from './incidentRules'
 import type { HotspotStatus } from './overviewRules'
+import type { FreshnessClass } from './dataQualityRules'
 
 export type MapMarkerKind = 'ward' | 'station' | 'incident' | 'report'
 
@@ -91,6 +92,14 @@ export interface MapMarker {
    *  Undefined/false (OpenAQ fallback, or the reconciliation hasn't loaded)
    *  shows no dot at all - the default, unmarked state. */
   isCpcbSourced?: boolean
+  /** Data quality mode only: drives ring style per freshness class so shape
+   *  encodes freshness independently of colour. When set, overrides isStale
+   *  for ring rendering. Pollution mode leaves this undefined. */
+  freshnessClass?: FreshnessClass
+  /** Data quality mode only: shows a small outlined 'F' badge (bottom-right)
+   *  when the reading comes from OpenAQ fallback rather than CPCB primary.
+   *  Mutually exclusive with isCpcbSourced. */
+  isOpenAqFallback?: boolean
   /** Source-attribution layer: overrides the normal AQI/severity colour with
    *  the leading source category's colour (see SOURCE_CATEGORY_HEX above). */
   colorOverride?: string | null
@@ -145,12 +154,19 @@ function wardCircle(colorHex: string, badgeText: string): HTMLDivElement {
   return pin
 }
 
-/** AQ station — compact two-ring circle: outer freshness ring (solid=fresh,
- *  dashed-orange=stale) + inner AQI circle. The outer ring differentiates
- *  stations from ward circles (which have no outer ring) even when they
- *  overlap at the same coordinate. The container is sized to 26px so the
- *  CPCB dot appended to the wrapper is positioned relative to its full area. */
-function stationCircle(colorHex: string, badgeText: string, isStale: boolean): HTMLDivElement {
+/** AQ station — compact two-ring circle: outer freshness ring + inner AQI
+ *  circle. In data quality mode `freshnessClass` drives distinct ring shapes
+ *  (solid/dashed/double/hollow) so freshness is readable without relying on
+ *  colour alone. In pollution mode `isStale` drives the legacy dashed-orange
+ *  ring — unchanged so pollution-mode markers look exactly as before.
+ *  Container is 26px so CPCB/OpenAQ badges appended to the wrapper sit at
+ *  the correct corner positions relative to its full area. */
+function stationCircle(
+  colorHex: string,
+  badgeText: string,
+  isStale: boolean,
+  freshnessClass?: FreshnessClass,
+): HTMLDivElement {
   const container = document.createElement('div')
   container.style.cssText = `
     position:relative; width:26px; height:26px;
@@ -158,13 +174,33 @@ function stationCircle(colorHex: string, badgeText: string, isStale: boolean): H
   `
 
   const ring = document.createElement('div')
-  ring.style.cssText = `
-    position:absolute; inset:0; border-radius:50%;
-    border:1.5px ${isStale ? 'dashed' : 'solid'} ${isStale ? '#D97706' : 'rgba(200,220,255,0.75)'};
-    ${isStale ? 'opacity:.85;' : ''}
-  `
+  if (freshnessClass) {
+    // Data quality mode: shape encodes freshness class independently of colour
+    const borderStyle = freshnessClass === 'fresh'
+      ? `border:1.5px solid rgba(34,197,94,0.6);`
+      : freshnessClass === 'delayed'
+        ? `border:1.5px dashed ${colorHex};`
+        : freshnessClass === 'stale'
+          ? `border:1.5px solid ${colorHex}; box-shadow:0 0 0 2.5px rgba(239,68,68,0.2);`
+          : freshnessClass === 'no_reading'
+            ? `border:1.5px dashed ${colorHex}; opacity:.7;`
+            : /* unavailable */ `border:1px solid ${colorHex}; opacity:.45;`
+    ring.style.cssText = `position:absolute; inset:0; border-radius:50%; ${borderStyle}`
+  } else {
+    // Pollution mode: isStale drives dashed orange ring (unchanged)
+    ring.style.cssText = `
+      position:absolute; inset:0; border-radius:50%;
+      border:1.5px ${isStale ? 'dashed' : 'solid'} ${isStale ? '#D97706' : 'rgba(200,220,255,0.75)'};
+      ${isStale ? 'opacity:.85;' : ''}
+    `
+  }
   container.appendChild(ring)
 
+  const coreOpacity = freshnessClass === 'stale' ? 'opacity:.75;'
+    : freshnessClass === 'unavailable' ? 'opacity:.45;'
+    : freshnessClass === 'no_reading' ? 'opacity:.65;'
+    : isStale ? 'opacity:.6;'
+    : ''
   const core = document.createElement('div')
   core.style.cssText = `
     width:19px; height:19px; border-radius:50%;
@@ -172,7 +208,7 @@ function stationCircle(colorHex: string, badgeText: string, isStale: boolean): H
     box-shadow:0 1px 3px rgba(15,23,42,.3);
     display:flex; align-items:center; justify-content:center;
     font-size:8px; font-weight:700; color:#fff; letter-spacing:-0.5px;
-    ${isStale ? 'opacity:.6;' : ''}
+    ${coreOpacity}
   `
   core.textContent = badgeText
   container.appendChild(core)
@@ -238,12 +274,26 @@ export function createMarkerElement(marker: MapMarker): HTMLDivElement {
 
   if (marker.kind === 'station') {
     const color = marker.colorOverride ?? aqiLevel(marker.aqi ?? null).hex
-    el.appendChild(stationCircle(color, marker.badgeText ?? (marker.aqi != null ? String(marker.aqi) : '-'), !!marker.isStale))
+    el.appendChild(stationCircle(color, marker.badgeText ?? (marker.aqi != null ? String(marker.aqi) : '-'), !!marker.isStale, marker.freshnessClass))
     if (marker.isCpcbSourced) {
       const dot = document.createElement('span')
       dot.title = 'CPCB/data.gov preferred'
       dot.style.cssText = `position:absolute; bottom:-1px; left:-1px; width:7px; height:7px; border-radius:50%; background:${accent[500]}; border:1.5px solid #fff;`
       el.appendChild(dot)
+    }
+    if (marker.isOpenAqFallback) {
+      const badge = document.createElement('span')
+      badge.title = 'OpenAQ fallback source'
+      badge.style.cssText = `
+        position:absolute; bottom:-1px; right:-1px;
+        width:8px; height:8px; border-radius:2px;
+        border:1.5px solid #f59e0b; background:#fff;
+        font-size:5.5px; font-weight:700; color:#f59e0b;
+        display:flex; align-items:center; justify-content:center;
+        line-height:1;
+      `
+      badge.textContent = 'F'
+      el.appendChild(badge)
     }
     return el
   }
