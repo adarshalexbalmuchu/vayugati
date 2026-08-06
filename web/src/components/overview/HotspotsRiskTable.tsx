@@ -175,7 +175,7 @@ export default function HotspotsRiskTable({
   windowHours: TimeWindowHours
   onWindowHoursChange: (h: TimeWindowHours) => void
   selectedWardId: number | null
-  onSelectWard: (wardId: number) => void
+  onSelectWard: (wardId: number | null) => void
   /** Optional - CPCB/data.gov preferred-latest-reading reconciliation, keyed
    *  by ward id. Missing/unmatched/stale all fall back to the existing
    *  OpenAQ-sourced ward.aqi unchanged - see CurrentReadingBadge above. */
@@ -291,7 +291,7 @@ export default function HotspotsRiskTable({
               return (
                 <Fragment key={ward.id}>
                   <tr
-                    onClick={() => onSelectWard(ward.id)}
+                    onClick={() => onSelectWard(selected ? null : ward.id)}
                     className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                   >
                     <td className="px-3 py-1.5 tabular-nums text-slate-500">{i + 1}</td>
