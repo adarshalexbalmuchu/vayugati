@@ -21,6 +21,8 @@ RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = public
 AS $$
+DECLARE
+  v_rpc_owner text;
 BEGIN
   IF (
     NEW.lat                      IS DISTINCT FROM OLD.lat                      OR
@@ -33,10 +35,20 @@ BEGIN
     NEW.coordinate_review_reason IS DISTINCT FROM OLD.coordinate_review_reason OR
     NEW.coordinate_review_note   IS DISTINCT FROM OLD.coordinate_review_note
   ) THEN
-    -- Allow only superuser roles (postgres, supabase_admin).
-    -- The update_incident_location SECURITY DEFINER RPC executes as its owner
-    -- (postgres), so it passes this check. Application roles do not.
-    IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+    -- Only the update_incident_location RPC may write these columns.
+    -- That function is SECURITY DEFINER so it executes as its owner (postgres).
+    -- Direct writes from application roles (authenticated, anon) have
+    -- current_user != owner and are rejected here.
+    --
+    -- Note: rolsuper is NOT used because Supabase cloud limits the postgres
+    -- role and does not grant it superuser status. Checking the RPC owner
+    -- directly is more portable and does not depend on role attributes.
+    SELECT proowner::regrole::text INTO v_rpc_owner
+    FROM pg_proc
+    WHERE proname = 'update_incident_location'
+    LIMIT 1;
+
+    IF current_user != v_rpc_owner THEN
       RAISE EXCEPTION
         'permission_denied: location columns must be updated via the update_incident_location RPC';
     END IF;
