@@ -1,7 +1,12 @@
-import { ArrowUpRight, X } from 'lucide-react'
+import { ArrowUpRight, MapPin, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { CONFIDENCE_LABEL, type Severity } from '../../lib/incidentRules'
 import type { Incident } from '../../lib/incidents'
+import {
+  deriveLocationQuality,
+  LOCATION_QUALITY_HEX,
+  LOCATION_QUALITY_LABEL,
+} from '../../lib/incidentLocationRules'
 
 const SEVERITY_TONE: Record<Severity, string> = {
   severe: 'text-status-critical ring-status-critical/40',
@@ -30,6 +35,8 @@ export default function SelectedIncidentPanel({
   onClose: () => void
 }) {
   const severity = (incident.severity ?? null) as Severity | null
+  const locationQuality = deriveLocationQuality(incident)
+  const needsLocationReview = locationQuality.status === 'missing' || locationQuality.status === 'needs_review' || locationQuality.status === 'ward_mismatch' || locationQuality.status === 'outside_area'
 
   return (
     <div className="p-4">
@@ -72,6 +79,33 @@ export default function SelectedIncidentPanel({
           <dt className="text-slate-400">Status</dt>
           <dd className="font-semibold capitalize text-slate-800">{incident.status.replace(/_/g, ' ')}</dd>
         </div>
+
+        {/* Location quality */}
+        <div className="col-span-2">
+          <dt className="text-slate-400">Location</dt>
+          <dd className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+              style={{ background: LOCATION_QUALITY_HEX[locationQuality.status] }}
+              aria-hidden
+            />
+            <span className="font-semibold text-slate-800">{LOCATION_QUALITY_LABEL[locationQuality.status]}</span>
+            {locationQuality.source && locationQuality.source !== 'unknown_legacy' && (
+              <span className="text-slate-400">· {locationQuality.source.replace(/_/g, ' ')}</span>
+            )}
+          </dd>
+          {locationQuality.status === 'ward_mismatch' && locationQuality.containingWardName && (
+            <dd className="mt-0.5 text-[11px] text-status-warning">
+              Point falls in {locationQuality.containingWardName} — ward record differs
+            </dd>
+          )}
+          {locationQuality.status === 'missing' && incident.ward_name && (
+            <dd className="mt-0.5 text-[11px] text-slate-400">
+              Ward supplied: {incident.ward_name}
+            </dd>
+          )}
+        </div>
+
         {nearestStation != null && (
           <div className="col-span-2">
             <dt className="text-slate-400">Nearest AQ station</dt>
@@ -95,13 +129,25 @@ export default function SelectedIncidentPanel({
         )}
       </dl>
 
-      <Link
-        to={`/incidents?incident=${incident.id}`}
-        className="focus-ring mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-accent-700"
-      >
-        Open in Incidents workspace
-        <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-      </Link>
+      <div className="mt-4 space-y-1.5">
+        <Link
+          to={`/incidents?incident=${incident.id}`}
+          className="focus-ring flex items-center justify-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-accent-700"
+        >
+          Open in Incidents workspace
+          <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+        </Link>
+
+        {needsLocationReview && (
+          <Link
+            to={`/incidents/remediation?incident=${incident.id}`}
+            className="focus-ring flex items-center justify-center gap-1.5 rounded-lg border border-status-warning/40 bg-status-warning/5 px-3 py-1.5 text-xs font-semibold text-status-warning transition hover:bg-status-warning/10"
+          >
+            <MapPin className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            Review location
+          </Link>
+        )}
+      </div>
     </div>
   )
 }

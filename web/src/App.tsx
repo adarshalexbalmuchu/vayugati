@@ -15,6 +15,7 @@ import MissionsView from './pages/MissionsView'
 import OpsView from './pages/OpsView'
 import SensorsView from './pages/SensorsView'
 import TasksView from './pages/TasksView'
+import IncidentRemediationPage from './pages/IncidentRemediationPage'
 
 // "/" -> the logged-in user's home view, or /login
 function Home() {
@@ -66,6 +67,14 @@ export default function App() {
               element={
                 <RequireRole allow={['commander', 'admin']}>
                   <IncidentsView />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/incidents/remediation"
+              element={
+                <RequireRole allow={['commander', 'admin']}>
+                  <IncidentRemediationPage />
                 </RequireRole>
               }
             />

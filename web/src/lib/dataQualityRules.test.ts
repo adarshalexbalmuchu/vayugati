@@ -135,8 +135,8 @@ describe('auditIncidentCoordinates', () => {
 
   it('counts spatially valid Delhi incidents correctly', () => {
     const incidents = [
-      { lat: 28.6139, lng: 77.209, ward_id: 1 },
-      { lat: 28.6, lng: 77.2, ward_id: null },
+      { lat: 28.6139, lng: 77.209, ward_id: 1, coordinate_review_status: null },
+      { lat: 28.6, lng: 77.2, ward_id: null, coordinate_review_status: null },
     ]
     const a = auditIncidentCoordinates(incidents)
     expect(a.spatiallyValid).toBe(2)
@@ -145,8 +145,8 @@ describe('auditIncidentCoordinates', () => {
 
   it('counts missing-coordinate incidents and distinguishes ward presence', () => {
     const incidents = [
-      { lat: null, lng: null, ward_id: 5 },   // missing coords, has ward
-      { lat: null, lng: null, ward_id: null }, // missing coords, no ward
+      { lat: null, lng: null, ward_id: 5, coordinate_review_status: null },   // missing coords, has ward
+      { lat: null, lng: null, ward_id: null, coordinate_review_status: null }, // missing coords, no ward
     ]
     const a = auditIncidentCoordinates(incidents)
     expect(a.missingCoordinates).toBe(2)
@@ -155,7 +155,7 @@ describe('auditIncidentCoordinates', () => {
 
   it('counts out-of-bounds coordinates separately from missing', () => {
     const incidents = [
-      { lat: 19.076, lng: 72.877, ward_id: null }, // Mumbai — outside bounds
+      { lat: 19.076, lng: 72.877, ward_id: null, coordinate_review_status: null }, // Mumbai — outside bounds
     ]
     const a = auditIncidentCoordinates(incidents)
     expect(a.outsideBounds).toBe(1)
@@ -165,11 +165,11 @@ describe('auditIncidentCoordinates', () => {
 
   it('tallies a realistic mixed batch correctly', () => {
     const incidents = [
-      { lat: 28.6139, lng: 77.209, ward_id: 1 }, // valid Delhi, has ward
-      { lat: 28.6, lng: 77.2, ward_id: null },   // valid Delhi, no ward
-      { lat: null, lng: null, ward_id: 2 },       // missing, has ward
-      { lat: null, lng: null, ward_id: null },    // missing, no ward
-      { lat: 19.076, lng: 72.877, ward_id: null }, // outside bounds
+      { lat: 28.6139, lng: 77.209, ward_id: 1, coordinate_review_status: null }, // valid Delhi, has ward
+      { lat: 28.6, lng: 77.2, ward_id: null, coordinate_review_status: null },   // valid Delhi, no ward
+      { lat: null, lng: null, ward_id: 2, coordinate_review_status: null },       // missing, has ward
+      { lat: null, lng: null, ward_id: null, coordinate_review_status: null },    // missing, no ward
+      { lat: 19.076, lng: 72.877, ward_id: null, coordinate_review_status: null }, // outside bounds
     ]
     const a = auditIncidentCoordinates(incidents)
     expect(a.total).toBe(5)

@@ -1138,6 +1138,13 @@ export type Database = {
           classification_source: string | null
           classification_updated_at: string | null
           closed_at: string | null
+          coordinate_confidence: string | null
+          coordinate_review_note: string | null
+          coordinate_review_reason: string | null
+          coordinate_review_status: string | null
+          coordinate_reviewed_at: string | null
+          coordinate_reviewed_by: string | null
+          coordinate_source: string | null
           created_at: string
           created_by: string | null
           detected_at: string
@@ -1170,6 +1177,13 @@ export type Database = {
           classification_source?: string | null
           classification_updated_at?: string | null
           closed_at?: string | null
+          coordinate_confidence?: string | null
+          coordinate_review_note?: string | null
+          coordinate_review_reason?: string | null
+          coordinate_review_status?: string | null
+          coordinate_reviewed_at?: string | null
+          coordinate_reviewed_by?: string | null
+          coordinate_source?: string | null
           created_at?: string
           created_by?: string | null
           detected_at?: string
@@ -1202,6 +1216,13 @@ export type Database = {
           classification_source?: string | null
           classification_updated_at?: string | null
           closed_at?: string | null
+          coordinate_confidence?: string | null
+          coordinate_review_note?: string | null
+          coordinate_review_reason?: string | null
+          coordinate_review_status?: string | null
+          coordinate_reviewed_at?: string | null
+          coordinate_reviewed_by?: string | null
+          coordinate_source?: string | null
           created_at?: string
           created_by?: string | null
           detected_at?: string

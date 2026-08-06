@@ -157,7 +157,7 @@ export interface IncidentCoordinateAudit {
   total: number
   /** Has a valid Delhi/NCR lat/lng. */
   spatiallyValid: number
-  /** lat and lng are both null. */
+  /** lat and lng are both null (or (0,0) sentinel). */
   missingCoordinates: number
   /** Has lat/lng values but they fall outside the Delhi/NCR bounding box. */
   outsideBounds: number
@@ -165,16 +165,19 @@ export interface IncidentCoordinateAudit {
   withWardButNoCoords: number
   /** Valid Delhi coordinates but no ward_id assignment. */
   withCoordsButNoWard: number
+  /** coordinate_review_status = 'awaiting_review' — placed but not yet validated. */
+  awaitingReview: number
 }
 
 export function auditIncidentCoordinates(
-  incidents: Pick<Incident, 'lat' | 'lng' | 'ward_id'>[],
+  incidents: Pick<Incident, 'lat' | 'lng' | 'ward_id' | 'coordinate_review_status'>[],
 ): IncidentCoordinateAudit {
   let spatiallyValid = 0
   let missingCoordinates = 0
   let outsideBounds = 0
   let withWardButNoCoords = 0
   let withCoordsButNoWard = 0
+  let awaitingReview = 0
 
   for (const i of incidents) {
     const hasCoords = i.lat != null && i.lng != null
@@ -192,9 +195,15 @@ export function auditIncidentCoordinates(
       outsideBounds++
       if (hasWard) withWardButNoCoords++
     }
+
+    if (i.coordinate_review_status === 'awaiting_review') awaitingReview++
   }
 
-  return { total: incidents.length, spatiallyValid, missingCoordinates, outsideBounds, withWardButNoCoords, withCoordsButNoWard }
+  return {
+    total: incidents.length,
+    spatiallyValid, missingCoordinates, outsideBounds,
+    withWardButNoCoords, withCoordsButNoWard, awaitingReview,
+  }
 }
 
 // ── Station quality rollup ────────────────────────────────────────────────────

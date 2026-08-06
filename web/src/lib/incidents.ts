@@ -2472,3 +2472,87 @@ export async function listResponsibilityRegistryForCity(cityId: number): Promise
   if (error) fail('Could not load the responsibility registry', error)
   return data ?? []
 }
+
+// ── incident location remediation (Phase 1F) ─────────────────────────────────
+
+/**
+ * List all non-closed incidents for location remediation review.
+ *
+ * The full row is fetched (via the existing INCIDENT_SELECT) so the caller can
+ * compute location quality without an additional query. Closed incidents are
+ * excluded — once an incident is closed its coordinates are historical record
+ * and the focus moves to the correction audit log rather than the live queue.
+ */
+export async function listRemediationIncidents(): Promise<Incident[]> {
+  const { data, error } = await supabase
+    .from('incidents')
+    .select(INCIDENT_SELECT)
+    .neq('status', 'closed')
+    .order('detected_at', { ascending: false })
+    .limit(500)
+  if (error) fail('Could not load incidents for remediation', error)
+  return (data ?? []).map((r) => shapeIncident(r as never))
+}
+
+export interface UpdateIncidentLocationParams {
+  incidentId: number
+  newLat: number | null
+  newLng: number | null
+  newWardId: number | null
+  locationSource: string
+  confidence: string
+  reviewReason: string
+  reviewNote?: string | null
+}
+
+/**
+ * Update or clear an incident's location via the `update_incident_location`
+ * security-definer RPC. The RPC validates inputs, writes an immutable audit
+ * row, and updates the incident — all in one transaction. Commander/admin only
+ * (enforced server-side; the client permission check is defence-in-depth only).
+ *
+ * To clear a location: pass newLat=null, newLng=null.
+ * To confirm without moving: pass the existing coords with reason='location_confirmed'.
+ */
+export async function updateIncidentLocation(p: UpdateIncidentLocationParams): Promise<void> {
+  const { error } = await supabase.rpc('update_incident_location' as never, {
+    p_incident_id: p.incidentId,
+    p_new_lat: p.newLat,
+    p_new_lng: p.newLng,
+    p_new_ward_id: p.newWardId,
+    p_location_source: p.locationSource,
+    p_confidence: p.confidence,
+    p_review_reason: p.reviewReason,
+    p_review_note: p.reviewNote ?? null,
+    p_is_centroid_placement: false,  // never true from the browser — guard lives in the RPC
+  } as never)
+  if (error) fail('Could not update incident location', error)
+}
+
+/** Location audit history for one incident, newest first. */
+export interface LocationAuditRow {
+  id: string
+  incident_id: number
+  previous_lat: number | null
+  previous_lng: number | null
+  previous_ward_id: number | null
+  new_lat: number | null
+  new_lng: number | null
+  new_ward_id: number | null
+  location_source: string
+  confidence: string
+  review_reason: string
+  review_note: string | null
+  reviewed_by: string
+  reviewed_at: string
+}
+
+export async function listLocationAudits(incidentId: number): Promise<LocationAuditRow[]> {
+  const { data, error } = await supabase
+    .from('incident_location_audits' as never)
+    .select('*')
+    .eq('incident_id', incidentId)
+    .order('reviewed_at', { ascending: false })
+  if (error) fail('Could not load location audit history', error)
+  return (data ?? []) as LocationAuditRow[]
+}

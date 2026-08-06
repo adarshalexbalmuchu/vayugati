@@ -11,6 +11,7 @@ import {
   type StationQualityRollup,
   type WardCoverageClass,
 } from '../../lib/dataQualityRules'
+import type { RemediationFilter } from '../../lib/incidentLocationRules'
 
 function FreshnessDot({ cls }: { cls: FreshnessClass }) {
   return (
@@ -32,12 +33,37 @@ function CoverageDot({ cls }: { cls: WardCoverageClass }) {
   )
 }
 
-function Row({ label, value, dim }: { label: string; value: number | string; dim?: boolean }) {
-  return (
-    <div className="flex items-center justify-between text-xs">
-      <span className={dim ? 'text-slate-400' : 'text-slate-600'}>{label}</span>
+function AuditRow({
+  label,
+  value,
+  filter,
+  dim,
+}: {
+  label: string
+  value: number
+  filter?: RemediationFilter
+  dim?: boolean
+}) {
+  const content = (
+    <div className={`flex items-center justify-between text-xs ${dim ? 'text-slate-400' : 'text-slate-600'}`}>
+      <span>{label}</span>
       <span className={`tabular-nums font-semibold ${dim ? 'text-slate-400' : 'text-slate-800'}`}>{value}</span>
     </div>
+  )
+
+  if (!filter || value === 0) return content
+
+  return (
+    <Link
+      to={`/incidents/remediation?filter=${filter}`}
+      className="group block rounded px-0.5 -mx-0.5 hover:bg-slate-100 transition"
+      title={`Open remediation queue: ${label}`}
+    >
+      <div className="flex items-center justify-between text-xs text-slate-600 group-hover:text-accent-700">
+        <span>{label}</span>
+        <span className="tabular-nums font-semibold text-status-critical group-hover:text-accent-700">{value}</span>
+      </div>
+    </Link>
   )
 }
 
@@ -47,7 +73,6 @@ export default function DataQualitySummaryPanel({
   incidentAudit,
 }: {
   stationQuality: StationQualityRollup
-  /** Count of ward-boundary records in each coverage class. */
   wardCoverage: Record<WardCoverageClass, number>
   incidentAudit: IncidentCoordinateAudit
 }) {
@@ -60,6 +85,12 @@ export default function DataQualitySummaryPanel({
   const oldestStr = stationQuality.oldestActiveReadingAt
     ? new Date(stationQuality.oldestActiveReadingAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     : '—'
+
+  const totalNeedingAttention =
+    incidentAudit.missingCoordinates +
+    incidentAudit.outsideBounds +
+    incidentAudit.withCoordsButNoWard +
+    incidentAudit.awaitingReview
 
   return (
     <div className="p-4">
@@ -122,13 +153,26 @@ export default function DataQualitySummaryPanel({
         ))}
       </div>
       <p className="mb-4 text-[10px] text-slate-400">
-        Nearby threshold: {thresholdKm} km straight-line · active stations only
+        Nearby threshold: {thresholdKm} km straight-line · active stations only ·{' '}
+        <Link to="/incidents/remediation" className="text-accent-600 hover:underline">
+          methodology
+        </Link>
       </p>
 
       {/* Incident coordinate audit */}
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-        Incident spatial completeness
-      </p>
+      <div className="mb-1.5 flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          Incident spatial completeness
+        </p>
+        {totalNeedingAttention > 0 && (
+          <Link
+            to="/incidents/remediation?filter=all_invalid"
+            className="text-[10px] font-semibold text-accent-600 hover:underline"
+          >
+            Review all →
+          </Link>
+        )}
+      </div>
       <div className="mb-2 rounded-lg bg-slate-50 px-3 py-2">
         {incidentAudit.total === 0 ? (
           <p className="text-xs text-slate-400">No active incidents.</p>
@@ -138,26 +182,36 @@ export default function DataQualitySummaryPanel({
               {incidentAudit.total} active · {incidentAudit.spatiallyValid} mapped · {incidentAudit.total - incidentAudit.spatiallyValid} unmapped
             </div>
             <div className="space-y-0.5">
-              <Row label="Spatially valid" value={incidentAudit.spatiallyValid} />
-              <Row
+              <AuditRow label="Spatially valid" value={incidentAudit.spatiallyValid} dim={false} />
+              <AuditRow
                 label="Missing coordinates"
                 value={incidentAudit.missingCoordinates}
+                filter="missing"
                 dim={incidentAudit.missingCoordinates === 0}
               />
-              <Row
+              <AuditRow
                 label="Outside Delhi/NCR bounds"
                 value={incidentAudit.outsideBounds}
+                filter="outside_area"
                 dim={incidentAudit.outsideBounds === 0}
               />
-              <Row
+              <AuditRow
                 label="Ward set but no coordinates"
                 value={incidentAudit.withWardButNoCoords}
+                filter="ward_no_coords"
                 dim={incidentAudit.withWardButNoCoords === 0}
               />
-              <Row
+              <AuditRow
                 label="Coords but no ward assigned"
                 value={incidentAudit.withCoordsButNoWard}
+                filter="coords_no_ward"
                 dim={incidentAudit.withCoordsButNoWard === 0}
+              />
+              <AuditRow
+                label="Awaiting location review"
+                value={incidentAudit.awaitingReview}
+                filter="awaiting_review"
+                dim={incidentAudit.awaitingReview === 0}
               />
             </div>
           </>
@@ -174,11 +228,11 @@ export default function DataQualitySummaryPanel({
       )}
 
       <Link
-        to="/incidents"
+        to="/incidents/remediation"
         className="focus-ring flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
       >
         <MapPin className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-        Review incidents for coordinate repair
+        Open remediation queue
       </Link>
     </div>
   )
