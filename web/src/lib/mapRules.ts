@@ -10,6 +10,29 @@ import type { ForecastPoint, ForecastPollutant, StationMarker, WardForecastSumma
 export type MapPollutant = 'aqi' | 'pm25' | 'pm10' | 'no2'
 export type MapTimeMode = 'now' | '24h' | '48h'
 
+/** Historical observation slot — 'now' means live readings; the others scrub
+ *  backward through the readings table at the given offset.  Forecast time
+ *  modes are disabled whenever obsSlot !== 'now'. */
+export type ObsSlot = 'now' | '-3h' | '-6h' | '-12h' | '-24h'
+
+export const OBS_SLOTS: ObsSlot[] = ['now', '-3h', '-6h', '-12h', '-24h']
+
+export const OBS_SLOT_LABEL: Record<ObsSlot, string> = {
+  'now': 'Now',
+  '-3h': '−3h',
+  '-6h': '−6h',
+  '-12h': '−12h',
+  '-24h': '−24h',
+}
+
+/** Hours to subtract from Date.now() to get the target timestamp; 'now' has no entry. */
+export const OBS_SLOT_HOURS: Partial<Record<ObsSlot, number>> = {
+  '-3h': 3,
+  '-6h': 6,
+  '-12h': 12,
+  '-24h': 24,
+}
+
 /** AQI itself is never forecast (forecast.py only forecasts pollutant
  *  concentrations, not the composite index) - every other selectable
  *  pollutant has real forecast.py output. Used everywhere a forecast fetch
@@ -174,7 +197,13 @@ export function wardDataStatus(hasDirectStation: boolean, hasNearestStation: boo
  *  metric/time selection - shown once near the toolbar/legend so a marker's
  *  bare number is never left ambiguous between AQI, a concentration, a
  *  current reading, or a forecast. */
-export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMode): string {
+export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMode, obsSlot: ObsSlot = 'now'): string {
+  if (obsSlot !== 'now') {
+    const slotLabel = OBS_SLOT_LABEL[obsSlot]
+    return pollutant === 'aqi'
+      ? `Markers show station AQI observed ${slotLabel} — verified readings only, no interpolation.`
+      : `Markers show station ${MAP_POLLUTANT_LABEL[pollutant]} observed ${slotLabel} (µg/m³) — verified readings only.`
+  }
   if (timeMode === 'now') {
     return pollutant === 'aqi' ? 'Markers show current station AQI.' : `Markers show latest station ${MAP_POLLUTANT_LABEL[pollutant]} concentration (µg/m³).`
   }

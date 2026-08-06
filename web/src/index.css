@@ -50,6 +50,36 @@
   }
 }
 
+/* Observation time slider — range input with branded thumb */
+.obs-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  outline: none;
+}
+.obs-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #3b82f6;
+  cursor: pointer;
+}
+.obs-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #3b82f6;
+  cursor: pointer;
+}
+
 /* slim, unobtrusive scrollbars */
 * {
   scrollbar-width: thin;

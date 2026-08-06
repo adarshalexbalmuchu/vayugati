@@ -25,8 +25,10 @@ import {
   fetchAllWardBoundaries,
   fetchAllWardsAqi,
   fetchAttribution,
+  fetchHistoricalStationReadings,
   fetchLatestReadingsPreferred,
   fetchTransportActivity,
+  type HistoricalStationReading,
   type Report,
   type StationMarker,
   type WardBoundary,
@@ -63,11 +65,13 @@ import {
   MAP_POLLUTANT_LABEL,
   nearestForecastPoint,
   nearestStationTo,
+  OBS_SLOT_HOURS,
   resolveWardReading,
   stationReadingValue,
   wardDataStatus,
   type MapPollutant,
   type MapTimeMode,
+  type ObsSlot,
 } from '../lib/mapRules'
 import { rollupStationHealth, severeWardsWithin, tallySourceMix } from '../lib/overviewRules'
 import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
@@ -149,12 +153,15 @@ export default function MapPage() {
   const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [timeMode, setTimeMode] = useState<MapTimeMode>('now')
+  const [obsSlot, setObsSlot] = useState<ObsSlot>('now')
   const [sourceFilter, setSourceFilter] = useState<SourceCategory | null>(null)
   const [severityFilter, setSeverityFilter] = useState<Severity | null>(null)
   const [viewMode, setViewMode] = useState<MapViewMode>('pollution')
   const [freshnessFilter, setFreshnessFilter] = useState<FreshnessClass | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [resetToken, setResetToken] = useState(0)
+  const [historicalReadingByStationId, setHistoricalReadingByStationId] = useState<Map<number, HistoricalStationReading>>(new Map())
+  const [obsLoading, setObsLoading] = useState(false)
 
   const { healthLoaded, forecastConfirmedFresh } = useIngestHealth()
   const forecastSuppressed = healthLoaded && !forecastConfirmedFresh
@@ -164,6 +171,17 @@ export default function MapPage() {
   useEffect(() => {
     if (forecastSuppressed && timeMode !== 'now') setTimeMode('now')
   }, [forecastSuppressed, timeMode])
+
+  // Historical obs and forecast are mutually exclusive: a future forecast
+  // overlaid on a past observation baseline is meaningless.
+  useEffect(() => {
+    if (obsSlot !== 'now' && timeMode !== 'now') setTimeMode('now')
+  }, [obsSlot, timeMode])
+
+  // Data Quality mode is live-only: reset obsSlot when switching into it.
+  useEffect(() => {
+    if (viewMode === 'data_quality' && obsSlot !== 'now') setObsSlot('now')
+  }, [viewMode, obsSlot])
 
   // Escape key clears any active selection.
   useEffect(() => {
@@ -207,6 +225,28 @@ export default function MapPage() {
   )
 
   const [wards, stations, incidents, reports, stationHealth, dispatchPage] = state.data ?? EMPTY_DATA
+
+  // Fetch historical station readings when obsSlot changes.  Cancelled on
+  // cleanup so a slow fetch that lands after a subsequent slot change is
+  // silently dropped instead of overwriting the newer result.
+  useEffect(() => {
+    if (obsSlot === 'now') {
+      setHistoricalReadingByStationId(new Map())
+      setObsLoading(false)
+      return
+    }
+    const hours = OBS_SLOT_HOURS[obsSlot]!
+    const at = new Date(Date.now() - hours * 3_600_000)
+    let cancelled = false
+    setObsLoading(true)
+    fetchHistoricalStationReadings(stations.map((s) => s.id), at).then((data) => {
+      if (!cancelled) {
+        setHistoricalReadingByStationId(data)
+        setObsLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [obsSlot, stations])
 
   // Real forecast.py output for whichever pollutant is actually selected -
   // AQI has no forecast of its own (the pipeline never computes the
@@ -376,10 +416,33 @@ export default function MapPage() {
             })
             .map((s) => {
               const health = stationHealthById.get(s.id)
-              const isStale = layers.sensorFreshness && !!health?.is_stale
+              const isHistoricalSlot = obsSlot !== 'now'
               const preferred = latestReadingByStationId.get(s.id)
+              const historicalReading = historicalReadingByStationId.get(s.id)
+
+              // Historical slot: use the Supabase reading closest to the target
+              // time — no CPCB/OpenAQ distinction, freshness indicators suppressed.
+              if (isHistoricalSlot) {
+                const displayAqi = historicalReading?.aqi ?? null
+                const readingAgeMinutes = historicalReading?.ts != null
+                  ? Math.round((Date.now() - new Date(historicalReading.ts).getTime()) / 60_000)
+                  : null
+                return {
+                  id: `station-${s.id}`,
+                  kind: 'station' as const,
+                  lat: s.lat,
+                  lng: s.lng,
+                  label: s.name,
+                  aqi: displayAqi,
+                  isStale: false,
+                  isCpcbSourced: false,
+                  popupHtml: stationPopup(s.name, displayAqi, false, readingAgeMinutes),
+                }
+              }
+
               const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
               const displayAqi = usingCpcb ? preferred!.cpcbAqi : s.aqi
+              const isStale = layers.sensorFreshness && !!health?.is_stale
               if (viewMode === 'data_quality' && health) {
                 const cls = stationFreshnessClass(health)
                 return {
@@ -416,7 +479,7 @@ export default function MapPage() {
               }
             })
         : [],
-    [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId],
+    [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId, obsSlot, historicalReadingByStationId],
   )
 
   // Incidents are rendered as a MapLibre GL cluster source (not DOM markers)
@@ -788,6 +851,9 @@ export default function MapPage() {
               onFreshnessFilterChange={setFreshnessFilter}
               onResetView={() => setResetToken((t) => t + 1)}
               forecastSuppressed={forecastSuppressed}
+              obsSlot={obsSlot}
+              onObsSlotChange={setObsSlot}
+              obsLoading={obsLoading}
             />
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 flex-1">

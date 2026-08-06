@@ -262,6 +262,52 @@ export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
     })
 }
 
+export interface HistoricalStationReading {
+  stationId: number
+  aqi: number | null
+  pm25: number | null
+  pm10: number | null
+  no2: number | null
+  /** ISO timestamp of the reading row that was selected (nearest to `at` but not after). */
+  ts: string | null
+}
+
+/** Fetch the reading closest to `at` (but not after it) for each station id,
+ *  using the existing `readings (station_id, ts desc)` index.  Returns a Map
+ *  keyed by station id; stations with no row before `at` are absent.  Runs
+ *  in parallel — same pattern as fetchAllStationsWithReadings. */
+export async function fetchHistoricalStationReadings(
+  stationIds: number[],
+  at: Date,
+): Promise<Map<number, HistoricalStationReading>> {
+  const result = new Map<number, HistoricalStationReading>()
+  if (stationIds.length === 0) return result
+  const atIso = at.toISOString()
+  await Promise.all(
+    stationIds.map(async (id) => {
+      const { data } = await supabase
+        .from('readings')
+        .select('aqi, pm25, pm10, no2, ts')
+        .eq('station_id', id)
+        .lte('ts', atIso)
+        .order('ts', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) {
+        result.set(id, {
+          stationId: id,
+          aqi: data.aqi,
+          pm25: data.pm25,
+          pm10: data.pm10,
+          no2: data.no2,
+          ts: data.ts,
+        })
+      }
+    }),
+  )
+  return result
+}
+
 export async function fetchOpenReports(wardId: number): Promise<Report[]> {
   const { data } = await supabase
     .from('reports')

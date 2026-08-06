@@ -1,7 +1,8 @@
 import { Crosshair, Info } from 'lucide-react'
 import { FRESHNESS_LABEL, type FreshnessClass } from '../../lib/dataQualityRules'
 import { SOURCE_CATEGORY_LABEL, sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
-import { MAP_POLLUTANT_LABEL, markerMeaningLabel, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
+import { MAP_POLLUTANT_LABEL, markerMeaningLabel, type MapPollutant, type MapTimeMode, type ObsSlot } from '../../lib/mapRules'
+import ObsTimeSlider from './ObsTimeSlider'
 
 export type MapViewMode = 'pollution' | 'data_quality'
 
@@ -71,6 +72,9 @@ export default function MapToolbar({
   onFreshnessFilterChange,
   onResetView,
   forecastSuppressed = false,
+  obsSlot,
+  onObsSlotChange,
+  obsLoading = false,
 }: {
   viewMode: MapViewMode
   onViewModeChange: (m: MapViewMode) => void
@@ -87,9 +91,17 @@ export default function MapToolbar({
   onFreshnessFilterChange: (f: FreshnessClass | null) => void
   onResetView: () => void
   forecastSuppressed?: boolean
+  obsSlot: ObsSlot
+  onObsSlotChange: (s: ObsSlot) => void
+  obsLoading?: boolean
 }) {
-  const forecastDisabledKeys: MapTimeMode[] = forecastSuppressed ? ['24h', '48h'] : []
-  const forecastDisabledTitle = 'Unavailable until a successful forecast run completes.'
+  const isHistorical = obsSlot !== 'now'
+  // Forecast modes are unavailable when viewing historical observations: a
+  // future forecast on a past observation baseline makes no sense visually.
+  const forecastDisabledKeys: MapTimeMode[] = (forecastSuppressed || isHistorical) ? ['24h', '48h'] : []
+  const forecastDisabledTitle = isHistorical
+    ? 'Forecast unavailable while viewing historical observations.'
+    : 'Unavailable until a successful forecast run completes.'
   const isQuality = viewMode === 'data_quality'
 
   return (
@@ -173,12 +185,16 @@ export default function MapToolbar({
         </div>
       </div>
 
+      {!isQuality && (
+        <ObsTimeSlider value={obsSlot} onChange={onObsSlotChange} loading={obsLoading} />
+      )}
+
       <div className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50 px-4 py-1">
         <Info className="h-3 w-3 flex-shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
         <p className="text-[11px] text-slate-500">
           {isQuality
             ? 'Showing station freshness and ward monitoring coverage. Station colour shows data age, not AQI severity.'
-            : markerMeaningLabel(pollutant, timeMode)}
+            : markerMeaningLabel(pollutant, timeMode, obsSlot)}
         </p>
       </div>
     </div>
