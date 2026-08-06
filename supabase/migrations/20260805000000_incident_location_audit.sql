@@ -63,18 +63,22 @@ CREATE TABLE IF NOT EXISTS incident_location_audits (
 -- Immutability: no UPDATE or DELETE allowed on audit rows.
 ALTER TABLE incident_location_audits ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "commanders_read_location_audits" ON incident_location_audits
-  FOR SELECT USING (auth_role() IN ('commander', 'admin'));
+DO $$ BEGIN
+  CREATE POLICY "commanders_read_location_audits" ON incident_location_audits
+    FOR SELECT USING (auth_role() IN ('commander', 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "field_officers_read_ward_location_audits" ON incident_location_audits
-  FOR SELECT USING (
-    auth_role() = 'field_officer'
-    AND EXISTS (
-      SELECT 1 FROM incidents i
-      WHERE i.id = incident_id
-        AND i.ward_id = auth_ward()
-    )
-  );
+DO $$ BEGIN
+  CREATE POLICY "field_officers_read_ward_location_audits" ON incident_location_audits
+    FOR SELECT USING (
+      auth_role() = 'field_officer'
+      AND EXISTS (
+        SELECT 1 FROM incidents i
+        WHERE i.id = incident_id
+          AND i.ward_id = auth_ward()
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Only the RPC (SECURITY DEFINER) may insert — no direct INSERT policy
 -- for any role, so the RPC is the only path in.

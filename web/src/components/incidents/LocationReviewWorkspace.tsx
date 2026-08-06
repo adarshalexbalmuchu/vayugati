@@ -107,7 +107,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
     setSaveError(null)
     try {
       const effectiveSource: CoordinateSource =
-        action === 'clear' ? 'confirmed_existing' :
+        action === 'clear'   ? ((incident.coordinate_source as CoordinateSource | null) ?? 'unknown_legacy') :
         action === 'confirm' ? 'confirmed_existing' :
         source
 

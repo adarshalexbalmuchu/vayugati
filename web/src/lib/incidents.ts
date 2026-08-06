@@ -2515,7 +2515,7 @@ export interface UpdateIncidentLocationParams {
  * To confirm without moving: pass the existing coords with reason='location_confirmed'.
  */
 export async function updateIncidentLocation(p: UpdateIncidentLocationParams): Promise<void> {
-  const { error } = await supabase.rpc('update_incident_location' as never, {
+  const { error } = await supabase.rpc('update_incident_location', {
     p_incident_id: p.incidentId,
     p_new_lat: p.newLat,
     p_new_lng: p.newLng,
@@ -2549,7 +2549,7 @@ export interface LocationAuditRow {
 
 export async function listLocationAudits(incidentId: number): Promise<LocationAuditRow[]> {
   const { data, error } = await supabase
-    .from('incident_location_audits' as never)
+    .from('incident_location_audits')
     .select('*')
     .eq('incident_id', incidentId)
     .order('reviewed_at', { ascending: false })

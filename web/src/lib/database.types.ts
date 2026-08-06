@@ -887,6 +887,79 @@ export type Database = {
           },
         ]
       }
+      incident_location_audits: {
+        Row: {
+          confidence: string
+          id: string
+          incident_id: number
+          location_source: string
+          new_lat: number | null
+          new_lng: number | null
+          new_ward_id: number | null
+          previous_lat: number | null
+          previous_lng: number | null
+          previous_ward_id: number | null
+          review_note: string | null
+          review_reason: string
+          reviewed_at: string
+          reviewed_by: string
+        }
+        Insert: {
+          confidence: string
+          id?: string
+          incident_id: number
+          location_source: string
+          new_lat?: number | null
+          new_lng?: number | null
+          new_ward_id?: number | null
+          previous_lat?: number | null
+          previous_lng?: number | null
+          previous_ward_id?: number | null
+          review_note?: string | null
+          review_reason: string
+          reviewed_at?: string
+          reviewed_by: string
+        }
+        Update: {
+          confidence?: string
+          id?: string
+          incident_id?: number
+          location_source?: string
+          new_lat?: number | null
+          new_lng?: number | null
+          new_ward_id?: number | null
+          previous_lat?: number | null
+          previous_lng?: number | null
+          previous_ward_id?: number | null
+          review_note?: string | null
+          review_reason?: string
+          reviewed_at?: string
+          reviewed_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_location_audits_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_location_audits_new_ward_id_fkey"
+            columns: ["new_ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_location_audits_previous_ward_id_fkey"
+            columns: ["previous_ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incident_evidence: {
         Row: {
           collected_at: string
@@ -2602,6 +2675,20 @@ export type Database = {
           p_dispatch_id: number
           p_new_status: Database["public"]["Enums"]["task_dispatch_status"]
           p_reason?: string
+        }
+        Returns: undefined
+      }
+      update_incident_location: {
+        Args: {
+          p_confidence: string
+          p_incident_id: number
+          p_is_centroid_placement?: boolean
+          p_location_source: string
+          p_new_lat?: number | null
+          p_new_lng?: number | null
+          p_new_ward_id?: number | null
+          p_review_note?: string | null
+          p_review_reason: string
         }
         Returns: undefined
       }
