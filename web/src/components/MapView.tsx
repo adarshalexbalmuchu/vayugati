@@ -1,8 +1,15 @@
-import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson'
+import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson'
 import maplibregl, { type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef } from 'react'
 import { FALLBACK_STYLE } from '../lib/basemaps'
+import {
+  areIdenticalCoords,
+  clusterTooltipHtml,
+  INCIDENT_CLUSTER_MAX_ZOOM,
+  INCIDENT_CLUSTER_RADIUS,
+  spiderfyLegs,
+} from '../lib/incidentClusterRules'
 import { createMarkerElement, ensurePulseStyle, ensureSelectedMarkerStyle, type MapMarker } from '../lib/mapMarkers'
 
 export type { MapMarker, MapMarkerKind } from '../lib/mapMarkers'
@@ -16,6 +23,29 @@ export interface WardBoundaryFeatureProps {
   jurisdictionType: 'mcd' | 'ndmc' | 'cantonment'
 }
 
+// ── Incident GL layer constants ──────────────────────────────────────────────
+const INCIDENT_SOURCE_ID = 'incidents'
+const INCIDENT_CLUSTER_LAYER = 'incidents-clusters'
+const INCIDENT_CLUSTER_COUNT_LAYER = 'incidents-cluster-count'
+const INCIDENT_POINT_HALO_LAYER = 'incidents-point-halo'
+const INCIDENT_POINT_LAYER = 'incidents-points'
+
+// Hex colors matching the existing SEVERITY_HEX palette (mapMarkers.ts)
+const SEVERITY_SEVERE_HEX = '#ef4444'  // status.critical
+const SEVERITY_HIGH_HEX = '#f59e0b'    // status.warning
+const SEVERITY_MODERATE_HEX = '#fbbf24'
+const SEVERITY_LOW_HEX = '#94a3b8'
+
+function incidentCircleColor(orderProp: string): maplibregl.ExpressionSpecification {
+  return ['case',
+    ['>=', ['get', orderProp], 3], SEVERITY_SEVERE_HEX,
+    ['>=', ['get', orderProp], 2], SEVERITY_HIGH_HEX,
+    ['>=', ['get', orderProp], 1], SEVERITY_MODERATE_HEX,
+    SEVERITY_LOW_HEX,
+  ]
+}
+
+// ── Ward boundary GL layer constants ─────────────────────────────────────────
 const BOUNDARY_SOURCE_ID = 'ward-boundaries'
 const BOUNDARY_FILL_LAYER_ID = 'ward-boundaries-fill'
 const BOUNDARY_LINE_LAYER_ID = 'ward-boundaries-line'
@@ -66,6 +96,23 @@ function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
   ]
 }
 
+/** Properties stored on each incident GeoJSON feature (built in MapPage). */
+export interface IncidentFeatureProps {
+  id: number
+  severity: string | null
+  /** Numeric rank (0–3) matching SEVERITY_RANK; used for cluster aggregation. */
+  severity_order: number
+  /** 1 if severe, else 0 — used for cluster count aggregation. */
+  is_severe: number
+  is_high: number
+  is_moderate: number
+  /** 1 if low or null severity, else 0. */
+  is_low: number
+  /** Age in minutes from created_at; used for cluster max aggregation. */
+  age_minutes: number
+  summary: string | null
+}
+
 interface Props {
   markers?: MapMarker[]
   center?: [number, number]
@@ -90,6 +137,29 @@ interface Props {
    *  use MapLibre feature state instead; this prop drives a CSS class toggle
    *  without recreating markers — safe to change on every selection. */
   selectedMarkerId?: string | null
+  /** GeoJSON source for incident clustering. Each feature must carry
+   *  IncidentFeatureProps on its properties. Omit to disable incident GL layers. */
+  incidentGeoJSON?: FeatureCollection<Point, IncidentFeatureProps>
+  /** Called when a single incident point is clicked. */
+  onIncidentClick?: (incidentId: number) => void
+  /**
+   * Called when a cluster is clicked and resolved to a leaf set. MapPage
+   * uses this to show IncidentClusterPanel. Not called for zoom-in clusters.
+   */
+  onClusterSelect?: (incidentIds: number[]) => void
+  /** Incident id whose GL feature should show the blue selection halo. */
+  selectedIncidentId?: number | null
+  /** When true, incident layers render at reduced opacity so station
+   *  freshness markers remain the focal point (Data Quality mode). */
+  dataQualityMode?: boolean
+  /** Stable string key derived from the current selection in MapPage.  When
+   *  it changes to a value that does not match the spiderfy stack's owner,
+   *  the expansion is collapsed.  Defaults to 'none' (no selection). */
+  selectionKey?: string
+  /** Coordinates [lng, lat] of the currently selected incident.  Used to
+   *  pin a DOM marker overlay that stays visible even when the incident is
+   *  absorbed into a cluster at lower zoom.  Null removes the overlay. */
+  selectedIncidentCoords?: [number, number] | null
 }
 
 /**
@@ -113,6 +183,13 @@ export default function MapView({
   selectedBoundaryId = null,
   onBoundaryClick,
   selectedMarkerId = null,
+  incidentGeoJSON,
+  onIncidentClick,
+  onClusterSelect,
+  selectedIncidentId = null,
+  dataQualityMode = false,
+  selectionKey = 'none',
+  selectedIncidentCoords = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -145,6 +222,40 @@ export default function MapView({
   // the map has loaded for the first time, every later effect below can
   // apply its change immediately, with no event-based fallback needed.
   const mapReadyRef = useRef(false)
+
+  // ── Incident GL layer refs ────────────────────────────────────────────────
+  const incidentGeoJSONRef = useRef(incidentGeoJSON)
+  const onIncidentClickRef = useRef(onIncidentClick)
+  const onClusterSelectRef = useRef(onClusterSelect)
+  const dataQualityModeRef = useRef(dataQualityMode)
+  const ensureIncidentLayersRef = useRef<(() => void) | null>(null)
+  // Tracks the last highlighted incident so its feature state can be cleared.
+  const prevSelectedIncidentIdRef = useRef<number | null>(null)
+  // DOM markers created during a spiderfy expansion — cleared on next cluster
+  // action or when the incident GL layers are torn down.
+  const spiderfyMarkersRef = useRef<maplibregl.Marker[]>([])
+  // Tracks which selectionKey created the current spiderfy stack so the
+  // selectionKey effect can distinguish "the click that opened this" from
+  // "a different selection that should close it".
+  const spiderfyOwnerKeyRef = useRef<string | null>(null)
+  // Single DOM marker overlaid on the selected incident's true coordinates.
+  const selectedOverlayMarkerRef = useRef<maplibregl.Marker | null>(null)
+  // Shared popup for cluster tooltip (single instance avoids DOM leak).
+  const clusterPopupRef = useRef<maplibregl.Popup | null>(null)
+
+  useEffect(() => {
+    incidentGeoJSONRef.current = incidentGeoJSON
+  }, [incidentGeoJSON])
+  useEffect(() => {
+    onIncidentClickRef.current = onIncidentClick
+  }, [onIncidentClick])
+  useEffect(() => {
+    onClusterSelectRef.current = onClusterSelect
+  }, [onClusterSelect])
+  useEffect(() => {
+    dataQualityModeRef.current = dataQualityMode
+  }, [dataQualityMode])
+
   useEffect(() => {
     wardBoundariesRef.current = wardBoundaries
   }, [wardBoundaries])
@@ -203,6 +314,7 @@ export default function MapView({
     }
     const onContextRestored = () => {
       console.warn('[MapView] WebGL context restored')
+      ensureIncidentLayersRef.current?.()
       ensureBoundaryLayersRef.current?.()
     }
     canvas.addEventListener('webglcontextlost', onContextLost)
@@ -256,6 +368,212 @@ export default function MapView({
       }
     })
 
+    // ── Incident GL layers ───────────────────────────────────────────────────
+    // Removes spiderfy DOM markers left over from a previous cluster expand.
+    const clearSpiderfyMarkers = () => {
+      spiderfyMarkersRef.current.forEach((m) => m.remove())
+      spiderfyMarkersRef.current = []
+      spiderfyOwnerKeyRef.current = null
+    }
+
+    const addIncidentLayers = () => {
+      const data = incidentGeoJSONRef.current
+      const dqMode = dataQualityModeRef.current
+
+      // Tear down any stale layers first (after a style reload they're gone;
+      // the checks below are no-ops in that case but make the first-run path
+      // and the data-update path share the same branch).
+      const existingSource = map.getSource(INCIDENT_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (existingSource) {
+        if (data) existingSource.setData(data)
+        return
+      }
+
+      // No data yet — still register the (empty) source so click handlers
+      // and style.load can safely call setData later.
+      const emptyCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+      map.addSource(INCIDENT_SOURCE_ID, {
+        type: 'geojson',
+        data: data ?? emptyCollection,
+        cluster: true,
+        clusterMaxZoom: INCIDENT_CLUSTER_MAX_ZOOM,
+        clusterRadius: INCIDENT_CLUSTER_RADIUS,
+        // Aggregate properties across cluster members for tooltip + styling.
+        clusterProperties: {
+          max_severity_order: ['max', ['get', 'severity_order']],
+          count_severe: ['+', ['case', ['==', ['get', 'severity'], 'severe'], 1, 0]],
+          count_high: ['+', ['case', ['==', ['get', 'severity'], 'high'], 1, 0]],
+          count_moderate: ['+', ['case', ['==', ['get', 'severity'], 'moderate'], 1, 0]],
+          count_low: ['+', ['get', 'is_low']],
+          max_age_minutes: ['max', ['get', 'age_minutes']],
+        } as unknown as Record<string, maplibregl.ExpressionSpecification>,
+        // Use feature id for feature-state (individual incident selection halo).
+        promoteId: 'id',
+      })
+
+      const alpha = dqMode ? 0.35 : 1
+
+      // Cluster body circles
+      map.addLayer({
+        id: INCIDENT_CLUSTER_LAYER,
+        type: 'circle',
+        source: INCIDENT_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': incidentCircleColor('max_severity_order'),
+          'circle-radius': ['interpolate', ['linear'], ['get', 'point_count'], 2, 18, 10, 24, 50, 30],
+          'circle-opacity': alpha,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+          'circle-stroke-opacity': alpha,
+        },
+      })
+
+      // Cluster count labels
+      map.addLayer({
+        id: INCIDENT_CLUSTER_COUNT_LAYER,
+        type: 'symbol',
+        source: INCIDENT_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 12,
+        },
+        paint: {
+          'text-color': '#fff',
+          'text-opacity': alpha,
+        },
+      })
+
+      // Selection halo — behind individual point, visible only when selected.
+      map.addLayer({
+        id: INCIDENT_POINT_HALO_LAYER,
+        type: 'circle',
+        source: INCIDENT_SOURCE_ID,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-radius': 12,
+          'circle-color': '#2563eb',
+          'circle-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.25, 0],
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#2563eb',
+          'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.8, 0],
+        },
+      })
+
+      // Individual incident circles
+      map.addLayer({
+        id: INCIDENT_POINT_LAYER,
+        type: 'circle',
+        source: INCIDENT_SOURCE_ID,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': incidentCircleColor('severity_order'),
+          'circle-radius': 7,
+          'circle-opacity': alpha,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#fff',
+          'circle-stroke-opacity': alpha,
+        },
+      })
+    }
+
+    ensureIncidentLayersRef.current = addIncidentLayers
+
+    // Delegated click/hover listeners — registered once in mount, survive
+    // style reloads (MapLibre dispatches these whenever the named layer exists).
+    const clusterPopup = new maplibregl.Popup({ offset: 8, closeButton: false, closeOnClick: false })
+    clusterPopupRef.current = clusterPopup
+
+    map.on('mouseenter', INCIDENT_CLUSTER_LAYER, (e) => {
+      map.getCanvas().style.cursor = 'pointer'
+      const props = e.features?.[0]?.properties
+      if (!props) return
+      const lngLat = (e.features![0]!.geometry as GeoJSON.Point).coordinates as [number, number]
+      clusterPopup
+        .setLngLat(lngLat)
+        .setHTML(clusterTooltipHtml({
+          point_count: props.point_count ?? 0,
+          count_severe: props.count_severe ?? 0,
+          count_high: props.count_high ?? 0,
+          count_moderate: props.count_moderate ?? 0,
+          count_low: props.count_low ?? 0,
+          max_age_minutes: props.max_age_minutes ?? 0,
+        }))
+        .addTo(map)
+    })
+    map.on('mouseleave', INCIDENT_CLUSTER_LAYER, () => {
+      map.getCanvas().style.cursor = ''
+      clusterPopup.remove()
+    })
+    map.on('mouseenter', INCIDENT_POINT_LAYER, () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', INCIDENT_POINT_LAYER, () => { map.getCanvas().style.cursor = '' })
+
+    // Cluster click: resolve leaves, zoom in or spiderfy.
+    map.on('click', INCIDENT_CLUSTER_LAYER, async (e) => {
+      clearSpiderfyMarkers()
+      const feature = e.features?.[0]
+      if (!feature) return
+      const clusterId = feature.properties?.cluster_id as number
+      const source = map.getSource(INCIDENT_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (!source) return
+
+      const leaves = await source.getClusterLeaves(clusterId, Infinity, 0)
+      const incidentIds = (leaves as GeoJSON.Feature<GeoJSON.Point>[])
+        .map((f) => f.properties?.id as number)
+        .filter((id) => id != null)
+
+      const coords = (leaves as GeoJSON.Feature<GeoJSON.Point>[])
+        .map((f) => f.geometry.coordinates as [number, number])
+      const center = (feature.geometry as GeoJSON.Point).coordinates as [number, number]
+
+      if (areIdenticalCoords(coords)) {
+        // All incidents share the same coordinate — spiderfy instead of zoom.
+        const legs = spiderfyLegs(incidentIds)
+        const newMarkers = legs.map(({ incidentId, pixelOffset }) => {
+          const el = document.createElement('div')
+          el.style.cssText = `
+            width:14px;height:14px;border-radius:3px;
+            background:#2563eb;border:2px solid #fff;
+            transform:rotate(45deg);cursor:pointer;
+            box-shadow:0 1px 3px rgba(0,0,0,.4);
+          `
+          el.setAttribute('aria-label', `Incident ${incidentId}`)
+          el.addEventListener('click', () => onIncidentClickRef.current?.(incidentId))
+          const marker = new maplibregl.Marker({ element: el, offset: pixelOffset }).setLngLat(center).addTo(map)
+          return marker
+        })
+        spiderfyMarkersRef.current = newMarkers
+        // Record the key MapPage will derive for this cluster selection so the
+        // selectionKey effect does not immediately clear what we just created.
+        spiderfyOwnerKeyRef.current = `incidentCluster:${[...incidentIds].sort((a, b) => a - b).join(',')}`
+        onClusterSelectRef.current?.(incidentIds)
+      } else {
+        // Different coordinates — zoom into cluster expansion zoom.
+        const expansionZoom = await source.getClusterExpansionZoom(clusterId)
+        const targetZoom = Math.min(expansionZoom + 0.5, INCIDENT_CLUSTER_MAX_ZOOM + 1)
+        map.easeTo({ center, zoom: targetZoom })
+        if (targetZoom > INCIDENT_CLUSTER_MAX_ZOOM) {
+          // Still at/beyond max zoom — show panel for the resolved leaves.
+          onClusterSelectRef.current?.(incidentIds)
+        }
+      }
+    })
+
+    // Individual incident click
+    map.on('click', INCIDENT_POINT_LAYER, (e) => {
+      clearSpiderfyMarkers()
+      const id = e.features?.[0]?.properties?.id as number | undefined
+      if (id != null) onIncidentClickRef.current?.(id)
+    })
+
+    // Initialise on first load
+    if (map.isStyleLoaded()) addIncidentLayers()
+    else map.once('style.load', addIncidentLayers)
+    map.on('style.load', addIncidentLayers)
+
+    // ── Ward boundary layers ─────────────────────────────────────────────────
     const addBoundaryLayers = () => {
       const data = wardBoundariesRef.current
       if (!data) return
@@ -293,6 +611,12 @@ export default function MapView({
           ] as maplibregl.ExpressionSpecification,
         },
       })
+      // Incident layers were registered before boundary layers so they
+      // land below them in the render stack. Move them to the top so
+      // clusters and individual incidents render above ward polygons.
+      for (const id of [INCIDENT_CLUSTER_LAYER, INCIDENT_CLUSTER_COUNT_LAYER, INCIDENT_POINT_HALO_LAYER, INCIDENT_POINT_LAYER]) {
+        if (map.getLayer(id)) map.moveLayer(id)
+      }
     }
     ensureBoundaryLayersRef.current = addBoundaryLayers
     // 'style.load', not 'load': 'load' only ever fires once in the map's
@@ -316,6 +640,10 @@ export default function MapView({
     return () => {
       canvas.removeEventListener('webglcontextlost', onContextLost)
       canvas.removeEventListener('webglcontextrestored', onContextRestored)
+      clearSpiderfyMarkers()
+      clusterPopup.remove()
+      selectedOverlayMarkerRef.current?.remove()
+      selectedOverlayMarkerRef.current = null
       map.remove()
       mapRef.current = null
     }
@@ -467,6 +795,103 @@ export default function MapView({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [selectedBoundaryId])
+
+  // Push fresh incident GeoJSON into the GL source (same gating pattern
+  // as wardBoundaries above — mapReadyRef not isStyleLoaded()).
+  // Also clears any live spiderfy DOM markers: their incident ids come
+  // from the previous filtered set and are stale after a filter change.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !incidentGeoJSON) return
+    spiderfyMarkersRef.current.forEach((m) => m.remove())
+    spiderfyMarkersRef.current = []
+    spiderfyOwnerKeyRef.current = null
+    const apply = () => {
+      const source = map.getSource(INCIDENT_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (source) source.setData(incidentGeoJSON)
+      else ensureIncidentLayersRef.current?.()
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [incidentGeoJSON])
+
+  // Collapse spiderfy whenever the selection key changes to something other
+  // than the cluster that owns the current expansion.
+  useEffect(() => {
+    if (spiderfyMarkersRef.current.length === 0) return
+    if (selectionKey !== spiderfyOwnerKeyRef.current) {
+      spiderfyMarkersRef.current.forEach((m) => m.remove())
+      spiderfyMarkersRef.current = []
+      spiderfyOwnerKeyRef.current = null
+    }
+  }, [selectionKey])
+
+  // DOM overlay marker anchored to the selected incident's true coordinates.
+  // Rendered above all GL layers so it remains visible even when the incident
+  // is absorbed into a cluster at lower zoom.
+  useEffect(() => {
+    selectedOverlayMarkerRef.current?.remove()
+    selectedOverlayMarkerRef.current = null
+    const map = mapRef.current
+    if (!map || !selectedIncidentCoords) return
+    const el = document.createElement('div')
+    el.style.cssText = [
+      'width:24px', 'height:24px',
+      'border:3px solid #2563eb',
+      'border-radius:50%',
+      'background:rgba(37,99,235,0.12)',
+      'box-shadow:0 0 0 5px rgba(37,99,235,0.18)',
+      'pointer-events:none',
+    ].join(';')
+    el.setAttribute('aria-hidden', 'true')
+    selectedOverlayMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat(selectedIncidentCoords)
+      .addTo(map)
+  }, [selectedIncidentCoords])
+
+  // Feature-state selection halo on individual incident points.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const id = selectedIncidentId ?? null
+    const apply = () => {
+      if (!map.getSource(INCIDENT_SOURCE_ID)) return
+      const prev = prevSelectedIncidentIdRef.current
+      if (prev !== null) {
+        map.setFeatureState({ source: INCIDENT_SOURCE_ID, id: prev }, { selected: false })
+      }
+      if (id !== null) {
+        map.setFeatureState({ source: INCIDENT_SOURCE_ID, id }, { selected: true })
+      }
+      prevSelectedIncidentIdRef.current = id
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [selectedIncidentId])
+
+  // Adjust incident layer opacity in Data Quality mode so station freshness
+  // markers remain the spatial focus. Uses setPaintProperty rather than
+  // recreating layers — no source data round-trip needed.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const alpha = dataQualityMode ? 0.35 : 1
+    const apply = () => {
+      if (map.getLayer(INCIDENT_CLUSTER_LAYER)) {
+        map.setPaintProperty(INCIDENT_CLUSTER_LAYER, 'circle-opacity', alpha)
+        map.setPaintProperty(INCIDENT_CLUSTER_LAYER, 'circle-stroke-opacity', alpha)
+      }
+      if (map.getLayer(INCIDENT_CLUSTER_COUNT_LAYER)) {
+        map.setPaintProperty(INCIDENT_CLUSTER_COUNT_LAYER, 'text-opacity', alpha)
+      }
+      if (map.getLayer(INCIDENT_POINT_LAYER)) {
+        map.setPaintProperty(INCIDENT_POINT_LAYER, 'circle-opacity', alpha)
+        map.setPaintProperty(INCIDENT_POINT_LAYER, 'circle-stroke-opacity', alpha)
+      }
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [dataQualityMode])
 
   // Toggle the selected CSS class on the appropriate DOM marker element.
   // Uses a querySelectorAll on the map container rather than recreating all

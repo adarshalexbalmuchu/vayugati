@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
-import MapView, { type WardBoundaryFeatureProps } from '../components/MapView'
+import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps } from '../components/MapView'
+import IncidentClusterPanel from '../components/map/IncidentClusterPanel'
 import { ErrorState, Skeleton } from '../components/ui'
 import BasemapSwitcher from '../components/map/BasemapSwitcher'
 import MapLayerControl, { DEFAULT_LAYER_STATE, type MapLayerKey } from '../components/map/MapLayerControl'
@@ -32,7 +33,7 @@ import {
   type WardForecastSummary,
   type WardSummary,
 } from '../lib/data'
-import type { Severity, SourceCategory } from '../lib/incidentRules'
+import { SEVERITY_RANK, type Severity, type SourceCategory } from '../lib/incidentRules'
 import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
   fetchLatestForecastRun,
@@ -77,6 +78,7 @@ type Selection =
   | { kind: 'station'; id: number }
   | { kind: 'incident'; id: number }
   | { kind: 'wardBoundary'; id: number }
+  | { kind: 'incidentCluster'; incidentIds: number[] }
   | null
 
 // Stable module-level fallback for state.data's pre-load shape. An inline
@@ -128,15 +130,6 @@ function stationPopup(name: string, displayAqi: number | null | undefined, using
   )
 }
 
-function incidentPopup(summary: string, wardName: string | null, status: string, createdAt: string | null): string {
-  const age = createdAt ? fmtAge((Date.now() - new Date(createdAt).getTime()) / 60_000) : null
-  const statusLabel = status.replace(/_/g, ' ')
-  return (
-    `<div style="font-size:13px;font-weight:600">${summary}</div>` +
-    (wardName ? `<div style="font-size:12px;color:#555">${wardName}</div>` : '') +
-    `<div style="font-size:11px;color:#9ca3af">${statusLabel}${age ? ` · ${age}` : ''}</div>`
-  )
-}
 
 function popup(title: string, lines: string[]): string {
   return (
@@ -426,31 +419,46 @@ export default function MapPage() {
     [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId],
   )
 
-  const incidentMarkers: MapMarker[] = useMemo(() => {
-    if (!layers.incidents) return []
-    const filteredIncidents = incidents.filter((i) => {
-      if (severityFilter && i.severity !== severityFilter) return false
-      if (sourceFilter && leadingSourceById.get(i.id) !== sourceFilter) return false
-      return true
-    })
-    return filteredIncidents
-      .filter((i) => isValidDelhiCoordinate(i.lat, i.lng))
-      .map((i) => {
-        const leading = leadingSourceById.get(i.id) as SourceCategory | undefined
-        const colorOverride = layers.sourceAttribution && leading ? (SOURCE_CATEGORY_HEX[leading] ?? null) : null
-        return {
-          id: `incident-${i.id}`,
-          kind: 'incident' as const,
-          lat: i.lat as number,
-          lng: i.lng as number,
-          label: i.summary ?? `Incident #${i.id}`,
-          severity: (i.severity ?? null) as Severity | null,
-          hasDispatch: layers.dispatchZones && dispatchIncidentIds.has(i.id),
-          colorOverride,
-          popupHtml: incidentPopup(i.summary ?? `Incident #${i.id}`, i.ward_name, i.status, i.created_at ?? null),
-        }
+  // Incidents are rendered as a MapLibre GL cluster source (not DOM markers)
+  // so individual point positions, cluster circles, and spiderfy all live in
+  // the GL layer stack rather than the DOM. The GeoJSON is rebuilt whenever
+  // the filter settings or incident data change; MapView's GeoJSONSource
+  // receives it via setData() without recreating the source.
+  const incidentGeoJSON = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point, IncidentFeatureProps>>(
+    () => {
+      if (!layers.incidents) return { type: 'FeatureCollection', features: [] }
+      const filteredIncidents = incidents.filter((i) => {
+        if (severityFilter && i.severity !== severityFilter) return false
+        if (sourceFilter && leadingSourceById.get(i.id) !== sourceFilter) return false
+        return true
       })
-  }, [layers.incidents, layers.sourceAttribution, layers.dispatchZones, incidents, severityFilter, sourceFilter, leadingSourceById, dispatchIncidentIds])
+      const features = filteredIncidents
+        .filter((i) => isValidDelhiCoordinate(i.lat, i.lng))
+        .map((i) => {
+          const sev = (i.severity ?? null) as Severity | null
+          const severityOrder = sev ? (SEVERITY_RANK[sev] ?? 0) : 0
+          const ageMinutes = i.created_at ? (Date.now() - new Date(i.created_at).getTime()) / 60_000 : 0
+          return {
+            type: 'Feature' as const,
+            id: i.id,
+            properties: {
+              id: i.id,
+              severity: i.severity,
+              severity_order: severityOrder,
+              is_severe: sev === 'severe' ? 1 : 0,
+              is_high: sev === 'high' ? 1 : 0,
+              is_moderate: sev === 'moderate' ? 1 : 0,
+              is_low: !sev || sev === 'low' ? 1 : 0,
+              age_minutes: ageMinutes,
+              summary: i.summary,
+            },
+            geometry: { type: 'Point' as const, coordinates: [i.lng as number, i.lat as number] },
+          }
+        })
+      return { type: 'FeatureCollection', features }
+    },
+    [layers.incidents, incidents, severityFilter, sourceFilter, leadingSourceById],
+  )
 
   const reportMarkers: MapMarker[] = useMemo(
     () =>
@@ -503,8 +511,8 @@ export default function MapPage() {
   )
 
   const allMarkers = useMemo(
-    () => [...wardMarkers, ...stationMarkers, ...incidentMarkers, ...reportMarkers, ...transitMarkers],
-    [wardMarkers, stationMarkers, incidentMarkers, reportMarkers, transitMarkers],
+    () => [...wardMarkers, ...stationMarkers, ...reportMarkers, ...transitMarkers],
+    [wardMarkers, stationMarkers, reportMarkers, transitMarkers],
   )
 
   // Only ever built from validated Delhi/NCR coordinates - a single bad row
@@ -541,8 +549,38 @@ export default function MapPage() {
     const id = Number(rawId)
     if (kind === 'ward') setSelection({ kind: 'ward', id })
     else if (kind === 'station') setSelection({ kind: 'station', id })
-    else if (kind === 'incident') setSelection({ kind: 'incident', id })
   }, [])
+
+  const handleIncidentClick = useCallback((id: number) => {
+    setSelection({ kind: 'incident', id })
+  }, [])
+
+  const handleClusterSelect = useCallback((incidentIds: number[]) => {
+    setSelection({ kind: 'incidentCluster', incidentIds })
+  }, [])
+
+  // Incidents belonging to the currently-selected cluster (for IncidentClusterPanel).
+  const selectedClusterIncidents = useMemo(() => {
+    if (selection?.kind !== 'incidentCluster') return []
+    const idsSet = new Set(selection.incidentIds)
+    return incidents.filter((i) => idsSet.has(i.id))
+  }, [selection, incidents])
+
+  // Stable string key passed to MapView so it can detect selection changes
+  // without receiving the full Selection object.
+  const selectionKey = !selection
+    ? 'none'
+    : selection.kind === 'incidentCluster'
+    ? `incidentCluster:${[...selection.incidentIds].sort((a, b) => a - b).join(',')}`
+    : `${selection.kind}:${selection.id}`
+
+  // Clear a stale cluster-panel selection when the filter set changes — the
+  // cluster's incident IDs may no longer exist in the new filtered source.
+  const incidentFilterInitRef = useRef(false)
+  useEffect(() => {
+    if (!incidentFilterInitRef.current) { incidentFilterInitRef.current = true; return }
+    setSelection((prev) => (prev?.kind === 'incidentCluster' ? null : prev))
+  }, [layers.incidents, severityFilter, sourceFilter])
 
   // Real Supabase boundary rows only (see lib/data.ts's fetchAllWardBoundaries)
   // - an empty array here means the layer control correctly shows the
@@ -567,6 +605,11 @@ export default function MapPage() {
   const selectedWard = selection?.kind === 'ward' ? wards.find((w) => w.id === selection.id) : undefined
   const selectedIncident: Incident | undefined =
     selection?.kind === 'incident' ? incidents.find((i) => i.id === selection.id) : undefined
+  const selectedIncidentCoords = useMemo<[number, number] | null>(() => {
+    if (!selectedIncident) return null
+    if (!isValidDelhiCoordinate(selectedIncident.lat, selectedIncident.lng)) return null
+    return [selectedIncident.lng as number, selectedIncident.lat as number]
+  }, [selectedIncident])
   const selectedStation: SelectedStation | undefined =
     selection?.kind === 'station'
       ? (() => {
@@ -755,11 +798,14 @@ export default function MapPage() {
                   showWardBoundaries={layers.wardBoundaries && wardBoundariesAvailable}
                   selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
                   onBoundaryClick={handleBoundaryClick}
-                  selectedMarkerId={
-                    selection?.kind === 'station' ? `station-${selection.id}`
-                    : selection?.kind === 'incident' ? `incident-${selection.id}`
-                    : null
-                  }
+                  selectedMarkerId={selection?.kind === 'station' ? `station-${selection.id}` : null}
+                  incidentGeoJSON={incidentGeoJSON}
+                  onIncidentClick={handleIncidentClick}
+                  onClusterSelect={handleClusterSelect}
+                  selectedIncidentId={selection?.kind === 'incident' ? selection.id : null}
+                  dataQualityMode={viewMode === 'data_quality'}
+                  selectionKey={selectionKey}
+                  selectedIncidentCoords={selectedIncidentCoords}
                 />
                 <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
                   <MapLayerControl
@@ -795,6 +841,12 @@ export default function MapPage() {
                         />
                       ) : null
                     })()
+                  ) : selection?.kind === 'incidentCluster' ? (
+                    <IncidentClusterPanel
+                      incidents={selectedClusterIncidents}
+                      leadingSourceById={leadingSourceById}
+                      onClose={() => setSelection(null)}
+                    />
                   ) : selectedIncident ? (
                     <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
                   ) : (
@@ -843,6 +895,12 @@ export default function MapPage() {
                       latestForecastRun={latestForecastRunState.data}
                       latestForecastRunLoading={latestForecastRunState.loading}
                       nearbyIncidentsCount={nearbyIncidentsCount}
+                      onClose={() => setSelection(null)}
+                    />
+                  ) : selection?.kind === 'incidentCluster' ? (
+                    <IncidentClusterPanel
+                      incidents={selectedClusterIncidents}
+                      leadingSourceById={leadingSourceById}
                       onClose={() => setSelection(null)}
                     />
                   ) : selectedIncident ? (
