@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Clock, ListFilter, MapPin, RefreshCw } from 'lucide-react'
+import AppShell from '../components/AppShell'
 import { useAuth } from '../lib/auth'
 import { type Incident, listRemediationIncidents } from '../lib/incidents'
 import { fetchAllWardBoundaries, type WardBoundary } from '../lib/data'
@@ -125,18 +126,20 @@ export default function IncidentRemediationPage() {
   // ── Permission guard ────────────────────────────────────────────────────────
   if (profile && !canEdit) {
     return (
-      <div className="flex h-screen items-center justify-center p-8 text-center">
-        <div>
-          <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-status-warning" strokeWidth={1.5} />
-          <p className="font-semibold text-slate-800">Access restricted</p>
-          <p className="mt-1 text-sm text-slate-500">Location remediation is available to commanders and administrators only.</p>
+      <AppShell subtitle="Location Remediation">
+        <div className="flex flex-1 items-center justify-center p-8 text-center">
+          <div>
+            <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-status-warning" strokeWidth={1.5} />
+            <p className="font-semibold text-slate-800">Access restricted</p>
+            <p className="mt-1 text-sm text-slate-500">Location remediation is available to commanders and administrators only.</p>
+          </div>
         </div>
-      </div>
+      </AppShell>
     )
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white">
+    <AppShell subtitle="Location Remediation">
       {/* Page header */}
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center gap-2">
@@ -281,6 +284,6 @@ export default function IncidentRemediationPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   )
 }
