@@ -887,6 +887,77 @@ export type Database = {
           },
         ]
       }
+      incident_evidence: {
+        Row: {
+          collected_at: string
+          collected_by: string | null
+          confidence: number | null
+          created_at: string
+          evidence_type: string
+          id: number
+          incident_id: number
+          payload: Json
+          reading_id: number | null
+          report_id: number | null
+          supports: boolean | null
+        }
+        Insert: {
+          collected_at?: string
+          collected_by?: string | null
+          confidence?: number | null
+          created_at?: string
+          evidence_type: string
+          id?: number
+          incident_id: number
+          payload?: Json
+          reading_id?: number | null
+          report_id?: number | null
+          supports?: boolean | null
+        }
+        Update: {
+          collected_at?: string
+          collected_by?: string | null
+          confidence?: number | null
+          created_at?: string
+          evidence_type?: string
+          id?: number
+          incident_id?: number
+          payload?: Json
+          reading_id?: number | null
+          report_id?: number | null
+          supports?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_evidence_collected_by_fkey"
+            columns: ["collected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_evidence_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_evidence_reading_id_fkey"
+            columns: ["reading_id"]
+            isOneToOne: false
+            referencedRelation: "readings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_evidence_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incident_location_audits: {
         Row: {
           confidence: string
@@ -956,77 +1027,6 @@ export type Database = {
             columns: ["previous_ward_id"]
             isOneToOne: false
             referencedRelation: "wards"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      incident_evidence: {
-        Row: {
-          collected_at: string
-          collected_by: string | null
-          confidence: number | null
-          created_at: string
-          evidence_type: string
-          id: number
-          incident_id: number
-          payload: Json
-          reading_id: number | null
-          report_id: number | null
-          supports: boolean | null
-        }
-        Insert: {
-          collected_at?: string
-          collected_by?: string | null
-          confidence?: number | null
-          created_at?: string
-          evidence_type: string
-          id?: number
-          incident_id: number
-          payload?: Json
-          reading_id?: number | null
-          report_id?: number | null
-          supports?: boolean | null
-        }
-        Update: {
-          collected_at?: string
-          collected_by?: string | null
-          confidence?: number | null
-          created_at?: string
-          evidence_type?: string
-          id?: number
-          incident_id?: number
-          payload?: Json
-          reading_id?: number | null
-          report_id?: number | null
-          supports?: boolean | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "incident_evidence_collected_by_fkey"
-            columns: ["collected_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "incident_evidence_incident_id_fkey"
-            columns: ["incident_id"]
-            isOneToOne: false
-            referencedRelation: "incidents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "incident_evidence_reading_id_fkey"
-            columns: ["reading_id"]
-            isOneToOne: false
-            referencedRelation: "readings"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "incident_evidence_report_id_fkey"
-            columns: ["report_id"]
-            isOneToOne: false
-            referencedRelation: "reports"
             referencedColumns: ["id"]
           },
         ]
@@ -2684,10 +2684,10 @@ export type Database = {
           p_incident_id: number
           p_is_centroid_placement?: boolean
           p_location_source: string
-          p_new_lat?: number | null
-          p_new_lng?: number | null
-          p_new_ward_id?: number | null
-          p_review_note?: string | null
+          p_new_lat?: number
+          p_new_lng?: number
+          p_new_ward_id?: number
+          p_review_note?: string
           p_review_reason: string
         }
         Returns: undefined

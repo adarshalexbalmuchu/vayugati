@@ -2517,15 +2517,15 @@ export interface UpdateIncidentLocationParams {
 export async function updateIncidentLocation(p: UpdateIncidentLocationParams): Promise<void> {
   const { error } = await supabase.rpc('update_incident_location', {
     p_incident_id: p.incidentId,
-    p_new_lat: p.newLat,
-    p_new_lng: p.newLng,
-    p_new_ward_id: p.newWardId,
+    p_new_lat: p.newLat ?? undefined,
+    p_new_lng: p.newLng ?? undefined,
+    p_new_ward_id: p.newWardId ?? undefined,
     p_location_source: p.locationSource,
     p_confidence: p.confidence,
     p_review_reason: p.reviewReason,
-    p_review_note: p.reviewNote ?? null,
+    p_review_note: p.reviewNote ?? undefined,
     p_is_centroid_placement: false,  // never true from the browser — guard lives in the RPC
-  } as never)
+  })
   if (error) fail('Could not update incident location', error)
 }
 
