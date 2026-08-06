@@ -88,16 +88,16 @@ export default function DataQualityWardPanel({
         <p>
           <span className="font-semibold text-slate-700">Coverage basis: </span>
           {coverage.class === 'direct'
-            ? 'A station is directly assigned to this ward via ward_id. AQI values on the map reflect this station\'s readings.'
+            ? 'An active station lies inside this ward\'s boundary. AQI values on the map reflect this station\'s readings.'
             : coverage.class === 'nearby'
-              ? `No station is directly assigned to this ward. The nearest active station is within the ${thresholdKm} km support threshold.`
+              ? `No active station lies inside this ward. The nearest active station is within ${thresholdKm} km straight-line distance of the ward reference point.`
               : coverage.class === 'insufficient'
-                ? `No active station exists within the ${thresholdKm} km support threshold. Any AQI shown is not defensibly attributable to this ward.`
-                : 'Ward geometry exists but no valid centroid is available to calculate nearest-station distance.'}
+                ? `No active station lies inside this ward, and none is within ${thresholdKm} km of the ward reference point. Any AQI shown is not defensibly attributable to this ward.`
+                : 'No valid ward geometry or reference point is available — distance-based coverage cannot be assessed.'}
         </p>
         {(coverage.class === 'direct' || coverage.class === 'nearby' || coverage.class === 'insufficient') && (
           <p className="mt-1.5 text-[10px] text-slate-400">
-            The {thresholdKm} km threshold is straight-line distance from the ward centroid to the nearest active station, following WMO/CPCB guidance for dense urban monitoring networks. Only active stations count toward coverage.
+            Direct coverage means a station lies inside the ward polygon. Nearby proximity means the nearest active station is within {thresholdKm} km straight-line of the ward reference point. This is a configurable operational rule and does not mean the station represents conditions throughout the ward. Only active stations count.
           </p>
         )}
       </div>

@@ -5,12 +5,45 @@ import {
   DELAYED_STALE_BOUNDARY_MINUTES,
   formatReadingAge,
   FRESH_THRESHOLD_MINUTES,
+  geometryCentroid,
   NEARBY_COVERAGE_THRESHOLD_METERS,
   rollupStationQuality,
   stationFreshnessClass,
 } from './dataQualityRules'
 import type { StationMarker } from './data'
 import type { StationHealthRow } from './ops'
+
+// ── Geometry test helpers ────────────────────────────────────────────────────
+
+/** Square ward polygon centered at (centerLat, centerLng). GeoJSON uses
+ *  [lng, lat] coordinate order. halfDeg ≈ 0.02° ≈ ~2.2 km at Delhi latitude. */
+function squarePolygon(centerLat: number, centerLng: number, halfDeg = 0.02): GeoJSON.Polygon {
+  const n = centerLat + halfDeg, s = centerLat - halfDeg
+  const e = centerLng + halfDeg, w = centerLng - halfDeg
+  return { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] }
+}
+
+/** Square ward with a concentric square hole. Station at center is in the hole. */
+function polygonWithHole(centerLat: number, centerLng: number, outerDeg = 0.02, holeDeg = 0.01): GeoJSON.Polygon {
+  const on = centerLat + outerDeg, os = centerLat - outerDeg, oe = centerLng + outerDeg, ow = centerLng - outerDeg
+  const hn = centerLat + holeDeg, hs = centerLat - holeDeg, he = centerLng + holeDeg, hw = centerLng - holeDeg
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [[ow, os], [oe, os], [oe, on], [ow, on], [ow, os]],
+      [[hw, hs], [he, hs], [he, hn], [hw, hn], [hw, hs]],
+    ],
+  }
+}
+
+/** MultiPolygon with two separate square sub-polygons (e.g. an exclave ward). */
+function twoPartMultiPolygon(lat1: number, lng1: number, lat2: number, lng2: number, halfDeg = 0.02): GeoJSON.MultiPolygon {
+  const ring = (lat: number, lng: number) => {
+    const n = lat + halfDeg, s = lat - halfDeg, e = lng + halfDeg, w = lng - halfDeg
+    return [[w, s], [e, s], [e, n], [w, n], [w, s]]
+  }
+  return { type: 'MultiPolygon', coordinates: [[ring(lat1, lng1)], [ring(lat2, lng2)]] }
+}
 
 function healthRow(overrides: Partial<StationHealthRow> = {}): StationHealthRow {
   return {
@@ -120,6 +153,111 @@ describe('classifyWardCoverage', () => {
     const result = classifyWardCoverage(ward, [hClose], [sClose])
     // No active station within threshold → insufficient
     expect(result.class).toBe('insufficient')
+  })
+
+  // ── Geometry-based classification (PIP + centroid derivation) ──────────────
+
+  it('is direct when an active station lies inside the ward polygon', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const h = healthRow({ id: 20, name: 'Inner Station', ward_id: 999, is_active: true })
+    const s = station({ id: 20, lat: 28.62, lng: 77.21 })  // at polygon center
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    expect(result.class).toBe('direct')
+    expect(result.directStationName).toBe('Inner Station')
+  })
+
+  it('is direct when station is inside one part of a MultiPolygon ward', () => {
+    const geom = twoPartMultiPolygon(28.55, 77.15, 28.65, 77.21)
+    const h = healthRow({ id: 30, is_active: true })
+    const s = station({ id: 30, lat: 28.65, lng: 77.21 })  // inside second sub-polygon
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    expect(result.class).toBe('direct')
+  })
+
+  it('a station inside a hole is not counted as direct coverage', () => {
+    const geom = polygonWithHole(28.62, 77.21, 0.02, 0.01)
+    const h = healthRow({ id: 40, is_active: true })
+    const s = station({ id: 40, lat: 28.62, lng: 77.21 })  // at center — inside the hole
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    // Station is in the excised hole, not in the ward territory
+    expect(result.class).not.toBe('direct')
+    // But it IS very close to the ward centroid → nearby
+    expect(result.class).toBe('nearby')
+  })
+
+  it('derives centroid from geometry when stored lat/lng are null', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const h = healthRow({ id: 50, is_active: true })
+    // Station is outside polygon (28.63 + 0.025 ≈ 28.655 which is outside 28.62±0.02)
+    // but within 5 km of the derived centroid
+    const s = station({ id: 50, lat: 28.625, lng: 77.235 })  // ~1.7 km away, outside polygon
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    // No stored centroid, but geometry provides one — should not be 'unavailable'
+    expect(result.class).not.toBe('unavailable')
+    expect(result.class).toBe('nearby')
+  })
+
+  it('is insufficient when nearest station is beyond 5 km of the ward reference point', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const h = healthRow({ id: 60, is_active: true })
+    const s = station({ id: 60, lat: 28.67, lng: 77.21 })  // ~5.5 km north, outside polygon
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    expect(result.class).toBe('insufficient')
+    expect(result.nearestDistanceMeters).toBeGreaterThan(NEARBY_COVERAGE_THRESHOLD_METERS)
+  })
+
+  it('is nearby for a station just within 5 km but outside the polygon', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const h = healthRow({ id: 70, is_active: true })
+    const s = station({ id: 70, lat: 28.658, lng: 77.21 })  // ~4.2 km north, outside polygon
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [h], [s])
+    expect(result.class).toBe('nearby')
+    expect(result.nearestDistanceMeters).toBeLessThan(NEARBY_COVERAGE_THRESHOLD_METERS)
+  })
+
+  it('returns unavailable for genuinely empty geometry (no ring coordinates)', () => {
+    const geom: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[]] }
+    const result = classifyWardCoverage({ id: 1, lat: null, lng: null, geometry: geom }, [], [])
+    expect(result.class).toBe('unavailable')
+  })
+})
+
+// ── geometryCentroid ─────────────────────────────────────────────────────────
+
+describe('geometryCentroid', () => {
+  it('returns centroid of a square Polygon at the geometric centre', () => {
+    const geom = squarePolygon(28.62, 77.21)
+    const c = geometryCentroid(geom)
+    expect(c).not.toBeNull()
+    expect(c!.lat).toBeCloseTo(28.62, 3)
+    expect(c!.lng).toBeCloseTo(77.21, 3)
+  })
+
+  it('reads GeoJSON coordinates as [lng, lat] order — not [lat, lng]', () => {
+    // If the order were swapped the result would be ~(77.21, 28.62) rather than ~(28.62, 77.21)
+    const geom = squarePolygon(28.62, 77.21)
+    const c = geometryCentroid(geom)!
+    expect(c.lat).toBeCloseTo(28.62, 1)   // lat ≈ 28, not ≈ 77
+    expect(c.lng).toBeCloseTo(77.21, 1)   // lng ≈ 77, not ≈ 28
+  })
+
+  it('returns area-weighted centroid of a MultiPolygon', () => {
+    const geom = twoPartMultiPolygon(28.55, 77.15, 28.65, 77.21)
+    const c = geometryCentroid(geom)
+    expect(c).not.toBeNull()
+    // Centroid should be between the two sub-polygon centres (equal area, so the midpoint)
+    expect(c!.lat).toBeCloseTo((28.55 + 28.65) / 2, 1)
+    expect(c!.lng).toBeCloseTo((77.15 + 77.21) / 2, 1)
+  })
+
+  it('returns null for a degenerate Polygon with an empty ring', () => {
+    const geom: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[]] }
+    expect(geometryCentroid(geom)).toBeNull()
+  })
+
+  it('returns null for a degenerate Polygon with fewer than 3 vertices', () => {
+    const geom: GeoJSON.Polygon = { type: 'Polygon', coordinates: [[[77.21, 28.62]]] }
+    expect(geometryCentroid(geom)).toBeNull()
   })
 })
 

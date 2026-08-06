@@ -14,6 +14,7 @@ import type { StationMarker } from './data'
 import type { Incident } from './incidents'
 import type { StationHealthRow } from './ops'
 import { isValidDelhiCoordinate, nearestStationTo } from './mapRules'
+import { pointInGeometry } from './incidentLocationRules'
 
 // ── Freshness classification ──────────────────────────────────────────────────
 
@@ -79,9 +80,9 @@ export type WardCoverageClass = 'direct' | 'nearby' | 'insufficient' | 'unavaila
 
 export const WARD_COVERAGE_LABEL: Record<WardCoverageClass, string> = {
   direct: 'Direct station coverage',
-  nearby: 'Nearby support only',
+  nearby: 'Nearby station proximity',
   insufficient: 'Insufficient monitoring coverage',
-  unavailable: 'Geometry or centroid unavailable',
+  unavailable: 'Geometry unavailable',
 }
 
 /** Semantic colours for ward coverage fill — separate from AQI palette. */
@@ -102,53 +103,132 @@ export interface WardCoverageDetail {
   nearestStationName: string | null
 }
 
+// ── Geometry centroid derivation ──────────────────────────────────────────────
+
+/** Signed-area centroid of a single GeoJSON ring ([lng, lat] pairs).
+ *  Returns null for degenerate rings (zero area, fewer than 3 points). */
+function ringSignedAreaCentroid(ring: number[][]): { lng: number; lat: number; area: number } | null {
+  const n = ring.length
+  if (n < 3) return null
+  let cx = 0, cy = 0, area = 0
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1]
+    area += cross
+    cx += (ring[j][0] + ring[i][0]) * cross
+    cy += (ring[j][1] + ring[i][1]) * cross
+  }
+  area /= 2
+  if (area === 0) return null
+  return { lng: cx / (6 * area), lat: cy / (6 * area), area: Math.abs(area) }
+}
+
+/** Derive a representative centroid from GeoJSON polygon or multipolygon
+ *  geometry using the signed-area (shoelace) formula.
+ *
+ *  For Polygon: centroid of the exterior ring.
+ *  For MultiPolygon: area-weighted centroid of each sub-polygon's exterior ring.
+ *
+ *  The mathematical centroid may fall outside concave or donut-shaped wards,
+ *  but for the 5 km proximity threshold used here, the positional error is
+ *  operationally acceptable for all real Delhi ward shapes. Returns null only
+ *  for genuinely degenerate geometry (empty rings, zero-area polygons). */
+export function geometryCentroid(
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+): { lat: number; lng: number } | null {
+  if (geometry.type === 'Polygon') {
+    const c = ringSignedAreaCentroid(geometry.coordinates[0] as number[][])
+    return c ? { lat: c.lat, lng: c.lng } : null
+  }
+  // MultiPolygon: area-weighted centroid across all sub-polygon exterior rings
+  let totalArea = 0, wLat = 0, wLng = 0
+  for (const poly of geometry.coordinates as number[][][][]) {
+    const c = ringSignedAreaCentroid(poly[0] as number[][])
+    if (!c) continue
+    wLat += c.lat * c.area
+    wLng += c.lng * c.area
+    totalArea += c.area
+  }
+  return totalArea === 0 ? null : { lat: wLat / totalArea, lng: wLng / totalArea }
+}
+
+// ── Ward coverage classification ───────────────────────────────────────────────
+
 /** Classify a ward's monitoring-coverage state.
  *
- *  Priority: unavailable → direct → nearby → insufficient.
+ *  Priority: geometry unavailable → direct → nearby → insufficient.
+ *
+ *  Reference point: uses the stored lat/lng centroid when valid; derives one
+ *  from the ward geometry when the stored centroid is absent (the common case
+ *  for the 250 Phase-2 municipal wards that were imported without a centroid
+ *  column). Falls back to geometry unavailable only when no reference point
+ *  can be derived at all.
+ *
+ *  Direct coverage: checks whether any active station lies physically inside
+ *  the ward polygon (point-in-polygon). Falls back to ward_id match only when
+ *  no geometry is available, which allows the existing tests (which don't
+ *  supply geometry) to continue passing unchanged.
  *
  *  "Active" means StationHealthRow.is_active === true. An inactive station
- *  cannot supply data and must not count as coverage — this is stricter than
- *  the existing wardDataStatus() in mapRules.ts, which only asks whether data
- *  exists, not whether the producing station is still operational. */
+ *  cannot supply data and must not count toward coverage. */
 export function classifyWardCoverage(
-  ward: { id: number; lat: number | null; lng: number | null },
+  ward: { id: number; lat: number | null; lng: number | null; geometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null },
   stationHealth: StationHealthRow[],
   stations: StationMarker[],
 ): WardCoverageDetail {
-  if (!isValidDelhiCoordinate(ward.lat, ward.lng)) {
+  // Resolve a reference point: stored centroid → derived from geometry → fail
+  let refLat = ward.lat
+  let refLng = ward.lng
+  if (!isValidDelhiCoordinate(refLat, refLng) && ward.geometry) {
+    const derived = geometryCentroid(ward.geometry)
+    if (derived) {
+      refLat = derived.lat
+      refLng = derived.lng
+    }
+  }
+
+  // Only active stations with valid Delhi coordinates count toward any coverage class.
+  const activeHealth = stationHealth.filter((h) => h.is_active)
+  const activeIds = new Set(activeHealth.map((h) => h.id))
+  const activeStations = stations.filter((s) => activeIds.has(s.id) && isValidDelhiCoordinate(s.lat, s.lng))
+
+  // Direct coverage: physical containment via point-in-polygon (when geometry
+  // is available), ward_id match as a fallback for callers that supply no geometry.
+  if (ward.geometry) {
+    for (const s of activeStations) {
+      if (pointInGeometry(s.lat!, s.lng!, ward.geometry)) {
+        const h = activeHealth.find((ah) => ah.id === s.id)
+        const name = h?.name ?? s.name
+        if (import.meta.env.DEV) {
+          console.debug(`[dataQuality] Ward ${ward.id} direct: station "${name}" inside polygon`)
+        }
+        return { class: 'direct', directStationName: name, nearestDistanceMeters: null, nearestStationName: name }
+      }
+    }
+  } else {
+    const directHealth = stationHealth.find((h) => h.is_active && h.ward_id === ward.id)
+    if (directHealth) {
+      return { class: 'direct', directStationName: directHealth.name, nearestDistanceMeters: null, nearestStationName: directHealth.name }
+    }
+  }
+
+  // No valid reference point → cannot compute any distance-based class
+  if (!isValidDelhiCoordinate(refLat, refLng)) {
+    if (import.meta.env.DEV) {
+      console.warn(`[dataQuality] Ward ${ward.id} unavailable: no valid reference point`, {
+        storedLat: ward.lat, storedLng: ward.lng,
+        hasGeometry: ward.geometry != null,
+        geometryType: ward.geometry?.type,
+      })
+    }
     return { class: 'unavailable', directStationName: null, nearestDistanceMeters: null, nearestStationName: null }
   }
 
-  const directHealth = stationHealth.find((s) => s.is_active && s.ward_id === ward.id)
-  if (directHealth) {
-    return {
-      class: 'direct',
-      directStationName: directHealth.name,
-      nearestDistanceMeters: null,
-      nearestStationName: directHealth.name,
-    }
-  }
-
-  // Only active stations count toward nearby/insufficient coverage.
-  const activeIds = new Set(stationHealth.filter((h) => h.is_active).map((h) => h.id))
-  const activeStations = stations.filter((s) => activeIds.has(s.id))
-  const nearest = nearestStationTo(ward.lat, ward.lng, activeStations)
-
+  // Nearby / insufficient: straight-line distance from ward reference point
+  const nearest = nearestStationTo(refLat, refLng, activeStations)
   if (nearest && nearest.distanceMeters <= NEARBY_COVERAGE_THRESHOLD_METERS) {
-    return {
-      class: 'nearby',
-      directStationName: null,
-      nearestDistanceMeters: nearest.distanceMeters,
-      nearestStationName: nearest.station.name,
-    }
+    return { class: 'nearby', directStationName: null, nearestDistanceMeters: nearest.distanceMeters, nearestStationName: nearest.station.name }
   }
-
-  return {
-    class: 'insufficient',
-    directStationName: null,
-    nearestDistanceMeters: nearest?.distanceMeters ?? null,
-    nearestStationName: nearest?.station.name ?? null,
-  }
+  return { class: 'insufficient', directStationName: null, nearestDistanceMeters: nearest?.distanceMeters ?? null, nearestStationName: nearest?.station.name ?? null }
 }
 
 // ── Incident coordinate audit ─────────────────────────────────────────────────

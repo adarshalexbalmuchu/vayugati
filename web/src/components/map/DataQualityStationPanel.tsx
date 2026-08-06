@@ -43,7 +43,7 @@ function FreshnessBadge({ cls, fallback }: { cls: FreshnessClass; fallback?: boo
       style={{ color: FRESHNESS_HEX[cls] }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: FRESHNESS_HEX[cls] }} aria-hidden />
-      {FRESHNESS_LABEL[cls]}{fallback ? ' · OpenAQ' : ''}
+      {FRESHNESS_LABEL[cls]}{fallback ? ' · OpenAQ fallback' : ''}
     </span>
   )
 }

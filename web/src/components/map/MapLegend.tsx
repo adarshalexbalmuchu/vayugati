@@ -99,6 +99,30 @@ export default function MapLegend({
         )}
       </button>
 
+      {/* Compact always-visible ring key for data quality mode */}
+      {viewMode === 'data_quality' && !open && (
+        <div className="border-t border-slate-100 px-1.5 py-1 flex flex-wrap gap-x-2 gap-y-0.5">
+          {(['fresh', 'delayed', 'stale'] as FreshnessClass[]).map((cls) => (
+            <span key={cls} className="flex items-center gap-1 text-[9px] text-slate-500">
+              <FreshnessRingSwatch cls={cls} />
+              {FRESHNESS_LABEL[cls]}
+            </span>
+          ))}
+          <span className="flex items-center gap-1 text-[9px] text-slate-500">
+            <span
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 9, height: 9, borderRadius: 2,
+                border: '1.5px solid #f59e0b', background: '#fff',
+                fontSize: 5, fontWeight: 700, color: '#f59e0b', flexShrink: 0,
+              }}
+              aria-hidden
+            >F</span>
+            Fallback
+          </span>
+        </div>
+      )}
+
       {open && viewMode === 'data_quality' && (
         <div className="px-1.5 pb-1.5">
           <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Station freshness</p>
@@ -137,9 +161,10 @@ export default function MapLegend({
           </ul>
           <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">How coverage is determined</p>
           <ul className="mt-0.5 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
-            <li>• Straight-line distance from ward centroid to nearest active station.</li>
-            <li>• {(NEARBY_COVERAGE_THRESHOLD_METERS / 1000).toFixed(0)} km threshold follows WMO/CPCB guidance for dense urban monitoring.</li>
-            <li>• Inactive stations never count toward coverage, even if assigned.</li>
+            <li>• Direct: an active station lies inside the ward polygon.</li>
+            <li>• Nearby: no station inside, but one is within {(NEARBY_COVERAGE_THRESHOLD_METERS / 1000).toFixed(0)} km straight-line of the ward reference point.</li>
+            <li>• This is a configurable proximity rule. It does not mean one station represents conditions throughout the ward.</li>
+            <li>• Inactive stations never count toward coverage.</li>
           </ul>
         </div>
       )}
