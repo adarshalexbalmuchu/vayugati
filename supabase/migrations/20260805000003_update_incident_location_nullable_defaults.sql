@@ -3,6 +3,17 @@
 -- `?: number` (optional) rather than `number` (required) for those args.
 -- This lets the TypeScript call site pass `undefined` to clear a location
 -- instead of `null`, which avoids a type mismatch without `as any` casts.
+--
+-- Parameter order change: PostgreSQL requires params with DEFAULT to follow
+-- all params without DEFAULT. The original signature placed p_new_lat/lng/ward_id
+-- before p_location_source/confidence/review_reason. Adding DEFAULT NULL to
+-- those three required moving them after the required params — which changes
+-- the function signature, making CREATE OR REPLACE create a second overload.
+-- We DROP the original signature first to avoid the 42725 ambiguity error.
+
+DROP FUNCTION IF EXISTS update_incident_location(
+  bigint, double precision, double precision, bigint, text, text, text, text, boolean
+);
 
 CREATE OR REPLACE FUNCTION update_incident_location(
   p_incident_id           bigint,
