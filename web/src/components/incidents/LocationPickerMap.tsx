@@ -55,60 +55,81 @@ export default function LocationPickerMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: BASEMAP_STYLE,
-      center: DELHI_CENTER,
-      zoom: DELHI_DEFAULT_ZOOM,
-      attributionControl: false,
-    })
+    const container = containerRef.current
+    let map: maplibregl.Map | null = null
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
+    function initMap() {
+      if (map || !container.offsetWidth || !container.offsetHeight) return
 
-    map.on('load', () => {
-      // Ward boundary fill + line layers
-      const geojson: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
-        features: wardBoundaries
-          .filter((w) => w.geometry)
-          .map((w) => ({
-            type: 'Feature',
-            id: w.id,
-            properties: { id: w.id, name: w.name },
-            geometry: w.geometry,
-          })),
-      }
-
-      map.addSource('wards', { type: 'geojson', data: geojson })
-      map.addLayer({
-        id: 'ward-fill',
-        type: 'fill',
-        source: 'wards',
-        paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.04 },
-      })
-      map.addLayer({
-        id: 'ward-line',
-        type: 'line',
-        source: 'wards',
-        paint: { 'line-color': '#94a3b8', 'line-width': 0.8, 'line-opacity': 0.5 },
+      map = new maplibregl.Map({
+        container,
+        style: BASEMAP_STYLE,
+        center: DELHI_CENTER,
+        zoom: DELHI_DEFAULT_ZOOM,
+        attributionControl: false,
       })
 
-      setMapReady(true)
-    })
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
 
-    // Click to place/move the proposed marker
-    map.on('click', (e) => {
-      onChange(e.lngLat.lat, e.lngLat.lng)
-    })
+      map.on('load', () => {
+        const geojson: GeoJSON.FeatureCollection = {
+          type: 'FeatureCollection',
+          features: wardBoundaries
+            .filter((w) => w.geometry)
+            .map((w) => ({
+              type: 'Feature',
+              id: w.id,
+              properties: { id: w.id, name: w.name },
+              geometry: w.geometry,
+            })),
+        }
 
-    map.getCanvas().style.cursor = 'crosshair'
-    mapRef.current = map
+        map!.addSource('wards', { type: 'geojson', data: geojson })
+        map!.addLayer({
+          id: 'ward-fill',
+          type: 'fill',
+          source: 'wards',
+          paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.04 },
+        })
+        map!.addLayer({
+          id: 'ward-line',
+          type: 'line',
+          source: 'wards',
+          paint: { 'line-color': '#94a3b8', 'line-width': 0.8, 'line-opacity': 0.5 },
+        })
+
+        setMapReady(true)
+      })
+
+      map.on('click', (e) => {
+        onChange(e.lngLat.lat, e.lngLat.lng)
+      })
+
+      map.getCanvas().style.cursor = 'crosshair'
+      mapRef.current = map
+    }
+
+    // ResizeObserver: initialises the map once the container has non-zero
+    // dimensions (deferred init), then keeps the map sized correctly on any
+    // subsequent layout change. This handles the case where MapLibre is
+    // mounted before the flex layout has committed real pixel dimensions.
+    const ro = new ResizeObserver(() => {
+      if (!mapRef.current) initMap()
+      else mapRef.current.resize()
+    })
+    ro.observe(container)
+
+    // Also try immediately in case the container already has dimensions.
+    initMap()
 
     return () => {
-      map.remove()
-      mapRef.current = null
-      setMapReady(false)
+      ro.disconnect()
+      if (map) {
+        map.remove()
+        mapRef.current = null
+        setMapReady(false)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -169,8 +190,8 @@ export default function LocationPickerMap({
   }, [mapReady, proposedLat, proposedLng])
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg">
-      <div ref={containerRef} className="h-full w-full" />
+    <div className="absolute inset-0 overflow-hidden rounded-lg">
+      <div ref={containerRef} className="absolute inset-0" />
 
       {/* Coordinate readout */}
       {proposedLat != null && proposedLng != null && (

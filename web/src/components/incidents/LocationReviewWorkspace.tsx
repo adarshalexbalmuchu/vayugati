@@ -396,7 +396,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
         </div>
 
         {/* ── Right pane: map ────────────────────────────────────────────── */}
-        <div className="flex-1 bg-slate-100 p-2">
+        <div className="relative flex-1 bg-slate-100 p-2">
           {action === 'clear' ? (
             <div className="flex h-full items-center justify-center text-center text-sm text-slate-400">
               <div>
