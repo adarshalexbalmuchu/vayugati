@@ -5,15 +5,15 @@
 -- instead of `null`, which avoids a type mismatch without `as any` casts.
 
 CREATE OR REPLACE FUNCTION update_incident_location(
-  p_incident_id         bigint,
-  p_new_lat             double precision DEFAULT NULL,
-  p_new_lng             double precision DEFAULT NULL,
-  p_new_ward_id         bigint           DEFAULT NULL,
-  p_location_source     text,
-  p_confidence          text,
-  p_review_reason       text,
-  p_review_note         text   DEFAULT NULL,
-  p_is_centroid_placement boolean DEFAULT FALSE
+  p_incident_id           bigint,
+  p_location_source       text,
+  p_confidence            text,
+  p_review_reason         text,
+  p_new_lat               double precision DEFAULT NULL,
+  p_new_lng               double precision DEFAULT NULL,
+  p_new_ward_id           bigint           DEFAULT NULL,
+  p_review_note           text             DEFAULT NULL,
+  p_is_centroid_placement boolean          DEFAULT FALSE
 )
 RETURNS void
 LANGUAGE plpgsql
