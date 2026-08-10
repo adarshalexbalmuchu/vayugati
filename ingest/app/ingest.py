@@ -105,7 +105,7 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
         computed_aqi = aqi.compute_aqi(
             row.get("pm25"), row.get("pm10"),
             no2=row.get("no2"), so2=row.get("so2"),
-            o3=row.get("o3"), co_mg=row.get("co"),
+            o3=row.get("o3"),
         )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
@@ -171,7 +171,7 @@ def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
         computed_aqi = aqi.compute_aqi(
             values.get("pm25"), values.get("pm10"),
             no2=values.get("no2"), so2=values.get("so2"),
-            o3=values.get("o3"), co_mg=values.get("co"),
+            o3=values.get("o3"),
         )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi

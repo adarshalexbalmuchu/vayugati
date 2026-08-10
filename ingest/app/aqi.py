@@ -1,9 +1,12 @@
-"""Indian (CPCB) National AQI sub-indices — µg/m³ for all pollutants.
+"""Indian (CPCB) National AQI sub-indices.
 
-Breakpoints from CPCB's National AQI document (2014, as-used by data.gov.in).
-The API provides avg_value as the appropriate monitoring-period average per
-pollutant (24 h for PM/NO2/SO2/NH3; 8 h for CO/O3), so we can use the
-values directly without any time-windowing on our side.
+All concentration values are in µg/m³ (the unit the data.gov.in API stores).
+CO is deliberately excluded: CPCB's breakpoints for CO use mg/m³ but the API
+stores CO in µg/m³, creating a 1000× unit ambiguity. CO is also essentially
+never the dominant pollutant for Delhi AQI. It can be added once the stored
+unit is confirmed and a conversion layer is in place.
+
+Breakpoints from CPCB National AQI document (2014).
 """
 
 # (concentration_low, concentration_high, index_low, index_high)
@@ -52,17 +55,6 @@ O3_BREAKPOINTS = [
     (748, 1000, 401, 500),
 ]
 
-# CO breakpoints use mg/m³ (CPCB standard); the data.gov.in API provides CO
-# in mg/m³ as well (unlike other pollutants which are µg/m³).
-CO_BREAKPOINTS_MG = [
-    (0, 1, 0, 50),
-    (1, 2, 51, 100),
-    (2, 10, 101, 200),
-    (10, 17, 201, 300),
-    (17, 34, 301, 400),
-    (34, 48, 401, 500),
-]
-
 
 def _sub_index(value: float, breakpoints: list[tuple]) -> int:
     if value <= 0:
@@ -79,9 +71,11 @@ def compute_aqi(
     no2: float | None = None,
     so2: float | None = None,
     o3: float | None = None,
-    co_mg: float | None = None,
 ) -> int | None:
-    """Max sub-index across all available pollutants — matches CPCB's method."""
+    """Max sub-index across PM2.5, PM10, NO2, SO2, O3 (all µg/m³).
+
+    CO is excluded — see module docstring for unit ambiguity reasoning.
+    """
     subs = []
     if pm25 is not None:
         subs.append(_sub_index(pm25, PM25_BREAKPOINTS))
@@ -93,6 +87,4 @@ def compute_aqi(
         subs.append(_sub_index(so2, SO2_BREAKPOINTS))
     if o3 is not None:
         subs.append(_sub_index(o3, O3_BREAKPOINTS))
-    if co_mg is not None:
-        subs.append(_sub_index(co_mg, CO_BREAKPOINTS_MG))
     return max(subs) if subs else None
