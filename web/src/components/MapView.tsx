@@ -86,13 +86,26 @@ function featureLineColorExpr(): maplibregl.ExpressionSpecification {
   ]
 }
 function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
-  // Default case uses zoom-interpolation so outlines thin at citywide view
-  // and widen slightly when zoomed to ward level — interaction blue stays
-  // reserved for hover and selected states.
-  return ['case',
-    ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
-    ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
-    ['interpolate', ['linear'], ['zoom'], 9, 0.45, 12, 0.65, 14, 1.0],
+  // 'zoom' may only be the input to a top-level 'step' or 'interpolate'
+  // expression (MapLibre rule).  Feature-state cases must be nested inside
+  // the stop values rather than wrapping the interpolate — the previous
+  // ['case', ..., ['interpolate', ['zoom'], ...]] form triggered a console
+  // warning on every style load.  The visual behaviour is identical: outlines
+  // thin at citywide zoom and widen at ward zoom; hover/selected override
+  // at whichever width the zoom would otherwise produce.
+  return ['interpolate', ['linear'], ['zoom'],
+    9, ['case',
+        ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
+        ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
+        0.45],
+    12, ['case',
+        ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
+        ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
+        0.65],
+    14, ['case',
+        ['boolean', ['feature-state', 'selected'], false], LINE_WIDTH_SELECTED,
+        ['boolean', ['feature-state', 'hover'], false], LINE_WIDTH_HOVER,
+        1.0],
   ]
 }
 

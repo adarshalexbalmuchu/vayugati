@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  changeMarkerBadge,
+  classifyChangeDirection,
   forecastPollutantFor,
   isValidDelhiCoordinate,
   markerMeaningLabel,
@@ -177,6 +179,181 @@ describe('stationReadingValue', () => {
     expect(stationReadingValue(station, 'pm25')).toBe(40)
     expect(stationReadingValue(station, 'pm10')).toBe(70)
     expect(stationReadingValue(station, 'no2')).toBe(15)
+  })
+})
+
+describe('stationReadingValue — historical reading compatibility', () => {
+  // HistoricalStationReading has the same four fields; the accessor must work
+  // without any cast so it can serve as the single metric accessor for both
+  // live and historical paths.
+  const historicalReading = { stationId: 1, ts: '2026-08-10T12:00:00Z', aqi: 250, pm25: 95, pm10: 140, no2: 38 }
+
+  it('AQI selection reads historical AQI', () => {
+    expect(stationReadingValue(historicalReading, 'aqi')).toBe(250)
+  })
+
+  it('PM₂.₅ selection reads historical PM₂.₅ — never falls back to AQI', () => {
+    expect(stationReadingValue(historicalReading, 'pm25')).toBe(95)
+    expect(stationReadingValue(historicalReading, 'pm25')).not.toBe(250)
+  })
+
+  it('PM₁₀ selection reads historical PM₁₀', () => {
+    expect(stationReadingValue(historicalReading, 'pm10')).toBe(140)
+  })
+
+  it('NO₂ selection reads historical NO₂', () => {
+    expect(stationReadingValue(historicalReading, 'no2')).toBe(38)
+  })
+
+  it('returns null when the selected metric is absent from the reading — produces no comparison', () => {
+    const partial = { aqi: 200, pm25: null, pm10: null, no2: null }
+    expect(stationReadingValue(partial, 'pm25')).toBeNull()
+    expect(stationReadingValue(partial, 'pm10')).toBeNull()
+    expect(stationReadingValue(partial, 'no2')).toBeNull()
+    // AQI is still present and readable
+    expect(stationReadingValue(partial, 'aqi')).toBe(200)
+  })
+})
+
+describe('classifyChangeDirection — AQI vs concentration thresholds', () => {
+  it('AQI: ±10 is stable', () => {
+    expect(classifyChangeDirection(10, 'aqi')).toBe('stable')
+    expect(classifyChangeDirection(-10, 'aqi')).toBe('stable')
+    expect(classifyChangeDirection(0, 'aqi')).toBe('stable')
+  })
+
+  it('AQI: 11–30 worsening/improving, beyond 30 is strong', () => {
+    expect(classifyChangeDirection(11, 'aqi')).toBe('worsening')
+    expect(classifyChangeDirection(30, 'aqi')).toBe('worsening')
+    expect(classifyChangeDirection(31, 'aqi')).toBe('strong_worsening')
+    expect(classifyChangeDirection(-11, 'aqi')).toBe('improving')
+    expect(classifyChangeDirection(-30, 'aqi')).toBe('improving')
+    expect(classifyChangeDirection(-31, 'aqi')).toBe('strong_improving')
+  })
+
+  it('PM₂.₅: ±5 µg/m³ is stable, 6–15 moderate, beyond 15 is strong', () => {
+    expect(classifyChangeDirection(5, 'pm25')).toBe('stable')
+    expect(classifyChangeDirection(-5, 'pm25')).toBe('stable')
+    expect(classifyChangeDirection(6, 'pm25')).toBe('worsening')
+    expect(classifyChangeDirection(15, 'pm25')).toBe('worsening')
+    expect(classifyChangeDirection(16, 'pm25')).toBe('strong_worsening')
+    expect(classifyChangeDirection(-6, 'pm25')).toBe('improving')
+    expect(classifyChangeDirection(-16, 'pm25')).toBe('strong_improving')
+  })
+
+  it('AQI and concentration thresholds differ — Δ=8 is stable in AQI but worsening in PM₂.₅', () => {
+    expect(classifyChangeDirection(8, 'aqi')).toBe('stable')
+    expect(classifyChangeDirection(8, 'pm25')).toBe('worsening')
+  })
+
+  it('PM₁₀ uses the same concentration thresholds as PM₂.₅', () => {
+    expect(classifyChangeDirection(5, 'pm10')).toBe('stable')
+    expect(classifyChangeDirection(6, 'pm10')).toBe('worsening')
+    expect(classifyChangeDirection(16, 'pm10')).toBe('strong_worsening')
+  })
+
+  it('NO₂ uses the same concentration thresholds as PM₂.₅', () => {
+    expect(classifyChangeDirection(5, 'no2')).toBe('stable')
+    expect(classifyChangeDirection(6, 'no2')).toBe('worsening')
+    expect(classifyChangeDirection(16, 'no2')).toBe('strong_worsening')
+    expect(classifyChangeDirection(-16, 'no2')).toBe('strong_improving')
+  })
+})
+
+describe('changeMarkerBadge', () => {
+  it('returns — when either argument is null (missing comparison data)', () => {
+    expect(changeMarkerBadge(null, null)).toBe('—')
+    expect(changeMarkerBadge(42, null)).toBe('—')
+    expect(changeMarkerBadge(null, 'worsening')).toBe('—')
+  })
+
+  it('shows directional arrow and signed rounded delta', () => {
+    expect(changeMarkerBadge(42, 'strong_worsening')).toBe('↑↑+42')
+    expect(changeMarkerBadge(18, 'worsening')).toBe('↑+18')
+    expect(changeMarkerBadge(3, 'stable')).toBe('→+3')
+    expect(changeMarkerBadge(0, 'stable')).toBe('→0')
+    expect(changeMarkerBadge(-21, 'improving')).toBe('↓-21')
+    expect(changeMarkerBadge(-48, 'strong_improving')).toBe('↓↓-48')
+  })
+
+  it('rounds fractional deltas', () => {
+    expect(changeMarkerBadge(12.6, 'worsening')).toBe('↑+13')
+    expect(changeMarkerBadge(-7.4, 'improving')).toBe('↓-7')
+  })
+})
+
+describe('change mode summary — totals reconcile for each pollutant', () => {
+  type ChangeRow = { direction: 'strong_worsening' | 'worsening' | 'stable' | 'improving' | 'strong_improving' | null; delta: number | null }
+
+  function makeRows(items: Array<{ delta: number; pollutant: 'aqi' | 'pm25' | 'pm10' | 'no2' }>): ChangeRow[] {
+    return items.map(({ delta, pollutant }) => ({
+      delta,
+      direction: classifyChangeDirection(delta, pollutant),
+    }))
+  }
+
+  it('totals reconcile for AQI: worsened + stable + improved + missing = total stations', () => {
+    const rows = makeRows([
+      { delta: 5, pollutant: 'aqi' },   // stable (≤10)
+      { delta: 15, pollutant: 'aqi' },  // worsening (11-30)
+      { delta: -20, pollutant: 'aqi' }, // improving
+      { delta: 35, pollutant: 'aqi' },  // strong_worsening (>30)
+    ])
+    const compared = rows.filter((r) => r.direction != null)
+    const worsened = compared.filter((r) => r.direction === 'worsening' || r.direction === 'strong_worsening').length
+    const stable = compared.filter((r) => r.direction === 'stable').length
+    const improved = compared.filter((r) => r.direction === 'improving' || r.direction === 'strong_improving').length
+    const missing = rows.filter((r) => r.direction == null).length
+    expect(worsened + stable + improved + missing).toBe(rows.length)
+    expect(worsened).toBe(2)
+    expect(stable).toBe(1)
+    expect(improved).toBe(1)
+  })
+
+  it('totals reconcile for PM₂.₅ with tighter thresholds', () => {
+    const rows = makeRows([
+      { delta: 4, pollutant: 'pm25' },   // stable (≤5)
+      { delta: 8, pollutant: 'pm25' },   // worsening (6-15)
+      { delta: -7, pollutant: 'pm25' },  // improving
+      { delta: 20, pollutant: 'pm25' },  // strong_worsening (>15)
+    ])
+    const compared = rows.filter((r) => r.direction != null)
+    const worsened = compared.filter((r) => r.direction === 'worsening' || r.direction === 'strong_worsening').length
+    const stable = compared.filter((r) => r.direction === 'stable').length
+    const improved = compared.filter((r) => r.direction === 'improving' || r.direction === 'strong_improving').length
+    expect(worsened + stable + improved).toBe(compared.length)
+    expect(worsened).toBe(2)
+    expect(stable).toBe(1)
+    expect(improved).toBe(1)
+  })
+
+  it('largest deterioration is identified by the selected metric delta, not AQI', () => {
+    const pm25Rows: ChangeRow[] = [
+      { delta: 12, direction: classifyChangeDirection(12, 'pm25') },  // worsening
+      { delta: 20, direction: classifyChangeDirection(20, 'pm25') },  // strong_worsening
+      { delta: -5, direction: classifyChangeDirection(-5, 'pm25') },  // stable
+    ]
+    const worsened = pm25Rows.filter((r) => r.direction === 'worsening' || r.direction === 'strong_worsening')
+    const largest = worsened.reduce<ChangeRow | null>((best, r) => {
+      if (!best || (r.delta ?? -Infinity) > (best.delta ?? -Infinity)) return r
+      return best
+    }, null)
+    expect(largest?.delta).toBe(20)
+    expect(largest?.direction).toBe('strong_worsening')
+  })
+
+  it('largest improvement is identified by the most negative delta in the selected metric', () => {
+    const pm25Rows: ChangeRow[] = [
+      { delta: -7, direction: classifyChangeDirection(-7, 'pm25') },   // improving
+      { delta: -18, direction: classifyChangeDirection(-18, 'pm25') }, // strong_improving
+    ]
+    const improved = pm25Rows.filter((r) => r.direction === 'improving' || r.direction === 'strong_improving')
+    const largest = improved.reduce<ChangeRow | null>((best, r) => {
+      if (!best || (r.delta ?? Infinity) < (best.delta ?? Infinity)) return r
+      return best
+    }, null)
+    expect(largest?.delta).toBe(-18)
+    expect(largest?.direction).toBe('strong_improving')
   })
 })
 

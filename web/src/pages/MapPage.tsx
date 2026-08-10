@@ -144,6 +144,24 @@ function stationPopup(name: string, displayAqi: number | null | undefined, using
 }
 
 
+function historicalSnapshotPopup(
+  name: string,
+  displayValue: number | null,
+  pollutantLabel: string,
+  displayAqi: number | null,
+  ts: string | null,
+): string {
+  const level = displayAqi != null ? aqiLevel(displayAqi) : null
+  const age = ts ? fmtAge((Date.now() - new Date(ts).getTime()) / 60_000) : null
+  const unit = pollutantLabel === 'AQI' ? '' : ' µg/m³'
+  const valStr = displayValue != null ? `${Math.round(displayValue)}${unit}` : '—'
+  return (
+    `<div style="font-size:13px;font-weight:600">${name}</div>` +
+    `<div style="font-size:12px;color:${level?.hex ?? '#9ca3af'}">${pollutantLabel}: ${valStr}</div>` +
+    (age ? `<div style="font-size:11px;color:#9ca3af">Historical · ${age}</div>` : '')
+  )
+}
+
 function changePopup(name: string, change: { delta: number | null; direction: ChangeDirection | null; earlierValue: number | null; laterValue: number | null } | undefined, pollutantLabel: string): string {
   if (!change || change.delta == null || change.direction == null) {
     return (
@@ -356,7 +374,7 @@ export default function MapPage() {
         result.set(s.id, { delta: null, direction: null, earlierValue: null, laterValue: null, earlierTs: historical?.ts ?? null })
         continue
       }
-      const earlierValue = stationReadingValue(historical as Parameters<typeof stationReadingValue>[0], pollutant)
+      const earlierValue = stationReadingValue(historical!, pollutant)
       const laterValue = stationReadingValue(s, pollutant)
       if (earlierValue == null || laterValue == null) {
         result.set(s.id, { delta: null, direction: null, earlierValue, laterValue, earlierTs: historical!.ts })
@@ -514,11 +532,11 @@ export default function MapPage() {
                     popupHtml: changePopup(s.name, change, MAP_POLLUTANT_LABEL[pollutant]),
                   }
                 }
-                // Snapshot mode: show the historical AQI.
+                // Snapshot mode: badge shows the selected pollutant's historical
+                // value; colour is still AQI-driven (no established severity
+                // colour scale exists for raw concentration values).
                 const displayAqi = historicalReading?.aqi ?? null
-                const readingAgeMinutes = historicalReading?.ts != null
-                  ? Math.round((Date.now() - new Date(historicalReading.ts).getTime()) / 60_000)
-                  : null
+                const displayValue = historicalReading ? stationReadingValue(historicalReading, pollutant) : null
                 return {
                   id: `station-${s.id}`,
                   kind: 'station' as const,
@@ -528,7 +546,8 @@ export default function MapPage() {
                   aqi: displayAqi,
                   isStale: false,
                   isCpcbSourced: false,
-                  popupHtml: stationPopup(s.name, displayAqi, false, readingAgeMinutes),
+                  badgeText: displayValue != null ? String(Math.round(displayValue)) : '—',
+                  popupHtml: historicalSnapshotPopup(s.name, displayValue, MAP_POLLUTANT_LABEL[pollutant], displayAqi, historicalReading?.ts ?? null),
                 }
               }
 

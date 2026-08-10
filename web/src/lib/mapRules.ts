@@ -282,10 +282,12 @@ export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMod
   return `Markers show ${horizonLabel} forecast peak for ${MAP_POLLUTANT_LABEL[pollutant]} (µg/m³).`
 }
 
-/** Station-level counterpart - stations only ever show live readings (no
- *  per-station forecast exists), so this is just a plain field pick. */
+/** Single metric accessor for both live and historical station readings.
+ *  Accepts any object with the four pollutant fields so it can be used
+ *  uniformly across StationMarker, HistoricalStationReading, and inline
+ *  objects — no casts needed at call sites. */
 export function stationReadingValue(
-  station: Pick<StationMarker, 'aqi' | 'pm25' | 'pm10' | 'no2'>,
+  station: { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null },
   pollutant: MapPollutant,
 ): number | null {
   if (pollutant === 'aqi') return station.aqi
