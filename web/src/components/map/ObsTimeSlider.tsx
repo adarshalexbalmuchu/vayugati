@@ -52,17 +52,26 @@ export default function ObsTimeSlider({
             aria-label="Observation time"
             aria-valuetext={OBS_SLOT_LABEL[value]}
           />
-          {/* Tick labels */}
-          <div className="mt-0.5 flex justify-between">
-            {OBS_SLOTS.map((s) => (
-              <span
-                key={s}
-                className={`text-[10px] font-medium ${s === value ? 'text-accent-600' : 'text-slate-400'}`}
-                style={{ width: `${100 / (OBS_SLOTS.length - 1)}%`, textAlign: 'center', transform: s === 'now' ? 'translateX(-25%)' : s === '-24h' ? 'translateX(25%)' : undefined }}
-              >
-                {OBS_SLOT_LABEL[s]}
-              </span>
-            ))}
+          {/* Tick labels — absolutely positioned so centres land exactly under thumb stops */}
+          <div className="relative mt-0.5 h-4">
+            {OBS_SLOTS.map((s, i) => {
+              const pct = (i / (OBS_SLOTS.length - 1)) * 100
+              const isFirst = i === 0
+              const isLast = i === OBS_SLOTS.length - 1
+              return (
+                <span
+                  key={s}
+                  className={`absolute whitespace-nowrap text-[10px] font-medium ${s === value ? 'text-accent-600' : 'text-slate-400'}`}
+                  style={{
+                    left: isLast ? undefined : `${pct}%`,
+                    right: isLast ? '0' : undefined,
+                    transform: !isFirst && !isLast ? 'translateX(-50%)' : undefined,
+                  }}
+                >
+                  {OBS_SLOT_LABEL[s]}
+                </span>
+              )
+            })}
           </div>
         </div>
 
