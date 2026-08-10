@@ -5,11 +5,10 @@
 #                      Find it at https://explore.openaq.org — search the
 #                      station name; the id is the number in the URL.
 #
-# TODO(adarsh): fill in the real OpenAQ location ids for the 13 hotspot
-# stations (DPCC/CPCB). They are intentionally left null — DO NOT GUESS.
-# Entries with a null id are skipped (with a warning) until filled in.
-# Station name and coordinates are taken from OpenAQ metadata at ingest
-# time, so nothing else is needed per station.
+# Entries with a null openaq_location_id are skipped at ingest time (with a
+# warning), unless known_no_station: true is set (Mayapuri). All 13 original
+# hotspot-ward stations now have confirmed live OpenAQ IDs (2026-07-21).
+# Station name and coordinates are taken from OpenAQ metadata at ingest time.
 #
 # 2026-07-21 station config repair (see
 # docs/data/delhi-station-reconciliation.md and
