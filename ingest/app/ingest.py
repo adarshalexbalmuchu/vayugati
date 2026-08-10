@@ -45,22 +45,24 @@ def _parse_cpcb_ts(ts_str: str) -> str | None:
         return None
 
 
-def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[int]]:
+def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[int], list[dict]]:
     """Fetch CPCB/data.gov.in latest readings and write matched ones to Supabase.
 
     One API call per cycle returns all Delhi stations — no per-station loop,
-    no per-month quota. Returns (rows_written, errors, station_ids_covered) so
-    the caller knows which stations the OpenAQ fallback can skip."""
+    no per-month quota. Returns (rows_written, errors, station_ids_covered,
+    unmatched_stations) so the caller can surface unmatched names in the
+    health check and the OpenAQ fallback knows which stations to skip."""
     records = data_gov_cpcb.fetch_delhi_records()
     if records is None:
         msg = "CPCB fetch returned None — DATA_GOV_API_KEY unset or API unavailable"
         log.warning(msg)
-        return 0, [msg], set()
+        return 0, [msg], set(), []
 
     cpcb_by_station = data_gov_cpcb.group_by_station(records)
     rows_written = 0
     errors: list[str] = []
     covered: set[int] = set()
+    unmatched: list[dict] = []
     # Collision guard: tracks station_id -> first CPCB name that matched it
     # this cycle. If a second CPCB record normalizes to the same station_id,
     # the second write is skipped and a warning is logged — turns a silent
@@ -76,6 +78,11 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
                 "CPCB unmatched (not in stations table): %r  lat=%s lng=%s",
                 cpcb_name, entry.get("lat"), entry.get("lng"),
             )
+            unmatched.append({
+                "cpcb_name": cpcb_name,
+                "lat": entry.get("lat"),
+                "lng": entry.get("lng"),
+            })
             continue
 
         if sid in first_match:
@@ -135,10 +142,11 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
             errors.append(f"cpcb_upsert {cpcb_name}: {e}")
 
     log.info(
-        "CPCB ingest: %d rows written, %d stations matched out of %d CPCB records, %d errors",
-        rows_written, len(covered), len(cpcb_by_station), len(errors),
+        "CPCB ingest: %d rows written, %d stations matched out of %d CPCB records, "
+        "%d unmatched, %d errors",
+        rows_written, len(covered), len(cpcb_by_station), len(unmatched), len(errors),
     )
-    return rows_written, errors, covered
+    return rows_written, errors, covered, unmatched
 
 
 # ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
@@ -203,6 +211,7 @@ def run() -> dict:
     summary: dict = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "cpcb_rows_written": 0,
+        "cpcb_unmatched_stations": [],
         "openaq_rows_written": 0,
         "openaq_stations_tried": 0,
         "stations_skipped_no_id": [],
@@ -220,8 +229,9 @@ def run() -> dict:
     }
     match_index = station_matching.build_match_index(all_stations)
 
-    cpcb_rows, cpcb_errors, cpcb_covered = _ingest_from_cpcb(match_index)
+    cpcb_rows, cpcb_errors, cpcb_covered, cpcb_unmatched = _ingest_from_cpcb(match_index)
     summary["cpcb_rows_written"] = cpcb_rows
+    summary["cpcb_unmatched_stations"] = cpcb_unmatched
     summary["errors"].extend(cpcb_errors)
 
     # ── OpenAQ fallback ───────────────────────────────────────────────────────
