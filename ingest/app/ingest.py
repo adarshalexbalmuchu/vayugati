@@ -102,7 +102,11 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
         if len(row) <= 2:
             continue  # only station_id + ts, no pollutant data — nothing to write
 
-        computed_aqi = aqi.compute_aqi(row.get("pm25"), row.get("pm10"))
+        computed_aqi = aqi.compute_aqi(
+            row.get("pm25"), row.get("pm10"),
+            no2=row.get("no2"), so2=row.get("so2"),
+            o3=row.get("o3"), co_mg=row.get("co"),
+        )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
 
@@ -164,7 +168,11 @@ def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
 
     for ts, values in by_hour.items():
         row = {"station_id": station_id, "ts": ts, **values}
-        computed_aqi = aqi.compute_aqi(values.get("pm25"), values.get("pm10"))
+        computed_aqi = aqi.compute_aqi(
+            values.get("pm25"), values.get("pm10"),
+            no2=values.get("no2"), so2=values.get("so2"),
+            o3=values.get("o3"), co_mg=values.get("co"),
+        )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
         db.upsert_reading(row)

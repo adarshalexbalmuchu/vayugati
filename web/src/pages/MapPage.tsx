@@ -130,15 +130,26 @@ function wardPopup(name: string, value: number | null | undefined, unit: string,
   )
 }
 
-function stationPopup(name: string, displayAqi: number | null | undefined, usingCpcb: boolean, ageMinutes: number | null | undefined): string {
+function stationPopup(
+  name: string,
+  displayAqi: number | null | undefined,
+  usingCpcb: boolean,
+  ageMinutes: number | null | undefined,
+  pollutantLabel?: string,
+  pollutantValue?: number | null,
+): string {
   const level = displayAqi != null ? aqiLevel(displayAqi) : null
   const source = usingCpcb ? 'CPCB · data.gov.in' : 'OpenAQ'
   const age = ageMinutes != null ? fmtAge(ageMinutes) : null
+  const isConcentration = pollutantLabel && pollutantLabel !== 'AQI'
+  const mainLine = isConcentration
+    ? `<div style="font-size:12px;color:${level?.hex ?? '#9ca3af'}">${pollutantLabel}: ${pollutantValue != null ? `${Math.round(pollutantValue)} µg/m³` : '—'}</div>`
+    : level
+      ? `<div style="font-size:12px;color:${level.hex}">AQI ${displayAqi} · ${level.label}</div>`
+      : `<div style="font-size:12px;color:#9ca3af">No reading</div>`
   return (
     `<div style="font-size:13px;font-weight:600">${name}</div>` +
-    (level
-      ? `<div style="font-size:12px;color:${level.hex}">AQI ${displayAqi} · ${level.label}</div>`
-      : `<div style="font-size:12px;color:#9ca3af">No reading</div>`) +
+    mainLine +
     `<div style="font-size:11px;color:#9ca3af">${source}${age ? ` · ${age}` : ''}</div>`
   )
 }
@@ -577,6 +588,8 @@ export default function MapPage() {
                   popupHtml: stationPopup(s.name, displayAqi, usingCpcb, health.latest_reading_age_minutes),
                 }
               }
+              const liveValue = stationReadingValue(s, pollutant)
+              const liveBadge = liveValue != null ? String(Math.round(liveValue)) : '—'
               return {
                 id: `station-${s.id}`,
                 kind: 'station' as const,
@@ -586,7 +599,8 @@ export default function MapPage() {
                 aqi: displayAqi,
                 isStale,
                 isCpcbSourced: usingCpcb,
-                popupHtml: stationPopup(s.name, displayAqi, usingCpcb, health?.latest_reading_age_minutes),
+                badgeText: liveBadge,
+                popupHtml: stationPopup(s.name, displayAqi, usingCpcb, health?.latest_reading_age_minutes, MAP_POLLUTANT_LABEL[pollutant], liveValue),
               }
             })
         : [],
