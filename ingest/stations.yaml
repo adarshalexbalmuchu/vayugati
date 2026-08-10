@@ -151,3 +151,24 @@ stations:
   - ward: New Delhi (NDMC)
     openaq_location_id: 5634   # Lodhi Road, New Delhi - IMD
                                 # geometry_matched_but_admin_boundary_needs_review
+
+# --- 2026-08-10 Manual-review stations now imported (see
+# docs/data/delhi-station-geospatial-ward-assignment.md §5 for why these
+# were held back). Ward assignments are our best classification given the
+# boundary data; see inline notes for the caveats. ---
+  - ward: DELHI GATE
+    openaq_location_id: 5613   # ITO, New Delhi - CPCB. Geospatial audit classified
+                                # this "needs manual review" (~30m from DELHI GATE /
+                                # DARYAGANJ shared boundary). Point falls inside
+                                # DELHI GATE; importing as that ward.
+  - ward: INDER PURI
+    openaq_location_id: 6356   # Pusa, Delhi - DPCC. Geospatial audit flagged this as
+                                # landing in two genuinely-overlapping ward polygons
+                                # (New Delhi NDMC + INDER PURI). INDER PURI is the
+                                # more specific MCD ward; New Delhi (NDMC) is actually
+                                # an OSM district polygon (~162 km²), not a true ward.
+                                # Pusa IMD (id=5404) is at the same coordinates; NOT
+                                # added separately — both "Pusa, Delhi - DPCC" and
+                                # "Pusa, Delhi - IMD" from CPCB normalize to "pusa",
+                                # so adding both would drop both from the match index.
+                                # CPCB collision guard will log which one wins per cycle.

@@ -1633,6 +1633,7 @@ export type Database = {
           aqi: number | null
           co: number | null
           id: number
+          nh3: number | null
           no2: number | null
           o3: number | null
           pm10: number | null
@@ -1645,6 +1646,7 @@ export type Database = {
           aqi?: number | null
           co?: number | null
           id?: number
+          nh3?: number | null
           no2?: number | null
           o3?: number | null
           pm10?: number | null
@@ -1657,6 +1659,7 @@ export type Database = {
           aqi?: number | null
           co?: number | null
           id?: number
+          nh3?: number | null
           no2?: number | null
           o3?: number | null
           pm10?: number | null

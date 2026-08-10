@@ -72,7 +72,11 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
     for cpcb_name, entry in cpcb_by_station.items():
         sid = station_matching.match_station(cpcb_name, match_index)
         if sid is None:
-            continue  # CPCB station not in our monitored set — skip
+            log.info(
+                "CPCB unmatched (not in stations table): %r  lat=%s lng=%s",
+                cpcb_name, entry.get("lat"), entry.get("lng"),
+            )
+            continue
 
         if sid in first_match:
             log.warning(
