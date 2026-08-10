@@ -1,12 +1,13 @@
 """Indian (CPCB) National AQI sub-indices.
 
-All concentration values are in µg/m³ (the unit the data.gov.in API stores).
-CO is deliberately excluded: CPCB's breakpoints for CO use mg/m³ but the API
-stores CO in µg/m³, creating a 1000× unit ambiguity. CO is also essentially
-never the dominant pollutant for Delhi AQI. It can be added once the stored
-unit is confirmed and a conversion layer is in place.
-
 Breakpoints from CPCB National AQI document (2014).
+
+Units:
+  PM2.5, PM10, NO2, SO2, O3, NH3 — µg/m³  (CPCB API: pollutant_unit = "UG/M3")
+  CO                              — mg/m³  (CPCB API: pollutant_unit = "MG/M3")
+
+Callers must pass CO already in mg/m³. Use co_ug_to_mg() when the source
+stores CO in µg/m³.
 """
 
 # (concentration_low, concentration_high, index_low, index_high)
@@ -46,6 +47,16 @@ SO2_BREAKPOINTS = [
     (1600, 2100, 401, 500),
 ]
 
+# CO breakpoints are in mg/m³ (CPCB standard); typical Delhi values 0.5–10 mg/m³.
+CO_BREAKPOINTS_MG = [
+    (0, 1, 0, 50),
+    (1, 2, 51, 100),
+    (2, 10, 101, 200),
+    (10, 17, 201, 300),
+    (17, 34, 301, 400),
+    (34, 48, 401, 500),
+]
+
 O3_BREAKPOINTS = [
     (0, 50, 0, 50),
     (50, 100, 51, 100),
@@ -54,6 +65,20 @@ O3_BREAKPOINTS = [
     (208, 748, 301, 400),
     (748, 1000, 401, 500),
 ]
+
+NH3_BREAKPOINTS = [
+    (0, 200, 0, 50),
+    (200, 400, 51, 100),
+    (400, 800, 101, 200),
+    (800, 1200, 201, 300),
+    (1200, 1800, 301, 400),
+    (1800, 2400, 401, 500),
+]
+
+
+def co_ug_to_mg(value: float) -> float:
+    """Convert CO from µg/m³ to mg/m³ before passing to compute_aqi."""
+    return value / 1000.0
 
 
 def _sub_index(value: float, breakpoints: list[tuple]) -> int:
@@ -71,10 +96,12 @@ def compute_aqi(
     no2: float | None = None,
     so2: float | None = None,
     o3: float | None = None,
+    co_mg: float | None = None,
+    nh3: float | None = None,
 ) -> int | None:
-    """Max sub-index across PM2.5, PM10, NO2, SO2, O3 (all µg/m³).
+    """Max sub-index across all available pollutants — matches CPCB's method.
 
-    CO is excluded — see module docstring for unit ambiguity reasoning.
+    co_mg must be in mg/m³. All other concentrations in µg/m³.
     """
     subs = []
     if pm25 is not None:
@@ -87,4 +114,8 @@ def compute_aqi(
         subs.append(_sub_index(so2, SO2_BREAKPOINTS))
     if o3 is not None:
         subs.append(_sub_index(o3, O3_BREAKPOINTS))
+    if co_mg is not None:
+        subs.append(_sub_index(co_mg, CO_BREAKPOINTS_MG))
+    if nh3 is not None:
+        subs.append(_sub_index(nh3, NH3_BREAKPOINTS))
     return max(subs) if subs else None

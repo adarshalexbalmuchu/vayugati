@@ -126,5 +126,6 @@ def group_by_station(records: list[dict]) -> dict[str, dict]:
                 "avg": avg,
                 "min": _parse_float(r.get("min_value")),
                 "max": _parse_float(r.get("max_value")),
+                "unit": (r.get("pollutant_unit") or "UG/M3").strip().upper(),
             }
     return grouped

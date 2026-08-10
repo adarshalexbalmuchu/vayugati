@@ -94,7 +94,7 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
 
         pollutants = entry.get("pollutants") or {}
         row: dict = {"station_id": sid, "ts": ts_hour}
-        for col in ("pm25", "pm10", "no2", "so2", "co", "o3"):
+        for col in ("pm25", "pm10", "no2", "so2", "co", "o3", "nh3"):
             val = (pollutants.get(col) or {}).get("avg")
             if val is not None and val >= 0:
                 row[col] = val
@@ -102,10 +102,19 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
         if len(row) <= 2:
             continue  # only station_id + ts, no pollutant data — nothing to write
 
+        # CO from CPCB data.gov.in is in mg/m³ (pollutant_unit = "MG/M3");
+        # convert to mg/m³ defensively in case a rare record comes through as µg/m³.
+        co_raw = pollutants.get("co") or {}
+        co_val = row.get("co")
+        co_mg: float | None = None
+        if co_val is not None:
+            co_mg = co_val if co_raw.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
+
         computed_aqi = aqi.compute_aqi(
             row.get("pm25"), row.get("pm10"),
             no2=row.get("no2"), so2=row.get("so2"),
-            o3=row.get("o3"),
+            o3=row.get("o3"), co_mg=co_mg,
+            nh3=row.get("nh3"),
         )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
@@ -171,7 +180,8 @@ def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
         computed_aqi = aqi.compute_aqi(
             values.get("pm25"), values.get("pm10"),
             no2=values.get("no2"), so2=values.get("so2"),
-            o3=values.get("o3"),
+            o3=values.get("o3"), co_mg=values.get("co"),
+            nh3=values.get("nh3"),
         )
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
