@@ -33,6 +33,74 @@ export const OBS_SLOT_HOURS: Partial<Record<ObsSlot, number>> = {
   '-24h': 24,
 }
 
+/** Whether the user is viewing a historical snapshot or comparing it against Now. */
+export type ObsViewMode = 'snapshot' | 'change'
+
+/** Direction of AQI/pollutant change between two time points. */
+export type ChangeDirection = 'strong_worsening' | 'worsening' | 'stable' | 'improving' | 'strong_improving'
+
+export const CHANGE_DIRECTION_LABEL: Record<ChangeDirection, string> = {
+  strong_worsening: 'Strong worsening',
+  worsening: 'Worsening',
+  stable: 'Stable',
+  improving: 'Improving',
+  strong_improving: 'Strong improvement',
+}
+
+export const CHANGE_DIRECTION_ARROW: Record<ChangeDirection, string> = {
+  strong_worsening: '↑↑',
+  worsening: '↑',
+  stable: '→',
+  improving: '↓',
+  strong_improving: '↓↓',
+}
+
+export const CHANGE_DIRECTION_HEX: Record<ChangeDirection, string> = {
+  strong_worsening: '#dc2626',
+  worsening: '#f97316',
+  stable: '#6b7280',
+  improving: '#22c55e',
+  strong_improving: '#16a34a',
+}
+
+/** |Δ| ≤ this → 'stable' (per pollutant). */
+export const CHANGE_STABLE_THRESHOLD: Record<MapPollutant, number> = {
+  aqi: 10,
+  pm25: 5,
+  pm10: 5,
+  no2: 5,
+}
+
+/** |Δ| between stable and this → 'worsening'/'improving'; above → 'strong_*'. */
+export const CHANGE_MODERATE_THRESHOLD: Record<MapPollutant, number> = {
+  aqi: 30,
+  pm25: 15,
+  pm10: 15,
+  no2: 15,
+}
+
+export function classifyChangeDirection(delta: number, pollutant: MapPollutant): ChangeDirection {
+  const abs = Math.abs(delta)
+  if (abs <= CHANGE_STABLE_THRESHOLD[pollutant]) return 'stable'
+  const isWorsening = delta > 0
+  const isStrong = abs > CHANGE_MODERATE_THRESHOLD[pollutant]
+  if (isWorsening) return isStrong ? 'strong_worsening' : 'worsening'
+  return isStrong ? 'strong_improving' : 'improving'
+}
+
+/** Short badge string for a map marker in Change mode, e.g. "↑ +42" or "—". */
+export function changeMarkerBadge(delta: number | null, direction: ChangeDirection | null): string {
+  if (delta == null || direction == null) return '—'
+  const arrow = CHANGE_DIRECTION_ARROW[direction]
+  const sign = delta > 0 ? '+' : ''
+  return `${arrow}${sign}${Math.round(delta)}`
+}
+
+/** Max gap (ms) between a requested historical slot and the actual reading row
+ *  that is accepted as "within tolerance". Readings older than this relative
+ *  to the target time are excluded so a 5h-old row never stands in for a −3h slot. */
+export const HISTORICAL_TOLERANCE_MS = 2 * 3_600_000
+
 /** AQI itself is never forecast (forecast.py only forecasts pollutant
  *  concentrations, not the composite index) - every other selectable
  *  pollutant has real forecast.py output. Used everywhere a forecast fetch

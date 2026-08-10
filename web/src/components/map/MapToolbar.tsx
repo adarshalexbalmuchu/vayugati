@@ -1,7 +1,7 @@
 import { Crosshair, Info } from 'lucide-react'
 import { FRESHNESS_LABEL, type FreshnessClass } from '../../lib/dataQualityRules'
 import { SOURCE_CATEGORY_LABEL, sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
-import { MAP_POLLUTANT_LABEL, markerMeaningLabel, type MapPollutant, type MapTimeMode, type ObsSlot } from '../../lib/mapRules'
+import { MAP_POLLUTANT_LABEL, markerMeaningLabel, OBS_SLOT_LABEL, type MapPollutant, type MapTimeMode, type ObsSlot, type ObsViewMode } from '../../lib/mapRules'
 import ObsTimeSlider from './ObsTimeSlider'
 
 export type MapViewMode = 'pollution' | 'data_quality'
@@ -75,6 +75,8 @@ export default function MapToolbar({
   obsSlot,
   onObsSlotChange,
   obsLoading = false,
+  obsViewMode,
+  onObsViewModeChange,
 }: {
   viewMode: MapViewMode
   onViewModeChange: (m: MapViewMode) => void
@@ -94,6 +96,8 @@ export default function MapToolbar({
   obsSlot: ObsSlot
   onObsSlotChange: (s: ObsSlot) => void
   obsLoading?: boolean
+  obsViewMode: ObsViewMode
+  onObsViewModeChange: (m: ObsViewMode) => void
 }) {
   const isHistorical = obsSlot !== 'now'
   // Forecast modes are unavailable when viewing historical observations: a
@@ -186,7 +190,13 @@ export default function MapToolbar({
       </div>
 
       {!isQuality && (
-        <ObsTimeSlider value={obsSlot} onChange={onObsSlotChange} loading={obsLoading} />
+        <ObsTimeSlider
+          value={obsSlot}
+          onChange={onObsSlotChange}
+          loading={obsLoading}
+          obsViewMode={obsViewMode}
+          onObsViewModeChange={onObsViewModeChange}
+        />
       )}
 
       <div className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50 px-4 py-1">
@@ -194,7 +204,9 @@ export default function MapToolbar({
         <p className="text-[11px] text-slate-500">
           {isQuality
             ? 'Showing station freshness and ward monitoring coverage. Station colour shows data age, not AQI severity.'
-            : markerMeaningLabel(pollutant, timeMode, obsSlot)}
+            : isHistorical && obsViewMode === 'change'
+              ? `Markers show ${MAP_POLLUTANT_LABEL[pollutant]} change from ${OBS_SLOT_LABEL[obsSlot]} to Now — verified station readings only.`
+              : markerMeaningLabel(pollutant, timeMode, obsSlot)}
         </p>
       </div>
     </div>

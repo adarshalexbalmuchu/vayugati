@@ -3,7 +3,15 @@ import { ChevronDown, ChevronRight, Info, ListTree } from 'lucide-react'
 import { FRESHNESS_HEX, FRESHNESS_LABEL, NEARBY_COVERAGE_THRESHOLD_METERS, WARD_COVERAGE_HEX, WARD_COVERAGE_LABEL, type FreshnessClass, type WardCoverageClass } from '../../lib/dataQualityRules'
 import { sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { SEVERITY_HEX, SOURCE_CATEGORY_HEX, TRANSIT_ACTIVITY_HEX } from '../../lib/mapMarkers'
-import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
+import {
+  CHANGE_DIRECTION_ARROW,
+  CHANGE_DIRECTION_HEX,
+  CHANGE_DIRECTION_LABEL,
+  MAP_POLLUTANT_LABEL,
+  type ChangeDirection,
+  type MapPollutant,
+  type ObsViewMode,
+} from '../../lib/mapRules'
 import type { MapViewMode } from './MapToolbar'
 
 const SEVERITY_ORDER: Severity[] = ['severe', 'high', 'moderate', 'low']
@@ -67,19 +75,24 @@ function Swatch({ color, shape = 'circle' }: { color: string; shape?: 'circle' |
   )
 }
 
+const CHANGE_DIRECTIONS: ChangeDirection[] = ['strong_worsening', 'worsening', 'stable', 'improving', 'strong_improving']
+
 export default function MapLegend({
   viewMode = 'pollution',
   sourceAttributionOn,
   pollutant,
   transitActivityOn,
   forecastSuppressed = false,
+  obsViewMode = 'snapshot',
 }: {
   viewMode?: MapViewMode
   sourceAttributionOn: boolean
   pollutant: MapPollutant
   transitActivityOn: boolean
   forecastSuppressed?: boolean
+  obsViewMode?: ObsViewMode
 }) {
+  const isChangeMode = viewMode === 'pollution' && obsViewMode === 'change'
   const [open, setOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
 
@@ -98,6 +111,18 @@ export default function MapLegend({
           <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
         )}
       </button>
+
+      {/* Compact always-visible key for change mode */}
+      {isChangeMode && !open && (
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 border-t border-slate-100 px-1.5 py-1">
+          {CHANGE_DIRECTIONS.map((d) => (
+            <span key={d} className="flex items-center gap-0.5 text-[9px]" style={{ color: CHANGE_DIRECTION_HEX[d] }}>
+              <span className="font-bold">{CHANGE_DIRECTION_ARROW[d]}</span>
+            </span>
+          ))}
+          <span className="text-[9px] font-bold text-slate-300">—</span>
+        </div>
+      )}
 
       {/* Compact always-visible ring key for data quality mode */}
       {viewMode === 'data_quality' && !open && (
@@ -171,7 +196,25 @@ export default function MapLegend({
 
       {open && viewMode === 'pollution' && (
         <div className="px-1.5 pb-1.5">
-          {pollutant === 'aqi' ? (
+          {isChangeMode ? (
+            <>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Change direction</p>
+              <ul className="mt-0.5 space-y-0.5">
+                {CHANGE_DIRECTIONS.map((d) => (
+                  <li key={d} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                    <span style={{ color: CHANGE_DIRECTION_HEX[d], width: 16, textAlign: 'center' }} className="flex-shrink-0 text-xs font-bold">
+                      {CHANGE_DIRECTION_ARROW[d]}
+                    </span>
+                    {CHANGE_DIRECTION_LABEL[d]}
+                  </li>
+                ))}
+                <li className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <span style={{ width: 16, textAlign: 'center' }} className="flex-shrink-0 text-xs font-bold text-slate-300">—</span>
+                  No comparable data
+                </li>
+              </ul>
+            </>
+          ) : pollutant === 'aqi' ? (
             <>
               <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">AQI scale (India NAQI)</p>
               <ul className="mt-0.5 space-y-0.5">

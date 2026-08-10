@@ -2,7 +2,15 @@ import { ArrowUpRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import type { ForecastRunRow } from '../../lib/incidents'
-import { MAP_POLLUTANT_LABEL, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
+import {
+  CHANGE_DIRECTION_ARROW,
+  CHANGE_DIRECTION_HEX,
+  CHANGE_DIRECTION_LABEL,
+  MAP_POLLUTANT_LABEL,
+  type ChangeDirection,
+  type MapPollutant,
+  type MapTimeMode,
+} from '../../lib/mapRules'
 import { Skeleton } from '../ui'
 
 export interface SelectedStation {
@@ -35,6 +43,16 @@ function fmtAge(minutes: number | null): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+export interface StationHistoricalComparison {
+  obsSlotLabel: string
+  earlierValue: number | null
+  laterValue: number | null
+  delta: number | null
+  direction: ChangeDirection | null
+  pollutantLabel: string
+  earlierTs: string | null
+}
+
 export default function SelectedStationPanel({
   station,
   pollutant,
@@ -44,6 +62,7 @@ export default function SelectedStationPanel({
   latestForecastRun,
   latestForecastRunLoading,
   nearbyIncidentsCount = 0,
+  historicalComparison,
   onClose,
 }: {
   station: SelectedStation
@@ -60,6 +79,8 @@ export default function SelectedStationPanel({
   latestForecastRunLoading: boolean
   /** Active incidents linked to this station's ward — 0 when none or ward unknown. */
   nearbyIncidentsCount?: number
+  /** Present only when obsViewMode === 'change' — shows the historical comparison block. */
+  historicalComparison?: StationHistoricalComparison
   onClose: () => void
 }) {
   return (
@@ -98,6 +119,53 @@ export default function SelectedStationPanel({
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">Inactive</span>
         )}
       </div>
+
+      {/* Historical comparison block — shown only in Change mode */}
+      {historicalComparison && (
+        <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            {historicalComparison.obsSlotLabel} → Now · {historicalComparison.pollutantLabel}
+          </p>
+          {historicalComparison.delta != null && historicalComparison.direction ? (
+            <>
+              <div className="flex items-center gap-2">
+                <span
+                  style={{ color: CHANGE_DIRECTION_HEX[historicalComparison.direction] }}
+                  className="text-xl font-bold leading-none"
+                >
+                  {CHANGE_DIRECTION_ARROW[historicalComparison.direction]}
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">
+                    {historicalComparison.delta > 0 ? '+' : ''}{Math.round(historicalComparison.delta)}{' '}
+                    {historicalComparison.pollutantLabel}
+                  </p>
+                  <p className="text-[10px]" style={{ color: CHANGE_DIRECTION_HEX[historicalComparison.direction] }}>
+                    {CHANGE_DIRECTION_LABEL[historicalComparison.direction]}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-1.5 flex gap-4 text-[11px] text-slate-500">
+                <span>
+                  <span className="text-slate-400">{historicalComparison.obsSlotLabel}:</span>{' '}
+                  {historicalComparison.earlierValue ?? '—'}
+                </span>
+                <span>
+                  <span className="text-slate-400">Now:</span>{' '}
+                  {historicalComparison.laterValue ?? '—'}
+                </span>
+              </div>
+              {historicalComparison.earlierTs && (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Earlier reading: {new Date(historicalComparison.earlierTs).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-[11px] text-slate-400">No comparable observation available</p>
+          )}
+        </div>
+      )}
 
       <div className="mb-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] leading-relaxed text-slate-500">
         <p>

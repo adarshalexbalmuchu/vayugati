@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
 import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps } from '../components/MapView'
+import ChangeModeSummaryPanel, { type ChangeRow } from '../components/map/ChangeModeSummaryPanel'
 import IncidentClusterPanel from '../components/map/IncidentClusterPanel'
 import { ErrorState, Skeleton } from '../components/ui'
 import BasemapSwitcher from '../components/map/BasemapSwitcher'
@@ -13,7 +14,7 @@ import DataQualityStationPanel, { type DataQualityStationInfo } from '../compone
 import DataQualitySummaryPanel from '../components/map/DataQualitySummaryPanel'
 import DataQualityWardPanel from '../components/map/DataQualityWardPanel'
 import SelectedIncidentPanel from '../components/map/SelectedIncidentPanel'
-import SelectedStationPanel, { type SelectedStation } from '../components/map/SelectedStationPanel'
+import SelectedStationPanel, { type SelectedStation, type StationHistoricalComparison } from '../components/map/SelectedStationPanel'
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
 import SelectedWardPanel from '../components/map/SelectedWardPanel'
 import SpatialSummaryPanel from '../components/map/SpatialSummaryPanel'
@@ -57,21 +58,29 @@ import {
   type WardCoverageDetail,
 } from '../lib/dataQualityRules'
 import {
+  CHANGE_DIRECTION_ARROW,
+  CHANGE_DIRECTION_HEX,
+  changeMarkerBadge,
+  classifyChangeDirection,
   DELHI_BOUNDS,
   DELHI_CENTER,
   DELHI_DEFAULT_ZOOM,
   forecastPollutantFor,
+  HISTORICAL_TOLERANCE_MS,
   isValidDelhiCoordinate,
   MAP_POLLUTANT_LABEL,
   nearestForecastPoint,
   nearestStationTo,
   OBS_SLOT_HOURS,
+  OBS_SLOT_LABEL,
   resolveWardReading,
   stationReadingValue,
   wardDataStatus,
+  type ChangeDirection,
   type MapPollutant,
   type MapTimeMode,
   type ObsSlot,
+  type ObsViewMode,
 } from '../lib/mapRules'
 import { rollupStationHealth, severeWardsWithin, tallySourceMix } from '../lib/overviewRules'
 import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
@@ -135,6 +144,23 @@ function stationPopup(name: string, displayAqi: number | null | undefined, using
 }
 
 
+function changePopup(name: string, change: { delta: number | null; direction: ChangeDirection | null; earlierValue: number | null; laterValue: number | null } | undefined, pollutantLabel: string): string {
+  if (!change || change.delta == null || change.direction == null) {
+    return (
+      `<div style="font-size:13px;font-weight:600">${name}</div>` +
+      `<div style="font-size:12px;color:#9ca3af">No comparable data</div>`
+    )
+  }
+  const hex = CHANGE_DIRECTION_HEX[change.direction]
+  const arrow = CHANGE_DIRECTION_ARROW[change.direction]
+  const sign = change.delta > 0 ? '+' : ''
+  return (
+    `<div style="font-size:13px;font-weight:600">${name}</div>` +
+    `<div style="font-size:12px;color:${hex}">${arrow} ${sign}${Math.round(change.delta)} ${pollutantLabel}</div>` +
+    `<div style="font-size:11px;color:#9ca3af">${change.earlierValue ?? '—'} → ${change.laterValue ?? '—'}</div>`
+  )
+}
+
 function popup(title: string, lines: string[]): string {
   return (
     `<div style="font-size:13px;font-weight:600">${title}</div>` +
@@ -162,6 +188,7 @@ export default function MapPage() {
   const [resetToken, setResetToken] = useState(0)
   const [historicalReadingByStationId, setHistoricalReadingByStationId] = useState<Map<number, HistoricalStationReading>>(new Map())
   const [obsLoading, setObsLoading] = useState(false)
+  const [obsViewMode, setObsViewMode] = useState<ObsViewMode>('snapshot')
 
   const { healthLoaded, forecastConfirmedFresh } = useIngestHealth()
   const forecastSuppressed = healthLoaded && !forecastConfirmedFresh
@@ -178,10 +205,20 @@ export default function MapPage() {
     if (obsSlot !== 'now' && timeMode !== 'now') setTimeMode('now')
   }, [obsSlot, timeMode])
 
-  // Data Quality mode is live-only: reset obsSlot when switching into it.
+  // Data Quality mode is live-only: reset obsSlot and obsViewMode when switching into it.
   useEffect(() => {
     if (viewMode === 'data_quality' && obsSlot !== 'now') setObsSlot('now')
   }, [viewMode, obsSlot])
+
+  // Change mode has no meaning when the slot is 'now' (there's no earlier point to compare).
+  useEffect(() => {
+    if (obsSlot === 'now' && obsViewMode !== 'snapshot') setObsViewMode('snapshot')
+  }, [obsSlot, obsViewMode])
+
+  // Data Quality mode: reset view mode to snapshot.
+  useEffect(() => {
+    if (viewMode === 'data_quality' && obsViewMode !== 'snapshot') setObsViewMode('snapshot')
+  }, [viewMode, obsViewMode])
 
   // Escape key clears any active selection.
   useEffect(() => {
@@ -295,6 +332,42 @@ export default function MapPage() {
   const leadingSourceById = leadingSource.data ?? new Map()
 
   const stationHealthById = useMemo(() => new Map(stationHealth.map((s) => [s.id, s])), [stationHealth])
+
+  // Per-station change data — computed only in Change mode.  Uses the
+  // historicalReadingByStationId already fetched by the Snapshot fetch effect
+  // as the "earlier" point, and the live station reading as the "later" point.
+  // Both sides are checked against a 2-hour tolerance window.
+  type ChangeData = { delta: number | null; direction: ChangeDirection | null; earlierValue: number | null; laterValue: number | null; earlierTs: string | null }
+  const changeByStationId = useMemo<Map<number, ChangeData>>(() => {
+    const result = new Map<number, ChangeData>()
+    if (obsSlot === 'now' || obsViewMode !== 'change') return result
+    const hours = OBS_SLOT_HOURS[obsSlot]!
+    const targetAtMs = Date.now() - hours * 3_600_000
+    for (const s of stations) {
+      const historical = historicalReadingByStationId.get(s.id)
+      const health = stationHealthById.get(s.id)
+      const historicalTsMs = historical?.ts ? new Date(historical.ts).getTime() : null
+      // Earlier point: must be within 2h *before* the target slot time.
+      const historicalValid = historicalTsMs != null && historicalTsMs >= targetAtMs - HISTORICAL_TOLERANCE_MS
+      // Later (live) point: reading must be no older than 2h.
+      const liveAgeMs = health?.latest_reading_age_minutes != null ? health.latest_reading_age_minutes * 60_000 : null
+      const liveValid = liveAgeMs != null && liveAgeMs <= HISTORICAL_TOLERANCE_MS
+      if (!historicalValid || !liveValid) {
+        result.set(s.id, { delta: null, direction: null, earlierValue: null, laterValue: null, earlierTs: historical?.ts ?? null })
+        continue
+      }
+      const earlierValue = stationReadingValue(historical as Parameters<typeof stationReadingValue>[0], pollutant)
+      const laterValue = stationReadingValue(s, pollutant)
+      if (earlierValue == null || laterValue == null) {
+        result.set(s.id, { delta: null, direction: null, earlierValue, laterValue, earlierTs: historical!.ts })
+        continue
+      }
+      const delta = laterValue - earlierValue
+      const direction = classifyChangeDirection(delta, pollutant)
+      result.set(s.id, { delta, direction, earlierValue, laterValue, earlierTs: historical!.ts })
+    }
+    return result
+  }, [obsSlot, obsViewMode, stations, historicalReadingByStationId, stationHealthById, pollutant])
 
   // ── Data Quality mode derivations ────────────────────────────────────────
   const stationQuality = useMemo(() => rollupStationQuality(stationHealth), [stationHealth])
@@ -420,9 +493,28 @@ export default function MapPage() {
               const preferred = latestReadingByStationId.get(s.id)
               const historicalReading = historicalReadingByStationId.get(s.id)
 
-              // Historical slot: use the Supabase reading closest to the target
-              // time — no CPCB/OpenAQ distinction, freshness indicators suppressed.
+              // Historical slot: branch between Change mode (Δ badge) and Snapshot mode (historical AQI).
               if (isHistoricalSlot) {
+                if (obsViewMode === 'change') {
+                  const change = changeByStationId.get(s.id)
+                  const direction = change?.direction ?? null
+                  const colorOverride = direction != null ? CHANGE_DIRECTION_HEX[direction] : '#94a3b8'
+                  const badgeText = changeMarkerBadge(change?.delta ?? null, direction)
+                  return {
+                    id: `station-${s.id}`,
+                    kind: 'station' as const,
+                    lat: s.lat,
+                    lng: s.lng,
+                    label: s.name,
+                    aqi: null,
+                    isStale: false,
+                    isCpcbSourced: false,
+                    badgeText,
+                    colorOverride,
+                    popupHtml: changePopup(s.name, change, MAP_POLLUTANT_LABEL[pollutant]),
+                  }
+                }
+                // Snapshot mode: show the historical AQI.
                 const displayAqi = historicalReading?.aqi ?? null
                 const readingAgeMinutes = historicalReading?.ts != null
                   ? Math.round((Date.now() - new Date(historicalReading.ts).getTime()) / 60_000)
@@ -479,7 +571,7 @@ export default function MapPage() {
               }
             })
         : [],
-    [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId, obsSlot, historicalReadingByStationId],
+    [viewMode, freshnessFilter, layers.stations, layers.sensorFreshness, stations, stationHealthById, latestReadingByStationId, obsSlot, obsViewMode, historicalReadingByStationId, changeByStationId, pollutant],
   )
 
   // Incidents are rendered as a MapLibre GL cluster source (not DOM markers)
@@ -728,6 +820,32 @@ export default function MapPage() {
     }
   }, [selectedIncident, stations, stationHealthById, latestReadingByStationId])
 
+  // Flat list of per-station change data for ChangeModeSummaryPanel.
+  const changeSummaryRows = useMemo<ChangeRow[]>(
+    () =>
+      stations.map((s) => {
+        const c = changeByStationId.get(s.id)
+        return { stationId: s.id, stationName: s.name, delta: c?.delta ?? null, direction: c?.direction ?? null }
+      }),
+    [stations, changeByStationId],
+  )
+
+  // Historical comparison for the selected station — present only in Change mode.
+  const selectedStationHistoricalComparison = useMemo<StationHistoricalComparison | undefined>(() => {
+    if (obsViewMode !== 'change' || obsSlot === 'now' || selection?.kind !== 'station') return undefined
+    const change = changeByStationId.get(selection.id)
+    if (!change) return undefined
+    return {
+      obsSlotLabel: OBS_SLOT_LABEL[obsSlot],
+      earlierValue: change.earlierValue,
+      laterValue: change.laterValue,
+      delta: change.delta,
+      direction: change.direction,
+      pollutantLabel: MAP_POLLUTANT_LABEL[pollutant],
+      earlierTs: change.earlierTs,
+    }
+  }, [obsViewMode, obsSlot, selection, changeByStationId, pollutant])
+
   const dataQualityStationInfo: DataQualityStationInfo | null = useMemo(() => {
     if (viewMode !== 'data_quality' || selection?.kind !== 'station') return null
     const s = stations.find((st) => st.id === selection.id)
@@ -854,6 +972,8 @@ export default function MapPage() {
               obsSlot={obsSlot}
               onObsSlotChange={setObsSlot}
               obsLoading={obsLoading}
+              obsViewMode={obsViewMode}
+              onObsViewModeChange={setObsViewMode}
             />
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 flex-1">
@@ -889,7 +1009,7 @@ export default function MapPage() {
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard.length ?? 0) > 0}
                     forecastSuppressed={forecastSuppressed}
                   />
-                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} />
+                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
                 </div>
                 <BasemapSwitcher mode={basemap} onChange={setBasemap} />
               </div>
@@ -930,19 +1050,23 @@ export default function MapPage() {
                 ) : (
                   /* ── Pollution mode panels (existing) ───────────────── */
                   selection == null ? (
-                    <SpatialSummaryPanel
-                      stationsTotal={healthRollup.total}
-                      stationsFresh={healthRollup.active - healthRollup.stale}
-                      stationsStale={healthRollup.stale}
-                      activeIncidents={incidents.length}
-                      forecastAlerts={severeWards.length}
-                      dominantSource={sourceMix[0] ?? null}
-                      locationsUnavailable={locationsUnavailable}
-                      forecastSuppressed={forecastSuppressed}
-                      forecastLoading={forecastsState.loading}
-                      highestAqiWard={highestAqiWard}
-                      wardsWithCoverage={wardsWithCoverage}
-                    />
+                    obsViewMode === 'change' && obsSlot !== 'now' ? (
+                      <ChangeModeSummaryPanel obsSlot={obsSlot} pollutant={pollutant} rows={changeSummaryRows} />
+                    ) : (
+                      <SpatialSummaryPanel
+                        stationsTotal={healthRollup.total}
+                        stationsFresh={healthRollup.active - healthRollup.stale}
+                        stationsStale={healthRollup.stale}
+                        activeIncidents={incidents.length}
+                        forecastAlerts={severeWards.length}
+                        dominantSource={sourceMix[0] ?? null}
+                        locationsUnavailable={locationsUnavailable}
+                        forecastSuppressed={forecastSuppressed}
+                        forecastLoading={forecastsState.loading}
+                        highestAqiWard={highestAqiWard}
+                        wardsWithCoverage={wardsWithCoverage}
+                      />
+                    )
                   ) : selectedWard ? (
                     <SelectedWardPanel
                       ward={selectedWard}
@@ -966,6 +1090,7 @@ export default function MapPage() {
                       latestForecastRun={latestForecastRunState.data}
                       latestForecastRunLoading={latestForecastRunState.loading}
                       nearbyIncidentsCount={nearbyIncidentsCount}
+                      historicalComparison={selectedStationHistoricalComparison}
                       onClose={() => setSelection(null)}
                     />
                   ) : selection?.kind === 'incidentCluster' ? (
@@ -978,6 +1103,8 @@ export default function MapPage() {
                     <SelectedIncidentPanel incident={selectedIncident} nearestStation={incidentNearestStation} onClose={() => setSelection(null)} />
                   ) : selection?.kind === 'wardBoundary' && wardBoundaryDetail ? (
                     <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
+                  ) : obsViewMode === 'change' && obsSlot !== 'now' ? (
+                    <ChangeModeSummaryPanel obsSlot={obsSlot} pollutant={pollutant} rows={changeSummaryRows} />
                   ) : (
                     <SpatialSummaryPanel
                       stationsTotal={healthRollup.total}
