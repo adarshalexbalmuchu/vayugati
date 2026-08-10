@@ -117,6 +117,9 @@ def reconcile_latest(
             cpcb_aqi = aqi.compute_aqi(
                 pollutants.get("pm25", {}).get("avg"),
                 pollutants.get("pm10", {}).get("avg"),
+                no2=pollutants.get("no2", {}).get("avg"),
+                so2=pollutants.get("so2", {}).get("avg"),
+                o3=pollutants.get("o3", {}).get("avg"),
             )
 
         openaq_aqi = openaq_entry.get("aqi") if openaq_entry else None
