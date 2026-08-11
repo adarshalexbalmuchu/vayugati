@@ -28,12 +28,11 @@ def test_mock_email_adapter_never_claims_a_real_delivery():
     assert "no email provider configured" in result.failure_reason
 
 
-def test_unconfigured_sms_and_whatsapp_adapters_are_honest_failures():
+def test_unconfigured_sms_and_whatsapp_adapters_raise_skip_delivery():
+    import pytest
     for channel in ("sms", "whatsapp"):
-        result = notifications.UnconfiguredAdapter(channel).send({})
-        assert result.delivered is False
-        assert channel in result.failure_reason
-        assert "interface only" in result.failure_reason
+        with pytest.raises(notifications.UnconfiguredAdapter.SkipDelivery):
+            notifications.UnconfiguredAdapter(channel).send({})
 
 
 def test_adapter_selection_falls_back_to_mock_when_smtp_unconfigured(monkeypatch):
@@ -79,7 +78,7 @@ def test_run_marks_in_app_notifications_sent(monkeypatch):
 
     result = notifications.run()
 
-    assert result == {"evaluated": 1, "sent": 1, "failed_or_retrying": 0}
+    assert result == {"evaluated": 1, "sent": 1, "skipped": 0, "failed_or_retrying": 0}
     assert sent_calls[0][0] == 1
 
 
@@ -98,7 +97,7 @@ def test_run_retries_a_failed_email_up_to_the_retry_budget(monkeypatch):
 
     result = notifications.run()
 
-    assert result == {"evaluated": 1, "sent": 0, "failed_or_retrying": 1}
+    assert result == {"evaluated": 1, "sent": 0, "skipped": 0, "failed_or_retrying": 1}
     assert retry_calls == [(2, 1, False)]  # first failure: retry_count 1, not yet terminal
 
 

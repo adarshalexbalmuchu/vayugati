@@ -54,26 +54,33 @@ def get_all_stations() -> list[dict]:
 
 
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
-    """station_id -> {ts, pm25, pm10, no2, so2, co, o3, aqi} for its single
-    most recent reading. One small `.limit(1)` query per station (same
-    per-station-loop shape the frontend's fetchStationHealth() already uses
-    for the identical "N stations, cheap enough as one-per-station" reason)
-    - this only runs once per scheduled reconciliation cycle, not per
-    request."""
+    """station_id -> {ts, pm25, pm10, no2, so2, co, o3, aqi} for each
+    station's single most recent reading. Uses one IN query to fetch recent
+    rows for all stations, then picks the latest per station in Python —
+    replaces N sequential round-trips (one per station) with one request."""
+    if not station_ids:
+        return {}
+    # Fetch the latest 2 hours of readings for all stations in one query.
+    # The readings(station_id, ts desc) index makes this efficient regardless
+    # of table size. 2h window covers any realistic ingest cadence while
+    # keeping the result set small.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    rows = (
+        client()
+        .table("readings")
+        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, aqi")
+        .in_("station_id", station_ids)
+        .gte("ts", cutoff)
+        .order("ts", desc=True)
+        .execute()
+        .data
+    )
+    # Keep only the first (latest) row per station.
     out: dict[int, dict] = {}
-    for sid in station_ids:
-        rows = (
-            client()
-            .table("readings")
-            .select("ts, pm25, pm10, no2, so2, co, o3, aqi")
-            .eq("station_id", sid)
-            .order("ts", desc=True)
-            .limit(1)
-            .execute()
-            .data
-        )
-        if rows:
-            out[sid] = rows[0]
+    for row in rows:
+        sid = row["station_id"]
+        if sid not in out:
+            out[sid] = row
     return out
 
 
@@ -232,6 +239,26 @@ def get_weather_history(hours: int = 24 * 30) -> list[dict]:
 
 
 # ── forecast + attribution writes ────────────────────────────────────────────
+
+def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
+    """(ward_id, pollutant) -> generated_at of the most recent forecast_runs row.
+    Used by forecast.py to skip retraining when no new readings have arrived."""
+    rows = (
+        client()
+        .table("forecast_runs")
+        .select("ward_id, pollutant, generated_at")
+        .eq("city_id", city_id)
+        .order("generated_at", desc=True)
+        .execute()
+        .data
+    )
+    seen: dict[tuple[int, str], datetime] = {}
+    for r in rows:
+        key = (r["ward_id"], r["pollutant"])
+        if key not in seen:
+            seen[key] = datetime.fromisoformat(r["generated_at"].replace("Z", "+00:00"))
+    return seen
+
 
 def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:
     """Swap in a fresh forecast generation for one ward+pollutant (delete old,

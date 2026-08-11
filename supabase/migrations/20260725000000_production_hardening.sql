@@ -637,6 +637,11 @@ end $$;
 -- and the loop continues — one bad station or incident can no longer take
 -- the rest of the batch down with it.
 -- ============================================================
+-- NOTE: run_anomaly_detection is defined twice in this migration.
+-- This first definition (pre-is_active) is immediately superseded by the
+-- second definition after the ALTER TABLE at line 854 adds stations.is_active.
+-- The second definition adds `and s.is_active` to the WHERE clause and is
+-- the one Postgres keeps. Editing this copy has no effect — edit the second.
 create or replace function run_anomaly_detection(p_city_code text default null)
 returns table (station_id bigint, pollutant text, candidate_id bigint)
 language plpgsql security definer set search_path = public as $$

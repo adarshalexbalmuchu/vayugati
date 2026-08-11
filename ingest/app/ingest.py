@@ -189,10 +189,15 @@ def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
 
     for ts, values in by_hour.items():
         row = {"station_id": station_id, "ts": ts, **values}
+        # OpenAQ delivers CO in µg/m³; convert before passing to compute_aqi
+        # which expects mg/m³. Omitting this makes CO=1000 µg/m³ read as
+        # 1000 mg/m³ and peg AQI at 500 for every OpenAQ-sourced station.
+        co_raw = values.get("co")
+        co_mg = aqi.co_ug_to_mg(co_raw) if co_raw is not None else None
         computed_aqi = aqi.compute_aqi(
             values.get("pm25"), values.get("pm10"),
             no2=values.get("no2"), so2=values.get("so2"),
-            o3=values.get("o3"), co_mg=values.get("co"),
+            o3=values.get("o3"), co_mg=co_mg,
             nh3=values.get("nh3"),
         )
         if computed_aqi is not None:

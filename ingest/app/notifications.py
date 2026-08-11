@@ -85,18 +85,19 @@ class SmtpEmailAdapter(NotificationAdapter):
 
 
 class UnconfiguredAdapter(NotificationAdapter):
-    """SMS/WhatsApp: the adapter INTERFACE exists (plan §6's "WhatsApp-ready
-    adapter interface") but no credentialed provider is wired up in this
-    phase. Always an honest, explicit failure — never a fabricated send."""
+    """SMS/WhatsApp: no credentialed provider configured. Raises SkipDelivery
+    so the run() loop skips rather than records a failure — prevents
+    accumulating delivered=False rows in the notifications table for a
+    channel that has never and will never work in the current deployment."""
+
+    class SkipDelivery(Exception):
+        pass
 
     def __init__(self, channel: str):
         self.channel = channel
 
     def send(self, notification: dict) -> DeliveryResult:
-        return DeliveryResult(
-            delivered=False,
-            failure_reason=f"no {self.channel} provider configured — interface only in this phase",
-        )
+        raise UnconfiguredAdapter.SkipDelivery(self.channel)
 
 
 def _email_adapter() -> NotificationAdapter:
@@ -123,9 +124,15 @@ def run() -> dict:
     rows = db.get_pending_notifications(MAX_RETRIES)
     sent = 0
     failed = 0
+    skipped = 0
     for row in rows:
         adapter = _adapter_for(row["channel"])
-        result = adapter.send(row)
+        try:
+            result = adapter.send(row)
+        except UnconfiguredAdapter.SkipDelivery as e:
+            log.debug("skipping %s notification %s — channel not configured", e, row["id"])
+            skipped += 1
+            continue
         if result.delivered:
             db.mark_notification_sent(row["id"], datetime.now(timezone.utc).isoformat())
             sent += 1
@@ -135,4 +142,4 @@ def run() -> dict:
                 row["id"], result.failure_reason, new_retry, terminal=new_retry >= MAX_RETRIES
             )
             failed += 1
-    return {"evaluated": len(rows), "sent": sent, "failed_or_retrying": failed}
+    return {"evaluated": len(rows), "sent": sent, "skipped": skipped, "failed_or_retrying": failed}

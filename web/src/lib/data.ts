@@ -116,38 +116,63 @@ export async function fetchCurrentWeather(wardId: number): Promise<Weather | nul
 }
 
 export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
-  // is_hotspot=true scopes this to the 13 seeded, monitored hotspot wards -
-  // every existing caller (Overview, Incidents' ward filter, the admin
-  // Registry form) expects exactly that set. Phase 2 (delhi-ward-import-
-  // report.md) added up to 250 more municipal-boundary-only wards with
-  // is_hotspot=false and no station/AQI data; they're deliberately excluded
-  // here and served instead by fetchAllWardBoundaries() below, so this
-  // function's callers see no change in behaviour.
-  const { data: wards } = await supabase
-    .from('wards')
-    .select('id, name, dominant_source, lat, lng')
-    .eq('is_hotspot', true)
-    .order('name')
+  // is_hotspot=true scopes this to the monitored hotspot wards only.
+  // 3 queries total (wards, stations, readings) instead of the previous
+  // 2-query-per-ward fan-out (26 queries for 13 wards). All joins done in JS.
+  const [{ data: wards }, { data: allStations }] = await Promise.all([
+    supabase.from('wards').select('id, name, dominant_source, lat, lng').eq('is_hotspot', true).order('name'),
+    supabase.from('stations').select('id, name, agency, ward_id').eq('is_active', true),
+  ])
   if (!wards) return []
 
-  return Promise.all(
-    wards.map(async (ward) => {
-      const reading = await fetchLatestReading(ward.id)
-      return {
-        ...ward,
-        aqi: reading?.aqi ?? null,
-        pm25: reading?.pm25 ?? null,
-        pm10: reading?.pm10 ?? null,
-        no2: reading?.no2 ?? null,
-        so2: reading?.so2 ?? null,
-        co: reading?.co ?? null,
-        o3: reading?.o3 ?? null,
-        ts: reading?.ts ?? null,
-        station_name: reading?.station_name ?? null,
-        station_agency: reading?.station_agency ?? null,
-      }
-    }),
-  )
+  const wardStations = new Map<number, { id: number; name: string; agency: string | null }[]>()
+  for (const s of allStations ?? []) {
+    if (s.ward_id == null) continue
+    const list = wardStations.get(s.ward_id) ?? []
+    list.push({ id: s.id, name: s.name, agency: s.agency })
+    wardStations.set(s.ward_id, list)
+  }
+
+  const allStationIds = (allStations ?? []).map((s) => s.id)
+
+  // Latest reading per station: fetch recent window, keep first row per station.
+  const since = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+  const { data: recentReadings } = await supabase
+    .from('readings')
+    .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+    .in('station_id', allStationIds)
+    .gte('ts', since)
+    .order('ts', { ascending: false })
+    .limit(allStationIds.length * 4)
+
+  const latestByStation = new Map<number, typeof recentReadings extends (infer T)[] | null ? T : never>()
+  for (const r of recentReadings ?? []) {
+    if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r)
+  }
+
+  return wards.map((ward) => {
+    const stations = wardStations.get(ward.id) ?? []
+    // Pick the station with the freshest reading for this ward.
+    let best: { reading: typeof recentReadings extends (infer T)[] | null ? T : never; station: typeof stations[number] } | null = null
+    for (const s of stations) {
+      const r = latestByStation.get(s.id)
+      if (!r) continue
+      if (!best || r.ts > best.reading.ts) best = { reading: r, station: s }
+    }
+    return {
+      ...ward,
+      aqi: best?.reading.aqi ?? null,
+      pm25: best?.reading.pm25 ?? null,
+      pm10: best?.reading.pm10 ?? null,
+      no2: best?.reading.no2 ?? null,
+      so2: best?.reading.so2 ?? null,
+      co: best?.reading.co ?? null,
+      o3: best?.reading.o3 ?? null,
+      ts: best?.reading.ts ?? null,
+      station_name: best?.station.name ?? null,
+      station_agency: best?.station.agency ?? null,
+    }
+  })
 }
 
 export interface WardBoundary {
@@ -479,13 +504,17 @@ export async function updateReportStatus(
   actorId: string,
   note?: string,
 ): Promise<void> {
-  await supabase.from('reports').update({ status }).eq('id', reportId)
-  await supabase.from('report_events').insert({
-    report_id: reportId,
-    status,
-    actor_id: actorId,
-    note: note ?? null,
+  // Single atomic RPC — updates reports.status AND inserts report_events in
+  // one transaction. Prevents the audit log recording a transition that never
+  // took effect (or a network drop leaving status updated with no audit row).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('update_report_status', {
+    p_report_id: reportId,
+    p_status: status,
+    p_actor_id: actorId,
+    p_note: note ?? null,
   })
+  if (error) throw error
 }
 
 // ── AI classification (calls ingest service) ─────────────────────────────────
@@ -623,15 +652,23 @@ export interface GatiMetrics {
 }
 
 export async function fetchGatiMetrics(): Promise<GatiMetrics> {
+  // 90-day window keeps counts correct as the table grows past 1000 rows.
+  // Order by created_at desc so the limit always captures the most recent
+  // data rather than an arbitrary PostgREST default ordering.
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString()
   const { data: reports } = await supabase
     .from('reports')
     .select('id, created_at, status')
-    .limit(1000)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(5000)
   const { data: events } = await supabase
     .from('report_events')
     .select('report_id, status, ts')
     .eq('status', 'resolved')
-    .limit(1000)
+    .gte('ts', since)
+    .order('ts', { ascending: false })
+    .limit(5000)
 
   const resolvedAt = new Map<number, string>()
   for (const e of events ?? []) resolvedAt.set(e.report_id as number, e.ts as string)
@@ -651,48 +688,6 @@ export async function fetchGatiMetrics(): Promise<GatiMetrics> {
     ? durations[Math.floor(durations.length / 2)]
     : null
   return { resolvedCount: durations.length, openCount, medianHours: median }
-}
-
-// ── LP-style asset allocation (Phase 4) ──────────────────────────────────────
-
-export interface Allocation {
-  wardId: number
-  wardName: string
-  peakPred: number | null
-  peakExcess: number | null
-  teams: number
-}
-
-/** Allocate a fixed number of teams across wards, weighted by predicted local excess
- *  (the controllable load). Largest-remainder method for integer, proportional shares. */
-export function allocateTeams(
-  wards: { id: number; name: string }[],
-  forecasts: Map<number, WardForecastSummary>,
-  totalTeams: number,
-): Allocation[] {
-  const rows = wards.map((w) => {
-    const f = forecasts.get(w.id)
-    const weight = Math.max(f?.peakExcess ?? 0, 0)
-    return { wardId: w.id, wardName: w.name, peakPred: f?.peakPred ?? null, peakExcess: f?.peakExcess ?? null, weight }
-  })
-  const totalWeight = rows.reduce((s, r) => s + r.weight, 0)
-  if (totalWeight <= 0) {
-    return rows.map((r) => ({ ...r, teams: 0 }))
-  }
-  // proportional shares, then largest-remainder rounding to hit exactly totalTeams
-  const exact = rows.map((r) => (r.weight / totalWeight) * totalTeams)
-  const floors = exact.map((e) => Math.floor(e))
-  let remaining = totalTeams - floors.reduce((s, f) => s + f, 0)
-  const order = exact
-    .map((e, i) => ({ i, frac: e - Math.floor(e) }))
-    .sort((a, b) => b.frac - a.frac)
-  const teams = [...floors]
-  for (let k = 0; k < order.length && remaining > 0; k++, remaining--) {
-    teams[order[k].i]++
-  }
-  return rows
-    .map((r, i) => ({ wardId: r.wardId, wardName: r.wardName, peakPred: r.peakPred, peakExcess: r.peakExcess, teams: teams[i] }))
-    .sort((a, b) => b.teams - a.teams)
 }
 
 // ── Citizens (commander-wide reporter activity) ───────────────────────────────

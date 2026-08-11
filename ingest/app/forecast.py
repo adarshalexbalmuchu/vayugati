@@ -540,6 +540,7 @@ def run(city_code: str | None = None) -> dict:
         # number of large paginated DB requests for no benefit.
         readings = db.get_readings_history(hours=24 * 30)
         weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
+        last_forecast_times = db.get_last_forecast_times(city["id"])
 
         for pollutant in cfg["enabled_pollutants"]:
             readings_df = _hourly_ward_pollutant(readings, pollutant)
@@ -549,6 +550,21 @@ def run(city_code: str | None = None) -> dict:
             threshold = cfg["pollutant_thresholds"].get(pollutant)
 
             for ward in city_wards:
+                # Skip retraining if no new readings have arrived since the last
+                # forecast for this ward+pollutant — the model would produce
+                # identical results. Saves ~1 LightGBM retrain per ward per hour
+                # when the ingest cycle hasn't yet written new data.
+                last_forecast = last_forecast_times.get((ward["id"], pollutant))
+                if last_forecast is not None:
+                    ward_rows = readings_df[readings_df["ward_id"] == ward["id"]]
+                    if not ward_rows.empty:
+                        latest_ts = ward_rows["ts"].max()
+                        if pd.Timestamp(latest_ts) <= last_forecast:
+                            log.debug(
+                                "ward %s %s: no new readings since last forecast (%s) — skipping",
+                                ward["id"], pollutant, last_forecast.isoformat(),
+                            )
+                            continue
                 result = _forecast_ward_pollutant(
                     ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"]
                 )

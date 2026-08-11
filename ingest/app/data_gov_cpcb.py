@@ -30,9 +30,9 @@ MAX_RECORDS = 2000
 logger = logging.getLogger("ingest")
 
 # CPCB pollutant_id -> our internal pollutant key (readings columns /
-# aqi.py's compute_aqi params). NH3 has no home in our schema (openaq.py's
-# own PARAMS never included it either) - kept in the map so it's parsed and
-# visible in the raw record, just never contributes to a matched pollutant.
+# aqi.py's compute_aqi params). NH3 maps to the nh3 column added by
+# migration 20260810000000_readings_nh3_column.sql and is included in
+# the CPCB National AQI sub-index calculation in aqi.py.
 POLLUTANT_MAP: dict[str, str] = {
     "PM2.5": "pm25",
     "PM10": "pm10",

@@ -360,6 +360,7 @@ def test_run_end_to_end_against_fixed_dataset(monkeypatch):
 
     monkeypatch.setattr(forecast.db, "insert_forecast_run", _fake_insert_run)
     monkeypatch.setattr(forecast.db, "replace_forecasts", _fake_replace_forecasts)
+    monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
     # no real HTTP calls for the weather forecast either
     monkeypatch.setattr(forecast.open_meteo, "get_hourly_forecast", lambda lat, lng, hours=48: [])
 
@@ -406,6 +407,7 @@ def test_run_skips_a_ward_with_no_readings_without_crashing(monkeypatch):
     monkeypatch.setattr(forecast.db, "get_weather_history", lambda hours=720: weather)
     monkeypatch.setattr(forecast.db, "insert_forecast_run", lambda row: fake.forecast_runs.append(row) or len(fake.forecast_runs))
     monkeypatch.setattr(forecast.db, "replace_forecasts", lambda ward_id, pollutant, rows: fake.forecasts.extend(rows))
+    monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
     monkeypatch.setattr(forecast.open_meteo, "get_hourly_forecast", lambda lat, lng, hours=48: [])
 
     summary = forecast.run(city_code="delhi")

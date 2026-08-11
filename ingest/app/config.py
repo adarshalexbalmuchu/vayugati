@@ -14,11 +14,10 @@ OPENAQ_API_KEY = os.getenv("OPENAQ_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Official data.gov.in CPCB AQI API key — server-side only, never logged.
-# Audit-only for now (see scripts/audit_data_gov_cpcb.py): not read by
-# app/ingest.py or app/openaq.py, and not part of require_env() below, since
-# production ingest still runs on OpenAQ exactly as before. Wiring this into
-# live ingest is a deliberate future decision, not a side effect of adding
-# the key.
+# PRIMARY ingest source: app/ingest.py's _ingest_from_cpcb() fetches every
+# Delhi station reading in one paginated call per cycle. OpenAQ is the
+# fallback for stations that CPCB name-matching doesn't cover. Listed in
+# require_env() below — a deployment without this key has no AQ data.
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 
 # Delhi Open Transit Data (OTD) real-time GTFS-realtime feed key — server-
