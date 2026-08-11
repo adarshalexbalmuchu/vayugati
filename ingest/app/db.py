@@ -127,7 +127,7 @@ def set_station_agency(station_id: int, agency: str) -> None:
 def upsert_reading(row: dict) -> None:
     # merge-duplicates: only the columns present in `row` are updated,
     # so a later sensor for the same hour fills in, not wipes, the rest.
-    client().table("readings").upsert(row, on_conflict="station_id,ts").execute()
+    _with_retry(lambda: client().table("readings").upsert(row, on_conflict="station_id,ts").execute())
 
 
 def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
@@ -155,6 +155,19 @@ def upsert_weather(row: dict) -> None:
 def _is_transient_network_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(s in msg for s in ("disconnected", "connection reset", "connection error", "eof occurred"))
+
+
+def _with_retry(fn, max_attempts: int = 3):
+    """Execute fn() and retry up to max_attempts times on transient
+    Render→Supabase TCP resets. Same backoff as _fetch_all's per-page retry."""
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as exc:
+            if attempt < max_attempts - 1 and _is_transient_network_error(exc):
+                time.sleep(2 ** attempt)
+                continue
+            raise
 
 
 def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
@@ -316,7 +329,7 @@ def set_reading_aqi(station_id: int, ts: str, aqi_value: int) -> None:
     """Patch the AQI on an already-written reading. Used by the 24h-average AQI
     recomputation step in ingest.py to replace the per-hour snapshot AQI with
     the rolling 24h average that CPCB's breakpoints are calibrated for."""
-    client().table("readings").update({"aqi": aqi_value}).eq("station_id", station_id).eq("ts", ts).execute()
+    _with_retry(lambda: client().table("readings").update({"aqi": aqi_value}).eq("station_id", station_id).eq("ts", ts).execute())
 
 
 def delete_old_readings(days: int = 90) -> int:
