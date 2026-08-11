@@ -19,6 +19,7 @@ create or replace function update_report_status(
 returns void
 language plpgsql
 security definer
+set search_path = public
 as $$
 begin
   update reports
