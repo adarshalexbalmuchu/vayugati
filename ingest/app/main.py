@@ -5,11 +5,13 @@ Trigger now:  curl -X POST localhost:8000/run
 """
 
 import logging
+import secrets
 import threading
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -33,6 +35,13 @@ from . import (
 from .health_checks import compute_health
 from .logging_utils import cleanup_stuck_jobs, run_tracked
 
+if config.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=config.SENTRY_DSN,
+        environment=config.ENVIRONMENT,
+        traces_sample_rate=0.05,
+    )
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 # httpx logs the full request URL (including query-string params) at INFO -
 # delhi_otd.py and data_gov_cpcb.py both pass their API key as a query
@@ -42,6 +51,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 # imports httpx through this process - not just the two above.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+def _require_ingest_key(x_ingest_key: str = Header(alias="X-Ingest-Key", default="")) -> None:
+    """FastAPI dependency — gates every mutating endpoint. /health is public.
+
+    When INGEST_API_KEY is unset (local dev), the check is skipped so local
+    curl/test usage doesn't require the header. In staging/production the key
+    must be set or the service refuses to start (see require_env below)."""
+    if not config.INGEST_API_KEY:
+        return  # local/dev: key not configured, allow all
+    if not x_ingest_key or not secrets.compare_digest(x_ingest_key, config.INGEST_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Ingest-Key")
+
 
 _lock = threading.Lock()
 _intel_lock = threading.Lock()
@@ -289,7 +310,7 @@ def health():
     return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
 
 
-@app.post("/run")
+@app.post("/run", dependencies=[Depends(_require_ingest_key)])
 def trigger_run():
     try:
         return run_ingest()
@@ -297,7 +318,7 @@ def trigger_run():
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@app.post("/transit/refresh")
+@app.post("/transit/refresh", dependencies=[Depends(_require_ingest_key)])
 def trigger_transit_refresh():
     """Recompute the transit-activity summary now, same manual-trigger
     pattern as /run, /intel, /ops."""
@@ -322,7 +343,7 @@ def transit_activity_endpoint():
     return _last_transit
 
 
-@app.post("/readings/refresh")
+@app.post("/readings/refresh", dependencies=[Depends(_require_ingest_key)])
 def trigger_readings_refresh():
     """Recompute the CPCB/data.gov preferred-latest-reading reconciliation
     now, same manual-trigger pattern as /run, /intel, /ops, /transit/refresh."""
@@ -343,7 +364,7 @@ def latest_readings_endpoint():
     return _last_cpcb_reconcile if _last_cpcb_reconcile is not None else []
 
 
-@app.post("/intel")
+@app.post("/intel", dependencies=[Depends(_require_ingest_key)])
 def trigger_intel():
     """Recompute forecast + attribution now."""
     try:
@@ -352,7 +373,7 @@ def trigger_intel():
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@app.post("/ops")
+@app.post("/ops", dependencies=[Depends(_require_ingest_key)])
 def trigger_ops():
     """Drain pending notifications + escalate overdue task dispatches now."""
     try:
@@ -361,9 +382,13 @@ def trigger_ops():
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@app.post("/classify")
+@app.post("/classify", dependencies=[Depends(_require_ingest_key)])
 def classify(req: ClassifyRequest):
     """Classify a report and write ai_category + ai_meta back to the reports row."""
+    # S-2: verify the report exists before writing AI metadata to it.
+    exists = db.client().table("reports").select("id").eq("id", req.report_id).execute().data
+    if not exists:
+        raise HTTPException(status_code=404, detail=f"Report {req.report_id} not found")
     result = classify_mod.classify_report(req.description, req.ward_name, req.photo_url)
     db.client().table("reports").update(
         {

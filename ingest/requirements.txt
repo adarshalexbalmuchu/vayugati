@@ -17,5 +17,8 @@ lightgbm>=4
 # doesn't touch any existing dependency's pinned version.
 gtfs-realtime-bindings>=2
 
+# Error tracking — optional. Initialised in main.py when SENTRY_DSN is set.
+sentry-sdk[fastapi]>=2
+
 # dev / tests only
 pytest>=8

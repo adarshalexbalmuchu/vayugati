@@ -36,3 +36,9 @@ services:
         sync: false
       - key: ENVIRONMENT
         sync: false # set to "staging" or "production" per deployed instance — this blueprint is reused for both
+      - key: INGEST_API_KEY
+        sync: false # Required in staging/production — gates /run, /intel, /ops, /classify, /readings/refresh, /transit/refresh
+      - key: DELHI_OTD_API_KEY
+        sync: false # Optional — Delhi OTD real-time GTFS feed; transit context layer silently degrades when unset
+      - key: SENTRY_DSN
+        sync: false # Optional — Sentry DSN for error tracking; no-op when unset

@@ -61,6 +61,15 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# Ingest service auth — all mutating endpoints (/run, /intel, /ops, /classify,
+# etc.) require this key in the X-Ingest-Key header. /health is public.
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+INGEST_API_KEY = os.getenv("INGEST_API_KEY", "")
+
+# Sentry DSN for error tracking — optional. When set, every unhandled
+# exception in ingest, forecast, classify, and anomaly detection is reported.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+
 STATIONS_FILE = Path(__file__).resolve().parent.parent / "stations.yaml"
 
 
