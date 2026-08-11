@@ -181,6 +181,20 @@ def run_transit() -> dict:
         _transit_lock.release()
 
 
+def run_retention() -> dict:
+    """Delete readings older than 90 days. Runs once daily at 03:00 UTC.
+    At ~1 100 rows/day (46 stations × hourly cadence), the table grows
+    ~400 k rows/year without this. 90 days keeps ~100 k rows — well within
+    Supabase free-tier limits and sufficient for 30-day forecast training."""
+    try:
+        deleted = db.delete_old_readings(days=90)
+        logging.getLogger("ingest").info("retention: deleted %d old readings", deleted)
+        return {"deleted": deleted}
+    except Exception:
+        logging.getLogger("ingest").exception("retention job failed")
+        return {"deleted": 0, "error": "see logs"}
+
+
 def run_cpcb_reconcile() -> list[dict]:
     """CPCB/data.gov preferred-latest-reading reconciliation (audit/context
     integration - see docs/data/cpcb-data-gov-primary-latest-integration-
@@ -245,6 +259,8 @@ async def lifespan(app: FastAPI):
     # reconciliation - see run_cpcb_reconcile's own docstring for its
     # graceful-degradation contract.
     scheduler.add_job(run_cpcb_reconcile, "interval", minutes=10)
+    # daily at 03:00 UTC: purge readings older than 90 days to bound table growth.
+    scheduler.add_job(run_retention, "cron", hour=3, minute=0)
     scheduler.start()
 
     # first pass immediately: ingest, then intel once readings land

@@ -1633,6 +1633,7 @@ export type Database = {
           aqi: number | null
           co: number | null
           id: number
+          ingest_source: string | null
           nh3: number | null
           no2: number | null
           o3: number | null
@@ -1646,6 +1647,7 @@ export type Database = {
           aqi?: number | null
           co?: number | null
           id?: number
+          ingest_source?: string | null
           nh3?: number | null
           no2?: number | null
           o3?: number | null
@@ -1659,6 +1661,7 @@ export type Database = {
           aqi?: number | null
           co?: number | null
           id?: number
+          ingest_source?: string | null
           nh3?: number | null
           no2?: number | null
           o3?: number | null
@@ -1989,9 +1992,11 @@ export type Database = {
           external_ref: string | null
           id: number
           is_active: boolean
+          is_primary: boolean
           lat: number | null
           lng: number | null
           name: string
+          openaq_location_id: number | null
           sensor_type: string
           source: string | null
           ward_id: number | null
@@ -2002,9 +2007,11 @@ export type Database = {
           external_ref?: string | null
           id?: number
           is_active?: boolean
+          is_primary?: boolean
           lat?: number | null
           lng?: number | null
           name: string
+          openaq_location_id?: number | null
           sensor_type?: string
           source?: string | null
           ward_id?: number | null
@@ -2015,9 +2022,11 @@ export type Database = {
           external_ref?: string | null
           id?: number
           is_active?: boolean
+          is_primary?: boolean
           lat?: number | null
           lng?: number | null
           name?: string
+          openaq_location_id?: number | null
           sensor_type?: string
           source?: string | null
           ward_id?: number | null

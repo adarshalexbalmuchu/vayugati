@@ -44,13 +44,19 @@ def get_active_cities(city_code: str | None = None) -> list[dict]:
 
 
 def get_all_stations() -> list[dict]:
-    """[{id, name, ward_id, external_ref}, ...] - every station, for the
-    CPCB/data.gov latest-reading reconciliation (station_matching.py +
-    latest_readings.py) and the ingest OpenAQ-fallback dedup check.
-    external_ref is the OpenAQ location id string (or None for stations
-    not sourced from OpenAQ). Not scoped to hotspot wards — a station can
-    exist without its ward being in the monitored hotspot set."""
-    return client().table("stations").select("id, name, ward_id, external_ref").neq("is_active", False).execute().data
+    """[{id, name, ward_id, external_ref, openaq_location_id}, ...] — every
+    active station. openaq_location_id is the integer OpenAQ location id for
+    stations that have an OpenAQ source (populated by migration 20260812); None
+    for CPCB-only stations matched by name. Used by the OpenAQ fallback loop to
+    replace the retired stations.yaml as the single source of truth."""
+    return (
+        client()
+        .table("stations")
+        .select("id, name, ward_id, external_ref, openaq_location_id")
+        .neq("is_active", False)
+        .execute()
+        .data
+    )
 
 
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
@@ -258,6 +264,18 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
         if key not in seen:
             seen[key] = datetime.fromisoformat(r["generated_at"].replace("Z", "+00:00"))
     return seen
+
+
+def delete_old_readings(days: int = 90) -> int:
+    """Delete readings older than `days` days. Returns the number deleted.
+    Called by the daily retention job in main.py to keep the readings table
+    from growing unboundedly (~1 100 rows/day at 46 stations × hourly cadence).
+    Uses lt() on the indexed ts column — the (station_id, ts desc) index makes
+    this a fast range scan regardless of table size."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    resp = client().table("readings").delete().lt("ts", cutoff).execute()
+    deleted = len(resp.data) if resp.data else 0
+    return deleted
 
 
 def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:

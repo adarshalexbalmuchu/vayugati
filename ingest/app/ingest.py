@@ -104,7 +104,7 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
             continue
 
         pollutants = entry.get("pollutants") or {}
-        row: dict = {"station_id": sid, "ts": ts_hour}
+        row: dict = {"station_id": sid, "ts": ts_hour, "ingest_source": "cpcb"}
         for col in ("pm25", "pm10", "no2", "so2", "co", "o3", "nh3"):
             val = (pollutants.get(col) or {}).get("avg")
             if val is not None and val >= 0:
@@ -151,32 +151,12 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
 
 # ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
 
-def _ensure_station_openaq(entry: dict, wards: dict[str, dict]) -> int | None:
-    """Find or create the stations row for an OpenAQ-configured station."""
-    ref = str(entry["openaq_location_id"])
-    existing = db.get_station_by_ref(ref)
-    if existing:
-        return existing["id"]
-
-    ward = wards.get(entry["ward"])
-    if ward is None:
-        log.error("ward %r not found in wards table, skipping station %s", entry["ward"], ref)
-        return None
-
-    meta = openaq.get_location(entry["openaq_location_id"])
-    created = db.insert_station(ward["id"], meta["name"], ref, meta["lat"], meta["lng"])
-    log.info("registered station %s (%s) for ward %s", meta["name"], ref, entry["ward"])
-    return created["id"]
-
-
-def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
-    """Pull latest readings for one station via OpenAQ. Returns rows upserted."""
-    station_id = _ensure_station_openaq(entry, wards)
-    if station_id is None:
-        return 0
-
-    sensors = openaq.get_location(entry["openaq_location_id"])["sensors"]
-    latest = openaq.get_latest(entry["openaq_location_id"])
+def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> int:
+    """Pull latest readings for one station via OpenAQ. Returns rows upserted.
+    The station row must already exist in the DB (openaq_location_id populated
+    by migration 20260812 from external_ref — stations.yaml is retired)."""
+    sensors = openaq.get_location(openaq_location_id)["sensors"]
+    latest = openaq.get_latest(openaq_location_id)
 
     by_hour: dict[str, dict] = {}
     for m in latest:
@@ -188,7 +168,7 @@ def _ingest_station_openaq(entry: dict, wards: dict[str, dict]) -> int:
         by_hour.setdefault(ts, {})[col] = m["value"]
 
     for ts, values in by_hour.items():
-        row = {"station_id": station_id, "ts": ts, **values}
+        row = {"station_id": station_id, "ts": ts, "ingest_source": "openaq", **values}
         # OpenAQ delivers CO in µg/m³; convert before passing to compute_aqi
         # which expects mg/m³. Omitting this makes CO=1000 µg/m³ read as
         # 1000 mg/m³ and peg AQI at 500 for every OpenAQ-sourced station.
@@ -219,7 +199,6 @@ def run() -> dict:
         "cpcb_unmatched_stations": [],
         "openaq_rows_written": 0,
         "openaq_stations_tried": 0,
-        "stations_skipped_no_id": [],
         "weather_upserted": 0,
         "errors": [],
     }
@@ -240,32 +219,27 @@ def run() -> dict:
     summary["errors"].extend(cpcb_errors)
 
     # ── OpenAQ fallback ───────────────────────────────────────────────────────
-    # Only runs when OPENAQ_API_KEY is set, and only for stations that CPCB's
-    # name-match didn't cover — avoids burning quota on stations already written.
+    # Only runs when OPENAQ_API_KEY is set. Iterates over stations that have an
+    # openaq_location_id (populated from stations.yaml via migration 20260812 —
+    # the YAML is now retired; DB is the single source of truth). Skips any
+    # station already covered by CPCB this cycle to avoid burning OpenAQ quota.
     if config.OPENAQ_API_KEY:
-        stations_cfg = config.load_stations()
-        wards = db.get_wards()
-        for entry in stations_cfg:
-            if not entry.get("openaq_location_id"):
-                if not entry.get("known_no_station"):
-                    summary["stations_skipped_no_id"].append(entry["ward"])
+        for station in all_stations:
+            oa_id = station.get("openaq_location_id")
+            if not oa_id:
                 continue
-            # Skip if CPCB already wrote a reading for this station this cycle
-            sid = ref_to_sid.get(str(entry["openaq_location_id"]))
-            if sid and sid in cpcb_covered:
+            if station["id"] in cpcb_covered:
                 continue
             summary["openaq_stations_tried"] += 1
             try:
-                n = _ingest_station_openaq(entry, wards)
+                n = _ingest_station_openaq(station["id"], oa_id)
                 summary["openaq_rows_written"] += n
             except Exception as e:
-                log.exception("OpenAQ fallback failed for ward %s", entry["ward"])
-                summary["errors"].append(f"openaq {entry['ward']}: {e}")
-        if summary["stations_skipped_no_id"]:
-            log.warning(
-                "no openaq_location_id configured for: %s — fill stations.yaml",
-                ", ".join(summary["stations_skipped_no_id"]),
-            )
+                log.exception(
+                    "OpenAQ fallback failed for station_id=%s openaq_id=%s",
+                    station["id"], oa_id,
+                )
+                summary["errors"].append(f"openaq station_id={station['id']}: {e}")
     else:
         log.info("OPENAQ_API_KEY not set — OpenAQ fallback skipped")
 

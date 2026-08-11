@@ -121,15 +121,15 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   // 2-query-per-ward fan-out (26 queries for 13 wards). All joins done in JS.
   const [{ data: wards }, { data: allStations }] = await Promise.all([
     supabase.from('wards').select('id, name, dominant_source, lat, lng').eq('is_hotspot', true).order('name'),
-    supabase.from('stations').select('id, name, agency, ward_id').eq('is_active', true),
+    supabase.from('stations').select('id, name, agency, ward_id, is_primary').eq('is_active', true),
   ])
   if (!wards) return []
 
-  const wardStations = new Map<number, { id: number; name: string; agency: string | null }[]>()
+  const wardStations = new Map<number, { id: number; name: string; agency: string | null; is_primary: boolean }[]>()
   for (const s of allStations ?? []) {
     if (s.ward_id == null) continue
     const list = wardStations.get(s.ward_id) ?? []
-    list.push({ id: s.id, name: s.name, agency: s.agency })
+    list.push({ id: s.id, name: s.name, agency: s.agency, is_primary: s.is_primary ?? false })
     wardStations.set(s.ward_id, list)
   }
 
@@ -152,12 +152,16 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
 
   return wards.map((ward) => {
     const stations = wardStations.get(ward.id) ?? []
-    // Pick the station with the freshest reading for this ward.
+    // Prefer the is_primary station if it has a recent reading; fall back to
+    // the station with the freshest reading. This prevents apparent AQI
+    // step-changes caused by silent sensor switches when a station goes offline.
     let best: { reading: typeof recentReadings extends (infer T)[] | null ? T : never; station: typeof stations[number] } | null = null
     for (const s of stations) {
       const r = latestByStation.get(s.id)
       if (!r) continue
-      if (!best || r.ts > best.reading.ts) best = { reading: r, station: s }
+      if (!best || (s.is_primary && !best.station.is_primary) || (!best.station.is_primary && r.ts > best.reading.ts)) {
+        best = { reading: r, station: s }
+      }
     }
     return {
       ...ward,

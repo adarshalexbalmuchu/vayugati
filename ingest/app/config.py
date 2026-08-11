@@ -1,9 +1,8 @@
-"""Env + station config. All secrets come from env vars, never hardcoded."""
+"""Env config. All secrets come from env vars, never hardcoded."""
 
 import os
 from pathlib import Path
 
-import yaml
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -70,9 +69,6 @@ INGEST_API_KEY = os.getenv("INGEST_API_KEY", "")
 # exception in ingest, forecast, classify, and anomaly detection is reported.
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 
-STATIONS_FILE = Path(__file__).resolve().parent.parent / "stations.yaml"
-
-
 def require_env() -> None:
     missing = [
         name
@@ -93,8 +89,3 @@ def require_env() -> None:
         )
 
 
-def load_stations() -> list[dict]:
-    """Returns [{ward: str, openaq_location_id: int | None}, ...]."""
-    with open(STATIONS_FILE) as f:
-        data = yaml.safe_load(f)
-    return data["stations"]
