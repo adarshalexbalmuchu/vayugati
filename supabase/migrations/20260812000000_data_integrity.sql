@@ -39,3 +39,4 @@ where external_ref is not null
 -- D-4
 alter table stations
   add column if not exists is_primary boolean not null default false;
+

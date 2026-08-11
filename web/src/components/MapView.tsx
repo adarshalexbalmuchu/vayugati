@@ -21,6 +21,14 @@ export interface WardBoundaryFeatureProps {
   name: string
   wardNumber: number | null
   jurisdictionType: 'mcd' | 'ndmc' | 'cantonment'
+  /** AQI for 3D extrusion height/colour — null when the ward has no reading. */
+  aqi: number | null
+}
+
+export interface WindArrowProps {
+  ward_id: number
+  wind_dir: number
+  wind_speed: number
 }
 
 // ── Incident GL layer constants ──────────────────────────────────────────────
@@ -49,6 +57,12 @@ function incidentCircleColor(orderProp: string): maplibregl.ExpressionSpecificat
 const BOUNDARY_SOURCE_ID = 'ward-boundaries'
 const BOUNDARY_FILL_LAYER_ID = 'ward-boundaries-fill'
 const BOUNDARY_LINE_LAYER_ID = 'ward-boundaries-line'
+const BOUNDARY_EXTRUSION_LAYER_ID = 'ward-boundaries-extrusion'
+
+// ── Wind arrow GL layer constants ─────────────────────────────────────────────
+const WIND_SOURCE_ID = 'wind-arrows'
+const WIND_LAYER_ID = 'wind-arrows-layer'
+const WIND_IMAGE_ID = 'wind-arrow-img'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
 const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
@@ -109,6 +123,58 @@ function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
   ]
 }
 
+// AQI → extrusion colour (CPCB category breakpoints).
+// coalesce converts null → -1 so no-data wards get the grey default colour.
+function aqiExtrusionColorExpr(): maplibregl.ExpressionSpecification {
+  return ['step',
+    ['coalesce', ['to-number', ['get', 'aqi']], -1],
+    '#94a3b8',   // < 0  (null / no data)
+    0, '#55a84f',
+    50, '#a3c853',
+    100, '#fff833',
+    200, '#f29c2b',
+    300, '#e93f33',
+    400, '#af2d24',
+  ]
+}
+
+// AQI * 8 m so AQI 500 → 4 000 m — dramatic but readable at pitch 45°
+// to-number of null → 0, so no-data wards have zero height (flat).
+function aqiExtrusionHeightExpr(): maplibregl.ExpressionSpecification {
+  return ['*', ['coalesce', ['to-number', ['get', 'aqi']], 0], 8]
+}
+
+/** Returns an ImageData of a filled arrowhead pointing north (rotated at render time). */
+function createWindArrowImage(): ImageData {
+  const size = 48
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return new ImageData(size, size)
+  const cx = size / 2
+  const tip = 6
+  const baseY = size - 8
+  const hw = 9
+  ctx.clearRect(0, 0, size, size)
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'
+  ctx.shadowBlur = 4
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = 'rgba(30, 100, 220, 0.92)'
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(cx, tip)
+  ctx.lineTo(cx + hw, baseY)
+  ctx.lineTo(cx, baseY - 7)
+  ctx.lineTo(cx - hw, baseY)
+  ctx.closePath()
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.stroke()
+  return ctx.getImageData(0, 0, size, size)
+}
+
 /** Properties stored on each incident GeoJSON feature (built in MapPage). */
 export interface IncidentFeatureProps {
   id: number
@@ -165,6 +231,12 @@ interface Props {
   /** When true, incident layers render at reduced opacity so station
    *  freshness markers remain the focal point (Data Quality mode). */
   dataQualityMode?: boolean
+  /** Extrude ward polygons by AQI — tilts map to pitch 45 while active. */
+  show3D?: boolean
+  /** Point GeoJSON with WindArrowProps to render directional wind arrows. */
+  windGeoJSON?: FeatureCollection<Point, WindArrowProps>
+  /** Toggle wind arrow layer visibility. */
+  showWind?: boolean
   /** Stable string key derived from the current selection in MapPage.  When
    *  it changes to a value that does not match the spiderfy stack's owner,
    *  the expansion is collapsed.  Defaults to 'none' (no selection). */
@@ -201,6 +273,9 @@ export default function MapView({
   onClusterSelect,
   selectedIncidentId = null,
   dataQualityMode = false,
+  show3D = false,
+  windGeoJSON,
+  showWind = false,
   selectionKey = 'none',
   selectedIncidentCoords = null,
 }: Props) {
@@ -236,6 +311,12 @@ export default function MapView({
   // apply its change immediately, with no event-based fallback needed.
   const mapReadyRef = useRef(false)
 
+  // ── 3D extrusion + wind refs ──────────────────────────────────────────────
+  const show3DRef = useRef(show3D)
+  const showWindRef = useRef(showWind)
+  const windGeoJSONRef = useRef(windGeoJSON)
+  const ensureWindLayerRef = useRef<(() => void) | null>(null)
+
   // ── Incident GL layer refs ────────────────────────────────────────────────
   const incidentGeoJSONRef = useRef(incidentGeoJSON)
   const onIncidentClickRef = useRef(onIncidentClick)
@@ -268,6 +349,16 @@ export default function MapView({
   useEffect(() => {
     dataQualityModeRef.current = dataQualityMode
   }, [dataQualityMode])
+
+  useEffect(() => {
+    show3DRef.current = show3D
+  }, [show3D])
+  useEffect(() => {
+    showWindRef.current = showWind
+  }, [showWind])
+  useEffect(() => {
+    windGeoJSONRef.current = windGeoJSON
+  }, [windGeoJSON])
 
   useEffect(() => {
     wardBoundariesRef.current = wardBoundaries
@@ -624,6 +715,21 @@ export default function MapView({
           ] as maplibregl.ExpressionSpecification,
         },
       })
+      // 3D extrusion layer — same source, hidden until show3D is toggled on.
+      // fill-extrusion-height reads AQI from GeoJSON properties (not feature-state),
+      // so MapPage must include aqi in wardBoundaryCollection feature properties.
+      map.addLayer({
+        id: BOUNDARY_EXTRUSION_LAYER_ID,
+        type: 'fill-extrusion',
+        source: BOUNDARY_SOURCE_ID,
+        layout: { visibility: show3DRef.current ? 'visible' : 'none' },
+        paint: {
+          'fill-extrusion-color': aqiExtrusionColorExpr(),
+          'fill-extrusion-height': aqiExtrusionHeightExpr(),
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.82,
+        },
+      })
       // Incident layers were registered before boundary layers so they
       // land below them in the render stack. Move them to the top so
       // clusters and individual incidents render above ward polygons.
@@ -645,6 +751,47 @@ export default function MapView({
     // Persistent (not once): keeps the boundary layer alive across every
     // later basemap switch too, not just this initial load.
     map.on('style.load', addBoundaryLayers)
+
+    // ── Wind arrow layer ─────────────────────────────────────────────────────
+    const addWindLayer = () => {
+      // Register the arrow image once per style load (stripped on setStyle)
+      if (!map.hasImage(WIND_IMAGE_ID)) {
+        map.addImage(WIND_IMAGE_ID, createWindArrowImage())
+      }
+      const data: FeatureCollection<Point, WindArrowProps> = windGeoJSONRef.current ?? { type: 'FeatureCollection', features: [] }
+      const existingWindSource = map.getSource(WIND_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (existingWindSource) {
+        existingWindSource.setData(data)
+        return
+      }
+      map.addSource(WIND_SOURCE_ID, { type: 'geojson', data })
+      map.addLayer({
+        id: WIND_LAYER_ID,
+        type: 'symbol',
+        source: WIND_SOURCE_ID,
+        layout: {
+          'icon-image': WIND_IMAGE_ID,
+          // wind_dir is the direction wind comes FROM; rotate 180° to point
+          // the arrow in the direction the air is actually moving.
+          'icon-rotate': ['%', ['+', ['to-number', ['get', 'wind_dir']], 180], 360] as maplibregl.ExpressionSpecification,
+          'icon-rotation-alignment': 'map',
+          'icon-size': ['interpolate', ['linear'], ['to-number', ['get', 'wind_speed']],
+            0, 0.45,
+            5, 0.6,
+            15, 0.9,
+            25, 1.15,
+          ] as maplibregl.ExpressionSpecification,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          visibility: showWindRef.current ? 'visible' : 'none',
+        },
+      })
+    }
+    ensureWindLayerRef.current = addWindLayer
+    if (map.isStyleLoaded()) addWindLayer()
+    else map.once('style.load', addWindLayer)
+    map.on('style.load', addWindLayer)
+
     map.once('load', () => {
       mapReadyRef.current = true
     })
@@ -905,6 +1052,48 @@ export default function MapView({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [dataQualityMode])
+
+  // Toggle 3D extrusion visibility and map pitch
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = show3D ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(BOUNDARY_EXTRUSION_LAYER_ID)) {
+        map.setLayoutProperty(BOUNDARY_EXTRUSION_LAYER_ID, 'visibility', vis)
+      }
+      map.easeTo({ pitch: show3D ? 45 : 0, bearing: show3D ? -12 : 0, duration: 800 })
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [show3D])
+
+  // Push updated wind GeoJSON into the GL source
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !windGeoJSON) return
+    const apply = () => {
+      const source = map.getSource(WIND_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (source) source.setData(windGeoJSON)
+      else ensureWindLayerRef.current?.()
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [windGeoJSON])
+
+  // Toggle wind arrow layer visibility
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = showWind ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(WIND_LAYER_ID)) {
+        map.setLayoutProperty(WIND_LAYER_ID, 'visibility', vis)
+      }
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [showWind])
 
   // Toggle the selected CSS class on the appropriate DOM marker element.
   // Uses a querySelectorAll on the map container rather than recreating all

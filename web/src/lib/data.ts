@@ -556,6 +556,31 @@ export async function fetchForecast(wardId: number): Promise<ForecastPoint[]> {
   return data ?? []
 }
 
+// ── wind data (Phase 1I: wind flow layer) ────────────────────────────────────
+
+export interface WindReading {
+  ward_id: number
+  wind_speed: number | null
+  wind_dir: number | null
+}
+
+/** Latest wind reading per ward (last 2h window). One query, deduped in JS. */
+export async function fetchAllWindByWard(): Promise<WindReading[]> {
+  const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+  const { data } = await supabase
+    .from('weather')
+    .select('ward_id, ts, wind_speed, wind_dir')
+    .gte('ts', since)
+    .order('ts', { ascending: false })
+  const latest = new Map<number, WindReading>()
+  for (const row of (data ?? [])) {
+    if (row.ward_id != null && !latest.has(row.ward_id)) {
+      latest.set(row.ward_id, { ward_id: row.ward_id, wind_speed: row.wind_speed, wind_dir: row.wind_dir })
+    }
+  }
+  return [...latest.values()]
+}
+
 export type ForecastPollutant = 'pm25' | 'pm10' | 'no2'
 
 export interface WardForecastSummary {

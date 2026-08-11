@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
-import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps } from '../components/MapView'
+import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps, type WindArrowProps } from '../components/MapView'
 import ChangeModeSummaryPanel, { type ChangeRow } from '../components/map/ChangeModeSummaryPanel'
 import IncidentClusterPanel from '../components/map/IncidentClusterPanel'
 import { ErrorState, Skeleton } from '../components/ui'
@@ -25,6 +25,7 @@ import {
   fetchAllStationsWithReadings,
   fetchAllWardBoundaries,
   fetchAllWardsAqi,
+  fetchAllWindByWard,
   fetchAttribution,
   fetchHistoricalStationReadings,
   fetchLatestReadingsPreferred,
@@ -355,6 +356,14 @@ export default function MapPage() {
   const latestReadingByStationId = useMemo(
     () => new Map((latestReadingsState.data ?? []).map((r) => [r.stationId, r])),
     [latestReadingsState.data],
+  )
+
+  // Wind data — Open-Meteo readings per ward, latest within 2h.
+  // Independent fetch so a slow/missing weather table never blocks the map.
+  const windState = useAsync(() => fetchAllWindByWard(), [])
+  const windByWardId = useMemo(
+    () => new Map((windState.data ?? []).map((w) => [w.ward_id, w])),
+    [windState.data],
   )
 
   const leadingSource = useAsync(() => listLeadingSourceCategories(incidents.map((i) => i.id)), [incidents])
@@ -770,22 +779,49 @@ export default function MapPage() {
     setSelection((prev) => (prev?.kind === 'incidentCluster' ? null : prev))
   }, [layers.incidents, severityFilter, sourceFilter])
 
+  // Lookup map for fast AQI join into ward boundary properties
+  const wardsById = useMemo(() => new Map(wards.map((w) => [w.id, w])), [wards])
+
   // Real Supabase boundary rows only (see lib/data.ts's fetchAllWardBoundaries)
   // - an empty array here means the layer control correctly shows the
   // toggle as unavailable (MapLayerControl's wardBoundariesAvailable prop),
   // never a placeholder/hardcoded shape.
+  // aqi is included in properties so the 3D extrusion layer can read it directly
+  // from feature properties (fill-extrusion-height cannot use feature-state).
   const wardBoundaryCollection = useMemo<GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon, WardBoundaryFeatureProps>>(
     () => ({
       type: 'FeatureCollection',
       features: wardBoundaries.map((w) => ({
         type: 'Feature',
-        properties: { id: w.id, name: w.name, wardNumber: w.wardNumber, jurisdictionType: w.jurisdictionType },
+        properties: {
+          id: w.id,
+          name: w.name,
+          wardNumber: w.wardNumber,
+          jurisdictionType: w.jurisdictionType,
+          aqi: wardsById.get(w.id)?.aqi ?? null,
+        },
         geometry: w.geometry,
       })),
     }),
-    [wardBoundaries],
+    [wardBoundaries, wardsById],
   )
   const wardBoundariesAvailable = wardBoundaries.length > 0
+
+  // Wind arrow GeoJSON — point features at ward centroids from WardSummary lat/lng
+  const windGeoJSON = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point, WindArrowProps>>(() => ({
+    type: 'FeatureCollection',
+    features: wards
+      .filter((w) => w.lat != null && w.lng != null)
+      .flatMap((w) => {
+        const wind = windByWardId.get(w.id)
+        if (!wind || wind.wind_dir == null || wind.wind_speed == null) return []
+        return [{
+          type: 'Feature' as const,
+          properties: { ward_id: w.id, wind_dir: wind.wind_dir, wind_speed: wind.wind_speed },
+          geometry: { type: 'Point' as const, coordinates: [w.lng as number, w.lat as number] },
+        }]
+      }),
+  }), [wards, windByWardId])
   const handleBoundaryClick = useCallback((ward: WardBoundaryFeatureProps) => {
     setSelection({ kind: 'wardBoundary', id: ward.id })
   }, [])
@@ -1028,6 +1064,9 @@ export default function MapPage() {
                   onClusterSelect={handleClusterSelect}
                   selectedIncidentId={selection?.kind === 'incident' ? selection.id : null}
                   dataQualityMode={viewMode === 'data_quality'}
+                  show3D={layers.aqiExtrusion && wardBoundariesAvailable}
+                  windGeoJSON={windGeoJSON}
+                  showWind={layers.windFlow && windGeoJSON.features.length > 0}
                   selectionKey={selectionKey}
                   selectedIncidentCoords={selectedIncidentCoords}
                 />
@@ -1040,6 +1079,8 @@ export default function MapPage() {
                     dispatchZonesAvailable={dispatchIncidentIds.size > 0}
                     citizenReportsAvailable={reports.length > 0}
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
+                    aqiExtrusionAvailable={wardBoundariesAvailable}
+                    windFlowAvailable={windGeoJSON.features.length > 0}
                     forecastSuppressed={forecastSuppressed}
                   />
                   <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />

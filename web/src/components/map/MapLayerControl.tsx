@@ -11,9 +11,13 @@ export type MapLayerKey =
   | 'citizenReports'
   | 'sensorFreshness'
   | 'transitActivity'
+  | 'aqiExtrusion'
+  | 'windFlow'
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
+  'aqiExtrusion',
+  'windFlow',
   'wardMarkers',
   'stations',
   'sensorFreshness',
@@ -29,7 +33,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
 const LAYER_GROUPS: { label: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
-    keys: ['wardBoundaries', 'wardMarkers', 'stations', 'sensorFreshness'],
+    keys: ['wardBoundaries', 'aqiExtrusion', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
   },
   {
     label: 'Operations',
@@ -92,6 +96,16 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Delhi Open Transit Data is unavailable right now.',
   },
+  aqiExtrusion: {
+    label: '3D Pollution mountains',
+    available: false,
+    note: 'Ward polygons extruded by AQI — height shows pollution level. Requires ward boundaries.',
+  },
+  windFlow: {
+    label: 'Wind flow arrows',
+    available: false,
+    note: 'Live wind direction and speed at each ward centroid from Open-Meteo.',
+  },
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -109,6 +123,8 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   citizenReports: false,
   sensorFreshness: false,
   transitActivity: false,
+  aqiExtrusion: false,
+  windFlow: false,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -141,29 +157,21 @@ export default function MapLayerControl({
   dispatchZonesAvailable = false,
   citizenReportsAvailable = false,
   transitActivityAvailable = false,
+  aqiExtrusionAvailable = false,
+  windFlowAvailable = false,
   forecastSuppressed = false,
 }: {
   layers: Record<MapLayerKey, boolean>
   onToggle: (key: MapLayerKey) => void
-  /** True once Supabase has returned at least one real `wards.boundary`
-   *  row (see lib/data.ts's fetchAllWardBoundaries) - flips the otherwise
-   *  permanently-disabled "Ward boundaries" toggle on. */
   wardBoundariesAvailable?: boolean
-  /** True while that same fetch is still in flight - distinguishes "loading"
-   *  from "backend genuinely returned zero rows" so the toggle never shows
-   *  a false "no boundary geometry" note during the few seconds it takes to
-   *  load the ~8MB payload. */
   wardBoundariesLoading?: boolean
-  /** True once at least one currently-loaded incident has an active
-   *  dispatch (a real, live fact, not a static default). */
   dispatchZonesAvailable?: boolean
-  /** True once at least one currently-loaded citizen report has a location. */
   citizenReportsAvailable?: boolean
-  /** True once the ingest service has returned a real (non-unavailable)
-   *  Delhi OTD transit-activity summary this session. */
   transitActivityAvailable?: boolean
-  /** When true, the forecast-alerts layer is shown as disabled with an
-   *  explanation note. */
+  /** True once ward boundaries are loaded — same requirement as the boundary layer. */
+  aqiExtrusionAvailable?: boolean
+  /** True once wind readings are present for at least one ward. */
+  windFlowAvailable?: boolean
   forecastSuppressed?: boolean
 }) {
   // Compute effective meta for each key (same logic as before, now used in
@@ -186,6 +194,10 @@ export default function MapLayerControl({
         available: true,
         note: 'Public transport activity via Delhi Open Transit Data. Context layer only — not proof of emissions or congestion.',
       }
+    } else if (key === 'aqiExtrusion' && aqiExtrusionAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key === 'windFlow' && windFlowAvailable) {
+      meta = { ...meta, available: true }
     } else if (key === 'predictedHotspots' && forecastSuppressed) {
       meta = { ...meta, available: false, note: 'Unavailable — latest forecast run failed.' }
     }
