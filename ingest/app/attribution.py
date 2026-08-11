@@ -63,37 +63,41 @@ def run() -> dict:
     ts_now = datetime.now(timezone.utc).isoformat()
 
     for ward_id in sorted(merged["ward_id"].unique()):
-        sub = merged[merged["ward_id"] == ward_id]
-        if len(sub) < MIN_SAMPLES:
+        try:
+            sub = merged[merged["ward_id"] == ward_id]
+            if len(sub) < MIN_SAMPLES:
+                summary["skipped"].append(int(ward_id))
+                continue
+
+            # mean pm2.5 load per wind sector
+            load = sub.groupby("sector")["pm25"].mean()
+            breakdown = {s: round(float(load.get(s, 0.0)), 1) for s in SECTORS}
+            total = sum(breakdown.values()) or 1.0
+            normalized = {s: round(v / total, 3) for s, v in breakdown.items()}
+
+            direction = max(breakdown, key=breakdown.get)
+
+            # confidence: how much the top sector stands out, scaled by sample size
+            vals = np.array(list(breakdown.values()))
+            contrast = (vals.max() - vals.mean()) / (vals.mean() + 1e-6)
+            vol = min(len(sub) / (24 * 7), 1.0)  # a week of data → full volume weight
+            confidence = float(np.clip(contrast * vol, 0.0, 0.95))
+
+            db.replace_attribution(
+                int(ward_id),
+                {
+                    "ward_id": int(ward_id),
+                    "ts": ts_now,
+                    "breakdown": normalized,
+                    "direction": direction,
+                    "confidence": round(confidence, 2),
+                    "method": METHOD,
+                },
+            )
+            summary["wards_attributed"] += 1
+        except Exception:
+            log.exception("attribution failed for ward_id=%s", ward_id)
             summary["skipped"].append(int(ward_id))
-            continue
-
-        # mean pm2.5 load per wind sector
-        load = sub.groupby("sector")["pm25"].mean()
-        breakdown = {s: round(float(load.get(s, 0.0)), 1) for s in SECTORS}
-        total = sum(breakdown.values()) or 1.0
-        normalized = {s: round(v / total, 3) for s, v in breakdown.items()}
-
-        direction = max(breakdown, key=breakdown.get)
-
-        # confidence: how much the top sector stands out, scaled by sample size
-        vals = np.array(list(breakdown.values()))
-        contrast = (vals.max() - vals.mean()) / (vals.mean() + 1e-6)
-        vol = min(len(sub) / (24 * 7), 1.0)  # a week of data → full volume weight
-        confidence = float(np.clip(contrast * vol, 0.0, 0.95))
-
-        db.replace_attribution(
-            int(ward_id),
-            {
-                "ward_id": int(ward_id),
-                "ts": ts_now,
-                "breakdown": normalized,
-                "direction": direction,
-                "confidence": round(confidence, 2),
-                "method": METHOD,
-            },
-        )
-        summary["wards_attributed"] += 1
 
     summary["finished_at"] = datetime.now(timezone.utc).isoformat()
     log.info("attribution done: %s", summary)

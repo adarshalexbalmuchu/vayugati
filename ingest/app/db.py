@@ -170,7 +170,7 @@ def _with_retry(fn, max_attempts: int = 3):
             raise
 
 
-def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
+def _fetch_all(query_factory, page_size: int = 1000) -> list[dict]:
     """Fetch every row of a PostgREST query, page by page. PostgREST caps a
     single response at its server-configured max (1000 rows on Supabase by
     default), silently, regardless of any larger `.limit()` — so a plain
@@ -179,6 +179,13 @@ def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
     thousands of hourly readings in the forecast window (historical backfill);
     with only a few dozen readings it never surfaced.
 
+    Accepts a zero-argument factory that returns a FRESH query builder each
+    call. The factory pattern avoids accumulated offset/limit params: postgrest-
+    py's `.range()` uses QueryParams.add() which appends rather than replaces,
+    so calling it twice on the same builder produces `?offset=0&offset=1000`
+    instead of the intended `?offset=1000`. A fresh builder per page is the
+    simplest fix.
+
     Retries each page up to 3 times with exponential backoff on transient
     Render→Supabase TCP resets ("Server disconnected", ECONNRESET)."""
     out: list[dict] = []
@@ -186,7 +193,7 @@ def _fetch_all(query_builder, page_size: int = 1000) -> list[dict]:
     while True:
         for attempt in range(3):
             try:
-                page = query_builder.range(start, start + page_size - 1).execute().data
+                page = query_factory().range(start, start + page_size - 1).execute().data
                 break
             except Exception as exc:
                 if attempt < 2 and _is_transient_network_error(exc):
@@ -221,7 +228,7 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     rows = _fetch_all(
-        client()
+        lambda: client()
         .table("readings")
         .select("ts, station_id, pm25, pm10, no2, aqi")
         .gte("ts", cutoff)
@@ -249,7 +256,7 @@ def get_weather_history(hours: int = 24 * 30) -> list[dict]:
     """[{ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation}]."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     return _fetch_all(
-        client()
+        lambda: client()
         .table("weather")
         .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation")
         .gte("ts", cutoff)

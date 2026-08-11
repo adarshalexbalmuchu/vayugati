@@ -1039,7 +1039,7 @@ export default function MapPage() {
                     wardBoundariesLoading={wardBoundariesState.loading}
                     dispatchZonesAvailable={dispatchIncidentIds.size > 0}
                     citizenReportsAvailable={reports.length > 0}
-                    transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard.length ?? 0) > 0}
+                    transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
                     forecastSuppressed={forecastSuppressed}
                   />
                   <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
