@@ -17,7 +17,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY stations.yaml .
 
 # host platforms inject $PORT; default to 8000 for local `docker run`
 ENV PORT=8000
