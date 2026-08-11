@@ -22,7 +22,7 @@ export interface IngestHealthResponse {
   last_run: {
     cpcb_rows_written: number
     openaq_rows_written: number
-    stations_skipped_no_id: string[]
+    stations_skipped_no_id?: string[]
     readings_upserted: number
     finished_at: string | null
   } | null

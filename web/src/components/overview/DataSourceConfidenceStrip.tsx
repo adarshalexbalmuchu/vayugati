@@ -15,8 +15,8 @@ export default function DataSourceConfidenceStrip() {
   if (run) {
     if (run.cpcb_rows_written > 0) parts.push(`${run.cpcb_rows_written} readings via CPCB`)
     if (run.openaq_rows_written > 0) parts.push(`${run.openaq_rows_written} readings via OpenAQ fallback`)
-    if (run.stations_skipped_no_id.length > 0)
-      parts.push(`${run.stations_skipped_no_id.join(', ')} unmatched`)
+    if ((run.stations_skipped_no_id?.length ?? 0) > 0)
+      parts.push(`${run.stations_skipped_no_id!.join(', ')} unmatched`)
   }
 
   return (
