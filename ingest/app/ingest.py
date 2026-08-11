@@ -196,10 +196,11 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
 
 # ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
 
-def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> int:
-    """Pull latest readings for one station via OpenAQ. Returns rows upserted.
-    The station row must already exist in the DB (openaq_location_id populated
-    by migration 20260812 from external_ref — stations.yaml is retired)."""
+def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[int, dict[int, str]]:
+    """Pull latest readings for one station via OpenAQ.
+    Returns (rows_upserted, {station_id: latest_ts}) so the caller can pass
+    the ts map to _recompute_24h_aqi — same 24h rolling-average AQI correction
+    that the CPCB path applies, for consistency across sources."""
     sensors = openaq.get_location(openaq_location_id)["sensors"]
     latest = openaq.get_latest(openaq_location_id)
 
@@ -212,6 +213,7 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> int:
         ts = _hour_floor_utc(m["ts_utc"])
         by_hour.setdefault(ts, {})[col] = m["value"]
 
+    latest_ts: str | None = None
     for ts, values in by_hour.items():
         row = {"station_id": station_id, "ts": ts, "ingest_source": "openaq", **values}
         # OpenAQ delivers CO in µg/m³; convert before passing to compute_aqi
@@ -228,7 +230,10 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> int:
         if computed_aqi is not None:
             row["aqi"] = computed_aqi
         db.upsert_reading(row)
-    return len(by_hour)
+        if latest_ts is None or ts > latest_ts:
+            latest_ts = ts
+    station_ts = {station_id: latest_ts} if latest_ts else {}
+    return len(by_hour), station_ts
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -272,6 +277,7 @@ def run() -> dict:
     # openaq_location_id (populated from stations.yaml via migration 20260812 —
     # the YAML is now retired; DB is the single source of truth). Skips any
     # station already covered by CPCB this cycle to avoid burning OpenAQ quota.
+    openaq_station_ts: dict[int, str] = {}
     if config.OPENAQ_API_KEY:
         for station in all_stations:
             oa_id = station.get("openaq_location_id")
@@ -281,14 +287,17 @@ def run() -> dict:
                 continue
             summary["openaq_stations_tried"] += 1
             try:
-                n = _ingest_station_openaq(station["id"], oa_id)
+                n, oa_ts = _ingest_station_openaq(station["id"], oa_id)
                 summary["openaq_rows_written"] += n
+                openaq_station_ts.update(oa_ts)
             except Exception as e:
                 log.exception(
                     "OpenAQ fallback failed for station_id=%s openaq_id=%s",
                     station["id"], oa_id,
                 )
                 summary["errors"].append(f"openaq station_id={station['id']}: {e}")
+        if openaq_station_ts:
+            summary["aqi_patched"] += _recompute_24h_aqi(openaq_station_ts)
     else:
         log.info("OPENAQ_API_KEY not set — OpenAQ fallback skipped")
 

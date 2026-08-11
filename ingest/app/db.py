@@ -121,7 +121,7 @@ def set_station_agency(station_id: int, agency: str) -> None:
     Called from the CPCB ingest path which extracts it from the station-name
     suffix ("Anand Vihar, Delhi - DPCC" -> "DPCC"). Idempotent: safe to call
     every ingest cycle; the value rarely if ever changes in practice."""
-    client().table("stations").update({"agency": agency}).eq("id", station_id).execute()
+    _with_retry(lambda: client().table("stations").update({"agency": agency}).eq("id", station_id).execute())
 
 
 def upsert_reading(row: dict) -> None:
@@ -141,13 +141,13 @@ def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
     written = 0
     for i in range(0, len(rows), chunk):
         batch = rows[i : i + chunk]
-        client().table("readings").upsert(batch, on_conflict="station_id,ts").execute()
+        _with_retry(lambda: client().table("readings").upsert(batch, on_conflict="station_id,ts").execute())
         written += len(batch)
     return written
 
 
 def upsert_weather(row: dict) -> None:
-    client().table("weather").upsert(row, on_conflict="ward_id,ts").execute()
+    _with_retry(lambda: client().table("weather").upsert(row, on_conflict="ward_id,ts").execute())
 
 
 # ── history reads (for forecast + attribution) ───────────────────────────────
@@ -349,20 +349,20 @@ def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:
     insert new). Scoped to `pollutant` since Phase 8: `forecasts` now holds
     pm25/pm10/no2 rows for the same ward side by side — an unscoped delete
     would wipe out every OTHER pollutant's current forecast for this ward."""
-    client().table("forecasts").delete().eq("ward_id", ward_id).eq("pollutant", pollutant).execute()
+    _with_retry(lambda: client().table("forecasts").delete().eq("ward_id", ward_id).eq("pollutant", pollutant).execute())
     if rows:
-        client().table("forecasts").insert(rows).execute()
+        _with_retry(lambda: client().table("forecasts").insert(rows).execute())
 
 
 def insert_forecast_run(row: dict) -> int:
     """Insert one forecast_runs row (the validation record for a generation). Returns its id."""
-    return client().table("forecast_runs").insert(row).execute().data[0]["id"]
+    return _with_retry(lambda: client().table("forecast_runs").insert(row).execute().data[0]["id"])
 
 
 def replace_attribution(ward_id: int, row: dict) -> None:
     """Keep one current attribution per ward."""
-    client().table("attributions").delete().eq("ward_id", ward_id).execute()
-    client().table("attributions").insert(row).execute()
+    _with_retry(lambda: client().table("attributions").delete().eq("ward_id", ward_id).execute())
+    _with_retry(lambda: client().table("attributions").insert(row).execute())
 
 
 # ── notifications (Phase 9) ──────────────────────────────────────────────────
@@ -382,18 +382,18 @@ def get_pending_notifications(max_retries: int) -> list[dict]:
 
 
 def mark_notification_sent(notification_id: int, sent_at_iso: str) -> None:
-    client().table("notifications").update(
+    _with_retry(lambda: client().table("notifications").update(
         {"status": "sent", "sent_at": sent_at_iso}
-    ).eq("id", notification_id).execute()
+    ).eq("id", notification_id).execute())
 
 
 def mark_notification_retry_or_failed(
     notification_id: int, failure_reason: str, retry_count: int, terminal: bool
 ) -> None:
-    client().table("notifications").update(
+    _with_retry(lambda: client().table("notifications").update(
         {
             "status": "failed" if terminal else "pending",
             "failure_reason": failure_reason,
             "retry_count": retry_count,
         }
-    ).eq("id", notification_id).execute()
+    ).eq("id", notification_id).execute())
