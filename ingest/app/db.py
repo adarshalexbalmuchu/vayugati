@@ -266,6 +266,59 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
+def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
+    """Per-station 24h average concentrations for AQI recomputation.
+
+    CPCB's AQI breakpoints are calibrated for 24h averages; using hourly
+    snapshots inflates AQI by 1.5–3×. This query averages all readings in the
+    last 24h and returns one dict per station with pollutant averages.
+
+    CO is normalised to mg/m³ here (CPCB stores mg/m³, OpenAQ stores µg/m³
+    tagged by ingest_source) so the caller can pass `co` directly as `co_mg`
+    to aqi.compute_aqi() without further conversion."""
+    if not station_ids:
+        return {}
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    rows = (
+        client()
+        .table("readings")
+        .select("station_id, pm25, pm10, no2, so2, co, o3, nh3, ingest_source")
+        .in_("station_id", station_ids)
+        .gte("ts", cutoff)
+        .execute()
+        .data
+    )
+    sums: dict[int, dict[str, float]] = {}
+    counts: dict[int, dict[str, int]] = {}
+    for row in rows:
+        sid = row["station_id"]
+        source = row.get("ingest_source") or "cpcb"  # pre-Phase2 rows treated as cpcb
+        sums.setdefault(sid, {})
+        counts.setdefault(sid, {})
+        for col in ("pm25", "pm10", "no2", "so2", "o3", "nh3"):
+            val = row.get(col)
+            if val is not None:
+                sums[sid][col] = sums[sid].get(col, 0.0) + val
+                counts[sid][col] = counts[sid].get(col, 0) + 1
+        # CO: normalise to mg/m³ before averaging
+        co = row.get("co")
+        if co is not None:
+            co_mg = co if source == "cpcb" else co / 1000.0
+            sums[sid]["co"] = sums[sid].get("co", 0.0) + co_mg
+            counts[sid]["co"] = counts[sid].get("co", 0) + 1
+    return {
+        sid: {col: sums[sid][col] / counts[sid][col] for col in sums[sid]}
+        for sid in sums
+    }
+
+
+def set_reading_aqi(station_id: int, ts: str, aqi_value: int) -> None:
+    """Patch the AQI on an already-written reading. Used by the 24h-average AQI
+    recomputation step in ingest.py to replace the per-hour snapshot AQI with
+    the rolling 24h average that CPCB's breakpoints are calibrated for."""
+    client().table("readings").update({"aqi": aqi_value}).eq("station_id", station_id).eq("ts", ts).execute()
+
+
 def delete_old_readings(days: int = 90) -> int:
     """Delete readings older than `days` days. Returns the number deleted.
     Called by the daily retention job in main.py to keep the readings table

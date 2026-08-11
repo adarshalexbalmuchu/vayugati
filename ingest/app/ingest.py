@@ -45,24 +45,27 @@ def _parse_cpcb_ts(ts_str: str) -> str | None:
         return None
 
 
-def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[int], list[dict]]:
+def _ingest_from_cpcb(
+    match_index: dict[str, int],
+) -> tuple[int, list[str], set[int], list[dict], dict[int, str]]:
     """Fetch CPCB/data.gov.in latest readings and write matched ones to Supabase.
 
     One API call per cycle returns all Delhi stations — no per-station loop,
     no per-month quota. Returns (rows_written, errors, station_ids_covered,
-    unmatched_stations) so the caller can surface unmatched names in the
-    health check and the OpenAQ fallback knows which stations to skip."""
+    unmatched_stations, station_ts) where station_ts maps station_id -> ts of
+    the row just written (used by the 24h-average AQI recomputation step)."""
     records = data_gov_cpcb.fetch_delhi_records()
     if records is None:
         msg = "CPCB fetch returned None — DATA_GOV_API_KEY unset or API unavailable"
         log.warning(msg)
-        return 0, [msg], set(), []
+        return 0, [msg], set(), [], {}
 
     cpcb_by_station = data_gov_cpcb.group_by_station(records)
     rows_written = 0
     errors: list[str] = []
     covered: set[int] = set()
     unmatched: list[dict] = []
+    station_ts: dict[int, str] = {}
     # Collision guard: tracks station_id -> first CPCB name that matched it
     # this cycle. If a second CPCB record normalizes to the same station_id,
     # the second write is skipped and a warning is logged — turns a silent
@@ -115,12 +118,17 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
 
         # CO from CPCB data.gov.in is in mg/m³ (pollutant_unit = "MG/M3");
         # convert to mg/m³ defensively in case a rare record comes through as µg/m³.
+        # NOTE: We intentionally write raw CO (mg/m³) into readings.co — NOT µg/m³.
+        # get_24h_avg_concentrations() knows this and passes co directly as co_mg.
         co_raw = pollutants.get("co") or {}
         co_val = row.get("co")
         co_mg: float | None = None
         if co_val is not None:
             co_mg = co_val if co_raw.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
+            row["co"] = co_mg  # always store as mg/m³ so 24h-avg recompute is unit-consistent
 
+        # Snapshot AQI (current hour only) — stored initially, overwritten below
+        # by the 24h-average AQI which matches CPCB's official methodology.
         computed_aqi = aqi.compute_aqi(
             row.get("pm25"), row.get("pm10"),
             no2=row.get("no2"), so2=row.get("so2"),
@@ -133,6 +141,7 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
         try:
             db.upsert_reading(row)
             covered.add(sid)
+            station_ts[sid] = ts_hour
             rows_written += 1
             agency = _parse_cpcb_agency(cpcb_name)
             if agency:
@@ -146,7 +155,43 @@ def _ingest_from_cpcb(match_index: dict[str, int]) -> tuple[int, list[str], set[
         "%d unmatched, %d errors",
         rows_written, len(covered), len(cpcb_by_station), len(unmatched), len(errors),
     )
-    return rows_written, errors, covered, unmatched
+    return rows_written, errors, covered, unmatched, station_ts
+
+
+def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
+    """Recompute AQI for just-written rows using the 24h rolling average of
+    concentrations, then patch the reading with the corrected value.
+
+    CPCB's AQI breakpoints (PM2.5: 0–30 Good, 30–60 Satisfactory, etc.) are
+    calibrated for 24h averages, not the hourly snapshot the data.gov.in API
+    delivers as avg_value. Using hourly values produces AQI 1.5–3× higher than
+    CPCB's website for the same station on the same day. This step brings our
+    displayed AQI in line with the official figure."""
+    if not station_ts:
+        return 0
+    avgs = db.get_24h_avg_concentrations(list(station_ts.keys()))
+    patched = 0
+    for sid, avg in avgs.items():
+        ts = station_ts.get(sid)
+        if ts is None:
+            continue
+        # readings.co is stored in mg/m³ for CPCB rows (see NOTE above);
+        # get_24h_avg_concentrations() normalises OpenAQ µg/m³ rows to mg/m³,
+        # so avg["co"] is always mg/m³ and goes straight to co_mg.
+        corrected = aqi.compute_aqi(
+            avg.get("pm25"), avg.get("pm10"),
+            no2=avg.get("no2"), so2=avg.get("so2"),
+            o3=avg.get("o3"), co_mg=avg.get("co"),
+            nh3=avg.get("nh3"),
+        )
+        if corrected is not None:
+            try:
+                db.set_reading_aqi(sid, ts, corrected)
+                patched += 1
+            except Exception:
+                log.exception("24h AQI patch failed for station_id=%s ts=%s", sid, ts)
+    log.info("24h AQI recompute: patched %d/%d stations", patched, len(station_ts))
+    return patched
 
 
 # ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
@@ -213,10 +258,14 @@ def run() -> dict:
     }
     match_index = station_matching.build_match_index(all_stations)
 
-    cpcb_rows, cpcb_errors, cpcb_covered, cpcb_unmatched = _ingest_from_cpcb(match_index)
+    cpcb_rows, cpcb_errors, cpcb_covered, cpcb_unmatched, cpcb_station_ts = _ingest_from_cpcb(match_index)
     summary["cpcb_rows_written"] = cpcb_rows
     summary["cpcb_unmatched_stations"] = cpcb_unmatched
     summary["errors"].extend(cpcb_errors)
+
+    # Recompute AQI from 24h rolling averages to match CPCB's official methodology.
+    # Must run after all CPCB rows are written so the 24h window has the new reading.
+    summary["aqi_patched"] = _recompute_24h_aqi(cpcb_station_ts)
 
     # ── OpenAQ fallback ───────────────────────────────────────────────────────
     # Only runs when OPENAQ_API_KEY is set. Iterates over stations that have an
