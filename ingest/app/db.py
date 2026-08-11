@@ -74,7 +74,7 @@ def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     rows = (
         client()
         .table("readings")
-        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, aqi")
+        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, aqi, ingest_source")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
         .order("ts", desc=True)

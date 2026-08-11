@@ -26,8 +26,11 @@ def cpcb_grouped(name="Narela, Delhi - DPCC", last_update=FRESH, pollutants=_UNS
     return {name: {"station": name, "last_update": last_update, "lat": 28.85, "lng": 77.09, "pollutants": pollutants}}
 
 
-def openaq_latest(ts=FRESH, aqi=180, pm25=90.0):
-    return {1: {"ts": ts, "pm25": pm25, "pm10": 150.0, "no2": 40.0, "so2": None, "co": None, "o3": None, "aqi": aqi}}
+def openaq_latest(ts=FRESH, aqi=180, pm25=90.0, ingest_source=None):
+    row = {"ts": ts, "pm25": pm25, "pm10": 150.0, "no2": 40.0, "so2": None, "co": None, "o3": None, "aqi": aqi}
+    if ingest_source is not None:
+        row["ingest_source"] = ingest_source
+    return {1: row}
 
 
 class TestSourceSelection:
@@ -71,10 +74,19 @@ class TestSourceSelection:
 
 
 class TestAqiAndMismatch:
-    def test_computes_cpcb_aqi_from_pm25_pm10_via_shared_breakpoint_logic(self):
-        rows = reconcile_latest([STATION], cpcb_grouped(), build_match_index([STATION]), openaq_latest(), now=NOW)
-        # Same aqi.compute_aqi(pm25=90, pm10=150) the app uses everywhere else:
+    def test_uses_24h_corrected_db_aqi_when_reading_is_cpcb_sourced(self):
+        # Primary path: readings table has ingest_source="cpcb" with a 24h-corrected
+        # aqi=145. The raw avg_value (pm25=90, pm10=150) would compute to 200 via
+        # compute_aqi, but we must use the stored 145 to match CPCB's methodology.
+        rows = reconcile_latest([STATION], cpcb_grouped(), build_match_index([STATION]),
+                                openaq_latest(aqi=145, ingest_source="cpcb"), now=NOW)
+        assert rows[0]["cpcb_aqi"] == 145
+
+    def test_falls_back_to_raw_computation_when_no_ingest_source(self):
+        # Fallback: no ingest_source in the DB row (pre-migration or first run).
+        # Falls back to computing AQI from avg_value directly.
         # pm25 sub-index 200, pm10 sub-index 134, max wins.
+        rows = reconcile_latest([STATION], cpcb_grouped(), build_match_index([STATION]), openaq_latest(), now=NOW)
         assert rows[0]["cpcb_aqi"] == 200
 
     def test_no_cpcb_aqi_when_falling_back(self):

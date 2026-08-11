@@ -113,21 +113,32 @@ def reconcile_latest(
 
         cpcb_aqi = None
         if cpcb_usable:
-            pollutants = cpcb_entry["pollutants"]
-            co_data = pollutants.get("co") or {}
-            co_val = co_data.get("avg")
-            co_mg: float | None = None
-            if co_val is not None:
-                co_mg = co_val if co_data.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
-            cpcb_aqi = aqi.compute_aqi(
-                pollutants.get("pm25", {}).get("avg"),
-                pollutants.get("pm10", {}).get("avg"),
-                no2=pollutants.get("no2", {}).get("avg"),
-                so2=pollutants.get("so2", {}).get("avg"),
-                o3=pollutants.get("o3", {}).get("avg"),
-                co_mg=co_mg,
-                nh3=pollutants.get("nh3", {}).get("avg"),
-            )
+            # Prefer the 24h-corrected AQI already stored in our readings table
+            # (_recompute_24h_aqi patches it after every ingest). The data.gov.in
+            # API's avg_value is a short-window average (not 24h), so computing
+            # AQI from it directly inflates the result by 1.5–3x vs CPCB website.
+            if (openaq_entry
+                    and openaq_entry.get("ingest_source") == "cpcb"
+                    and openaq_entry.get("aqi") is not None):
+                cpcb_aqi = openaq_entry["aqi"]
+            else:
+                # Fallback: compute from raw avg_value (first run, migration not
+                # yet applied, or no recent CPCB reading in the 2h window).
+                pollutants = cpcb_entry["pollutants"]
+                co_data = pollutants.get("co") or {}
+                co_val = co_data.get("avg")
+                co_mg: float | None = None
+                if co_val is not None:
+                    co_mg = co_val if co_data.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
+                cpcb_aqi = aqi.compute_aqi(
+                    pollutants.get("pm25", {}).get("avg"),
+                    pollutants.get("pm10", {}).get("avg"),
+                    no2=pollutants.get("no2", {}).get("avg"),
+                    so2=pollutants.get("so2", {}).get("avg"),
+                    o3=pollutants.get("o3", {}).get("avg"),
+                    co_mg=co_mg,
+                    nh3=pollutants.get("nh3", {}).get("avg"),
+                )
 
         openaq_aqi = openaq_entry.get("aqi") if openaq_entry else None
 
