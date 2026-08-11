@@ -46,7 +46,7 @@ export default function CityKpiRow({
    *  concrete timestamp alongside the pipeline freshness status. */
   latestReadingAgeMinutes?: number | null
 }) {
-  const { readingConfirmedFresh, forecastConfirmedFresh, healthLoaded } = useIngestHealth()
+  const { readingConfirmedFresh, forecastConfirmedFresh, healthLoaded, health } = useIngestHealth()
 
   // When the forecast pipeline is down, forecast-derived metrics cannot be
   // trusted: wardsNeedingReview() returns 0 because the forecast map is empty,
@@ -56,7 +56,11 @@ export default function CityKpiRow({
   // Data freshness: differentiate pipeline status (readingConfirmedFresh) from
   // actual reading age — "Live" implied continuously current data; the pipeline
   // running doesn't mean stations reported in the last minute.
-  const age = latestReadingAgeMinutes ?? null
+  // Prefer the health endpoint's age (reads from the readings table directly) over
+  // the wards.ts-based age, which only updates when compute_ward_aqi() runs and
+  // can show "Delayed" even when fresh CPCB readings are flowing.
+  const healthAge = health?.checks.reading_freshness.latest_reading_age_minutes ?? null
+  const age = healthAge ?? latestReadingAgeMinutes ?? null
   const freshnessStatus = !healthLoaded
     ? '—'
     : !readingConfirmedFresh

@@ -130,11 +130,25 @@ export default function CommandView() {
           (() => {
             const [wards, metrics, dispatchPage, stationHealth, accuracy] = state.data
             const rawForecasts = forecastsState.data ?? new Map()
+            const latestReadingsByWard = new Map(
+              (latestReadingsState.data ?? [])
+                .filter((r) => r.wardId != null)
+                .map((r) => [r.wardId as number, r]),
+            )
+            // When CPCB data is available for a ward, sort by CPCB AQI so the
+            // hero's "worst ward" matches what the table shows, not the OpenAQ
+            // 24h-average stored in wards.aqi.
+            const getEffectiveAqi = (ward: (typeof wards)[0]) => {
+              const p = latestReadingsByWard.get(ward.id)
+              return p?.sourceUsed === 'cpcb' && p.cpcbAqi != null ? p.cpcbAqi : ward.aqi
+            }
             const sortedWards = [...wards].sort((a, b) => {
-              if (a.aqi === null && b.aqi === null) return 0
-              if (a.aqi === null) return 1
-              if (b.aqi === null) return -1
-              return b.aqi - a.aqi
+              const aqiA = getEffectiveAqi(a)
+              const aqiB = getEffectiveAqi(b)
+              if (aqiA === null && aqiB === null) return 0
+              if (aqiA === null) return 1
+              if (aqiB === null) return -1
+              return aqiB - aqiA
             })
             // Suppress derived outputs unless health has loaded AND confirmed fresh.
             // healthLoaded gates the initial-load window (avoids a flash where
@@ -156,11 +170,6 @@ export default function CommandView() {
             const stationRollup = rollupStationHealth(stationHealth)
             const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
             const transitByWard = new Map((transitState.data?.perWard ?? []).map((w) => [w.wardId, w]))
-            const latestReadingsByWard = new Map(
-              (latestReadingsState.data ?? [])
-                .filter((r) => r.wardId != null)
-                .map((r) => [r.wardId as number, r]),
-            )
             const dataSourceTally = latestReadingsState.data?.length ? tallyDataSourceConfidence(latestReadingsState.data) : null
             // Cross-reference two already-fetched summaries (severe/watch
             // wards x real nearby transit activity) - no new fetch, nothing
@@ -178,9 +187,15 @@ export default function CommandView() {
             const worstReadingAge = worstWard?.ts
               ? (Date.now() - new Date(worstWard.ts).getTime()) / 60_000
               : null
+            // Hero shows CPCB-preferred AQI when available, matching the table — prevents
+            // the gauge showing 500 (OpenAQ 24h average) while the table shows 277 (CPCB live).
+            const worstPreferred = worstWard ? latestReadingsByWard.get(worstWard.id) : undefined
+            const worstDisplayAqi = (worstPreferred?.sourceUsed === 'cpcb' && worstPreferred.cpcbAqi != null)
+              ? worstPreferred.cpcbAqi
+              : (worstWard?.aqi ?? null)
             const worstTrend = worstWard
               ? hotspotStatus(
-                  { hoursToSevere: worstForecast?.hoursToSevere ?? null, peakExcess: worstWindowed?.excess ?? null, aqi: worstWard.aqi, readingAgeMinutes: worstReadingAge },
+                  { hoursToSevere: worstForecast?.hoursToSevere ?? null, peakExcess: worstWindowed?.excess ?? null, aqi: worstDisplayAqi, readingAgeMinutes: worstReadingAge },
                   windowHours,
                 )
               : null
@@ -214,7 +229,7 @@ export default function CommandView() {
 
                     {/* 1: Radial gauge — fixed width, slightly smaller than before */}
                     <div className="flex-shrink-0 lg:pr-6">
-                      <CityAqiGauge aqi={worstWard?.aqi ?? null} />
+                      <CityAqiGauge aqi={worstDisplayAqi} />
                     </div>
 
                     {/* Vertical divider — desktop only, self-stretch to match row height */}
@@ -224,7 +239,7 @@ export default function CommandView() {
                         section gets the remaining space rather than stretching to fill */}
                     <div className="min-w-0 flex-1 lg:w-[300px] lg:flex-none lg:px-6">
                       <CityStatusHero
-                        aqi={worstWard?.aqi ?? null}
+                        aqi={worstDisplayAqi}
                         wardName={worstWard?.name ?? null}
                         trend={worstTrend}
                         source={worstWard?.dominant_source ?? null}
