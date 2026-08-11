@@ -312,7 +312,7 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
     counts: dict[int, dict[str, int]] = {}
     for row in rows:
         sid = row["station_id"]
-        source = row.get("ingest_source") or "cpcb"  # pre-Phase2 rows treated as cpcb
+        source = row.get("ingest_source") or "openaq"  # pre-Phase2 rows were OpenAQ (CO in µg/m³)
         sums.setdefault(sid, {})
         counts.setdefault(sid, {})
         for col in ("pm25", "pm10", "no2", "so2", "o3", "nh3"):
