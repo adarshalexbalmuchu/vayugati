@@ -511,12 +511,11 @@ export async function updateReportStatus(
   // Single atomic RPC — updates reports.status AND inserts report_events in
   // one transaction. Prevents the audit log recording a transition that never
   // took effect (or a network drop leaving status updated with no audit row).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.rpc as any)('update_report_status', {
+  const { error } = await supabase.rpc('update_report_status', {
     p_report_id: reportId,
     p_status: status,
     p_actor_id: actorId,
-    p_note: note ?? null,
+    p_note: note,
   })
   if (error) throw error
 }

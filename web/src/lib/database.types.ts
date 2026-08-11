@@ -2704,6 +2704,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      update_report_status: {
+        Args: {
+          p_actor_id: string
+          p_note?: string
+          p_report_id: number
+          p_status: Database["public"]["Enums"]["report_status"]
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       action_workflow_status:
