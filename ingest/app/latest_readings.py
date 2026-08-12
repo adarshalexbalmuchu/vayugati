@@ -113,17 +113,18 @@ def reconcile_latest(
 
         cpcb_aqi = None
         if cpcb_usable:
-            # Prefer the 24h-corrected AQI already stored in our readings table
-            # (_recompute_24h_aqi patches it after every ingest). The data.gov.in
-            # API's avg_value is a short-window average (not 24h), so computing
-            # AQI from it directly inflates the result by 1.5–3x vs CPCB website.
+            # Prefer the AQI already stored in our readings table (written by
+            # _ingest_from_cpcb using compute_aqi(avg_value) directly). The
+            # data.gov.in avg_value IS the 24h rolling average that CPCB uses
+            # for their official portal, so compute_aqi(avg_value) matches the
+            # CPCB website AQI exactly — no re-averaging needed.
             if (openaq_entry
                     and openaq_entry.get("ingest_source") == "cpcb"
                     and openaq_entry.get("aqi") is not None):
                 cpcb_aqi = openaq_entry["aqi"]
             else:
-                # Fallback: compute from raw avg_value (first run, migration not
-                # yet applied, or no recent CPCB reading in the 2h window).
+                # Fallback: compute from raw avg_value (no recent CPCB reading
+                # in the 2h DB window — e.g. ingest not yet run this cycle).
                 pollutants = cpcb_entry["pollutants"]
                 co_data = pollutants.get("co") or {}
                 co_val = co_data.get("avg")
