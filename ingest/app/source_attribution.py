@@ -24,10 +24,7 @@ log = logging.getLogger("ingest.source_attribution")
 def run(city_code: str | None = None) -> dict:
     """Call run_incident_source_attribution() for one city (or every active
     city, when city_code is None)."""
-    resp = db.client().rpc(
+    rows = db.call_rpc(
         "run_incident_source_attribution", {"p_city_code": city_code, "p_force": False}
-    ).execute()
-    rows = resp.data or []
-    return {
-        "incidents_evaluated": len(rows),
-    }
+    )
+    return {"incidents_evaluated": len(rows)}

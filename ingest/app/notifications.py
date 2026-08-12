@@ -110,7 +110,7 @@ def _adapter_for(channel: str) -> NotificationAdapter:
         "email": _email_adapter(),
         "sms": UnconfiguredAdapter("sms"),
         "whatsapp": UnconfiguredAdapter("whatsapp"),
-    }[channel]
+    }.get(channel, UnconfiguredAdapter(channel))  # unknown channels skip cleanly
 
 
 MAX_RETRIES = 3

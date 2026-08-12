@@ -227,7 +227,7 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     the embed makes each page slow enough to hit Render→Supabase TCP timeouts
     on a multi-thousand-row result set (30 days × 13 stations × hourly reads).
     """
-    stations = client().table("stations").select("id, ward_id").execute().data or []
+    stations = _with_retry(lambda: client().table("stations").select("id, ward_id").execute().data) or []
     sid_to_ward: dict[int, int] = {
         s["id"]: s["ward_id"] for s in stations if s.get("ward_id") is not None
     }
@@ -277,7 +277,7 @@ def get_weather_history(hours: int = 24 * 30) -> list[dict]:
 def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     """(ward_id, pollutant) -> generated_at of the most recent forecast_runs row.
     Used by forecast.py to skip retraining when no new readings have arrived."""
-    rows = (
+    rows = _with_retry(lambda: (
         client()
         .table("forecast_runs")
         .select("ward_id, pollutant, generated_at")
@@ -285,7 +285,7 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
         .order("generated_at", desc=True)
         .execute()
         .data
-    )
+    )) or []
     seen: dict[tuple[int, str], datetime] = {}
     for r in rows:
         key = (r["ward_id"], r["pollutant"])
@@ -354,9 +354,16 @@ def delete_old_readings(days: int = 90) -> int:
     Uses lt() on the indexed ts column — the (station_id, ts desc) index makes
     this a fast range scan regardless of table size."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    resp = client().table("readings").delete().lt("ts", cutoff).execute()
+    resp = _with_retry(lambda: client().table("readings").delete().lt("ts", cutoff).execute())
     deleted = len(resp.data) if resp.data else 0
     return deleted
+
+
+def call_rpc(name: str, params: dict) -> list:
+    """Call a Supabase RPC with the same transient-error retry as all writes.
+    Returns resp.data or [] — callers never see a raw httpx/httpcore error."""
+    resp = _with_retry(lambda: client().rpc(name, params).execute())
+    return resp.data or []
 
 
 def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:
@@ -385,7 +392,7 @@ def replace_attribution(ward_id: int, row: dict) -> None:
 def get_pending_notifications(max_retries: int) -> list[dict]:
     """Notifications still eligible for a delivery attempt (status='pending',
     retry_count within budget). `notifications.py` owns what happens next."""
-    return (
+    return _with_retry(lambda: (
         client()
         .table("notifications")
         .select("id, channel, recipient_contact, message_body, template_key, retry_count")
@@ -393,7 +400,7 @@ def get_pending_notifications(max_retries: int) -> list[dict]:
         .lte("retry_count", max_retries)
         .execute()
         .data
-    )
+    )) or []
 
 
 def mark_notification_sent(notification_id: int, sent_at_iso: str) -> None:

@@ -16,6 +16,5 @@ log = logging.getLogger("ingest.dispatch")
 
 def run(city_code: str | None = None) -> dict:
     """Call escalate_stale_task_dispatches() for one city (or every city)."""
-    resp = db.client().rpc("escalate_stale_task_dispatches", {"p_city_code": city_code}).execute()
-    rows = resp.data or []
+    rows = db.call_rpc("escalate_stale_task_dispatches", {"p_city_code": city_code})
     return {"tasks_escalated": len(rows)}
