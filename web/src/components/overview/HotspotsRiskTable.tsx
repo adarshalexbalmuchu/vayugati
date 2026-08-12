@@ -7,7 +7,6 @@ import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
   hotspotStatus,
   HOTSPOT_STATUS_LABEL,
-  isWardDataBacked,
   peakWithinWindow,
   type HotspotStatus,
   type TimeWindowHours,
@@ -196,10 +195,10 @@ export default function HotspotsRiskTable({
         title={
           <span className="flex items-center gap-1.5">
             <Flame className="h-4 w-4 text-status-warning" aria-hidden />
-            Operational Hotspot Triage
+            Wards by risk
           </span>
         }
-        subtitle="Ranked by current readings, forecast risk, and local source signal."
+        subtitle="Ranked by current AQI and forecast trajectory."
         right={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
@@ -243,10 +242,9 @@ export default function HotspotsRiskTable({
         }
       />
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[560px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              <th className="px-3 py-1.5 font-semibold">#</th>
               <th className="px-3 py-1.5 font-semibold">Ward</th>
               <th className="px-3 py-1.5 font-semibold">
                 Current {MAP_POLLUTANT_LABEL[pollutant]}
@@ -254,23 +252,19 @@ export default function HotspotsRiskTable({
               </th>
               <th
                 className="px-3 py-1.5 font-semibold"
-                title={isForecastSuppressed ? 'Forecast unavailable — latest run failed' : `Forecast peak within ${windowHours}h, local excess in parentheses. Hover a value for forecast confidence.`}
+                title={isForecastSuppressed ? 'Forecast unavailable — latest run failed' : `Forecast peak within ${windowHours}h. Excess over current in parentheses.`}
               >
-                Forecast {forecastPollutantLabel} Peak{' '}
-                <span className="normal-case">(Δ excess)</span>
-                {isProxy && !isForecastSuppressed && <span className="normal-case"> - risk signal</span>}
+                Forecast peak
                 {isForecastSuppressed && <span className="normal-case font-normal text-slate-400"> · unavailable</span>}
               </th>
-              <th className="px-3 py-1.5 font-semibold">Likely Source</th>
-              <th className="px-3 py-1.5 font-semibold">AQI Trend</th>
+              <th className="px-3 py-1.5 font-semibold">Trend</th>
               <th className="px-3 py-1.5 font-semibold">Age</th>
               <th className="w-8 px-2 py-1.5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {wards.map((ward, i) => {
+            {wards.map((ward) => {
               const forecast = forecasts.get(ward.id)
-              const dataBacked = isWardDataBacked(ward)
               const windowed = peakWithinWindow(forecast, windowHours)
               const status = hotspotStatus(
                 {
@@ -281,9 +275,6 @@ export default function HotspotsRiskTable({
                 },
                 windowHours,
               )
-              // What the status would read without the staleness check - shown
-              // as a secondary note on a stale badge rather than silently lost,
-              // per the "keep the trend, but stale-qualified" requirement.
               const underlyingTrend = windowed.excess != null && windowed.excess > 0 ? 'was trending up' : null
               const confidence = windowed.ts != null ? (forecast?.points.find((p) => p.horizon_ts === windowed.ts)?.confidence ?? null) : null
               const confidenceTitle = confidence != null ? `Forecast confidence: ${Math.round(confidence * 100)}%` : undefined
@@ -294,7 +285,6 @@ export default function HotspotsRiskTable({
                     onClick={() => onSelectWard(selected ? null : ward.id)}
                     className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                   >
-                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{i + 1}</td>
                     <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
                     <td className="px-3 py-1.5">
                       <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={latestReadingsByWard?.get(ward.id)} />
@@ -312,27 +302,11 @@ export default function HotspotsRiskTable({
                           )}
                         </>
                       ) : (
-                        // Em dash when suppressed — "Unavailable" repeated 13 times
-                        // creates visual noise; the column header already flags the failure.
                         <span className="text-slate-400">{isForecastSuppressed ? '—' : 'Unavailable'}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5 text-slate-600">
-                      {dataBacked ? (
-                        ward.dominant_source
-                          ? formatSource(ward.dominant_source)
-                          : <span className="text-slate-400">Unknown</span>
-                      ) : (
-                        <span className="text-slate-400" title="No station-backed data for this ward - a source cannot be assessed">
-                          Not assessed
-                        </span>
                       )}
                     </td>
                     <td className="px-3 py-1.5">
                       {isForecastSuppressed && status === 'stable' ? (
-                        // 'stable' with no forecast data means "nothing in the (empty)
-                        // forecast map triggered watch/severe" — not that risk was
-                        // evaluated and found low. Show a neutral indicator instead.
                         <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
                           No forecast
                         </span>
@@ -350,11 +324,15 @@ export default function HotspotsRiskTable({
                   </tr>
                   {selected && (
                     <tr className="bg-accent-50/60">
-                      <td colSpan={8} className="px-3 py-3">
+                      <td colSpan={6} className="px-3 py-3">
                         <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs text-slate-600">
                           <span>
                             <span className="font-semibold text-slate-500">PM2.5 now:</span>{' '}
                             {ward.pm25 != null ? `${Math.round(ward.pm25)} µg/m³` : 'no reading'}
+                          </span>
+                          <span>
+                            <span className="font-semibold text-slate-500">Likely source:</span>{' '}
+                            {ward.dominant_source ? formatSource(ward.dominant_source) : 'unknown'}
                           </span>
                           <span>
                             <span className="font-semibold text-slate-500">Predicted severe in:</span>{' '}
@@ -373,7 +351,7 @@ export default function HotspotsRiskTable({
                             <AqSourceBadge preferred={latestReadingsByWard?.get(ward.id)} />
                           </span>
                           <span className="flex items-center gap-1.5">
-                            <span className="font-semibold text-slate-500">Confidence:</span>
+                            <span className="font-semibold text-slate-500">Data confidence:</span>
                             <DataConfidenceBadge preferred={latestReadingsByWard?.get(ward.id)} />
                           </span>
                         </div>
@@ -387,16 +365,16 @@ export default function HotspotsRiskTable({
         </table>
       </div>
       {wards.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-400">No ward data available.</p>}
-      <div className="flex items-center gap-1.5 border-t border-slate-100 px-4 py-2 text-[11px] text-slate-500">
-        <span>Latest readings: CPCB/data.gov preferred · OpenAQ fallback · AQI computed using CPCB breakpoints.</span>
+      <div className="flex items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-2">
         <div className="relative flex-shrink-0">
           <button
             type="button"
             onClick={() => setInfoOpen((v) => !v)}
-            aria-label="More about how this table is read"
-            className="focus-ring rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="About these readings"
+            className="focus-ring flex items-center gap-1 rounded p-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           >
             <Info className="h-3.5 w-3.5" aria-hidden />
+            <span>About these readings</span>
           </button>
           {infoOpen && (
             <div className="absolute bottom-full right-0 z-10 mb-1.5 w-72 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-relaxed text-slate-600 shadow-card-lg">
@@ -405,17 +383,15 @@ export default function HotspotsRiskTable({
                   ? 'Current reading is colour-coded on the India NAQI scale.'
                   : 'Current reading shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
                 {isProxy
-                  ? 'Forecast peaks are shown only for pollutants with validated forecast data - AQI itself is not forecast, so PM2.5 is shown as a risk signal instead.'
-                  : `Forecast Peak and Local Excess are both ${forecastPollutantLabel}, matching the selected metric.`}
+                  ? 'AQI itself is not forecast — PM2.5 is shown as the risk signal in its place.'
+                  : `Forecast peak and excess are both ${forecastPollutantLabel}, matching the selected metric.`}
               </p>
               <p className="mt-1.5">
-                Likely Source is a preliminary citywide signal, not confirmed evidence - refined per-incident with
-                citizen, field, or authority evidence in Incidents. Forecast Confidence is the model's own
-                reliability at its predicted peak, not confidence in the likely source.
+                Source attribution (in the expanded row) is a preliminary signal from the anomaly engine, not
+                confirmed evidence. Refined per-incident in the Incidents view.
               </p>
               <p className="mt-1.5">
-                AQ Source/Confidence reflect the CPCB/data.gov vs OpenAQ reconciliation for this ward's station -
-                Review means unmatched or a real value disagreement, not necessarily bad data.
+                Readings: CPCB/data.gov preferred, OpenAQ fallback. AQI computed using official CPCB breakpoints.
               </p>
             </div>
           )}

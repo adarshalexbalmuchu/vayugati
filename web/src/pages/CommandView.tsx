@@ -1,25 +1,20 @@
 import { useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
-import DataSourceConfidenceStrip from '../components/overview/DataSourceConfidenceStrip'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
 import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
 import { CityAqiGauge } from '../components/overview/CityAqiGauge'
 import CityStatusHero from '../components/overview/CityStatusHero'
 import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
-import SourceMixPanel from '../components/overview/SourceMixPanel'
-import ResponsePlanningPanel from '../components/overview/ResponsePlanningPanel'
 import SensorHealthSnapshot from '../components/overview/SensorHealthSnapshot'
-import TransportActivityPanel from '../components/overview/TransportActivityPanel'
 import {
   fetchAllForecasts,
   fetchAllWardsAqi,
   fetchForecastAccuracySummary,
   fetchGatiMetrics,
   fetchLatestReadingsPreferred,
-  fetchTransportActivity,
 } from '../lib/data'
 import { listActiveTaskDispatches } from '../lib/incidents'
 import { tallyDataSourceConfidence } from '../lib/latestReadingRules'
@@ -32,7 +27,6 @@ import {
   peakWithinWindow,
   rollupStationHealth,
   severeWardsWithin,
-  tallySourceMix,
   wardsNeedingReview,
   type TimeWindowHours,
 } from '../lib/overviewRules'
@@ -48,9 +42,9 @@ import { useAsync } from '../lib/useAsync'
  */
 export default function CommandView() {
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
-  const [windowHours, setWindowHours] = useState<TimeWindowHours>(36)
+  const [windowHours, setWindowHours] = useState<TimeWindowHours>(24)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
-  const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh } = useIngestHealth()
+  const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh, health } = useIngestHealth()
 
   const state = useAsync(
     () =>
@@ -63,21 +57,8 @@ export default function CommandView() {
       ]),
     [],
   )
-  // Separate from the bundle above so switching pollutants only re-fetches
-  // forecasts, not wards/metrics/dispatches/station health/accuracy too -
-  // same split MapPage.tsx uses. AQI maps to a labelled PM2.5 proxy
-  // (forecastPollutantFor) since forecast.py never computes AQI itself.
   const forecastPollutant = forecastPollutantFor(pollutant)
   const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant])
-  // Independent of the bundle above by design: a slow/unreachable ingest
-  // service (or an unset DELHI_OTD_API_KEY) must never block or blank the
-  // rest of Overview - fetchTransportActivity() already degrades to null
-  // on any failure, and TransportActivityPanel renders an honest
-  // "unavailable" state for that, not a loading spinner forever.
-  const transitState = useAsync(() => fetchTransportActivity(), [])
-  // Same independent-fetch contract as transitState above - a failure here
-  // never blocks Overview; HotspotsRiskTable just keeps showing its
-  // existing OpenAQ-sourced AQI unchanged when this has nothing to offer.
   const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
 
   return (
@@ -100,7 +81,6 @@ export default function CommandView() {
             onClick={() => {
               state.refresh()
               forecastsState.refresh()
-              transitState.refresh()
               latestReadingsState.refresh()
             }}
             disabled={state.refreshing}
@@ -166,18 +146,16 @@ export default function CommandView() {
             const forecasts = suppressForecast ? new Map() : rawForecasts
             const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
             const slaBuckets = bucketDispatchSla(dispatchPage.rows)
-            const sourceMix = tallySourceMix(wards)
             const stationRollup = rollupStationHealth(stationHealth)
             const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
-            const transitByWard = new Map((transitState.data?.perWard ?? []).map((w) => [w.wardId, w]))
             const dataSourceTally = latestReadingsState.data?.length ? tallyDataSourceConfidence(latestReadingsState.data) : null
-            // Cross-reference two already-fetched summaries (severe/watch
-            // wards x real nearby transit activity) - no new fetch, nothing
-            // fabricated when either summary hasn't loaded.
-            const highRiskHotspots = reviewWards
-              .map((w) => ({ wardName: w.wardName, activity: transitByWard.get(w.wardId) }))
-              .filter((h): h is { wardName: string; activity: NonNullable<typeof h.activity> } => !!h.activity && h.activity.vehicleCount > 0)
-              .map((h) => ({ wardName: h.wardName, vehicleCount: h.activity.vehicleCount }))
+
+            // Data freshness banner: show when readings are confirmed stale or pipeline down
+            const healthAge = health?.checks.reading_freshness.latest_reading_age_minutes ?? null
+            const dataIsStale = healthLoaded && (!readingConfirmedFresh || (healthAge != null && healthAge >= 60))
+            const staleAgeLabel = healthAge != null
+              ? healthAge < 60 ? `${Math.round(healthAge)}m` : `${Math.round(healthAge / 60)}h`
+              : null
 
             // Trend status for the worst ward — same hotspotStatus() the table uses
             // per row, computed once here for the hero, not duplicated.
@@ -223,20 +201,25 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero area — three sections: gauge | ward intelligence | KPI rail */}
+                {/* Stale data banner — shown prominently when readings are old */}
+                {dataIsStale && (
+                  <div className="flex items-center gap-2.5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-2.5 text-sm text-status-warning">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" aria-hidden />
+                    <span>
+                      <span className="font-semibold">Data delayed</span>
+                      {staleAgeLabel ? ` — last reading ${staleAgeLabel} ago.` : '.'}
+                      {' '}AQI values on this page may not reflect current conditions.
+                    </span>
+                  </div>
+                )}
+
+                {/* Hero area — gauge | ward summary | KPI rail */}
                 <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-0">
-
-                    {/* 1: Radial gauge — fixed width, slightly smaller than before */}
                     <div className="flex-shrink-0 lg:pr-6">
                       <CityAqiGauge aqi={worstDisplayAqi} />
                     </div>
-
-                    {/* Vertical divider — desktop only, self-stretch to match row height */}
                     <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
-
-                    {/* 2: Ward intelligence — constrained to 300 px on desktop so KPI
-                        section gets the remaining space rather than stretching to fill */}
                     <div className="min-w-0 flex-1 lg:w-[300px] lg:flex-none lg:px-6">
                       <CityStatusHero
                         aqi={worstDisplayAqi}
@@ -249,11 +232,7 @@ export default function CommandView() {
                         forecastSuppressed={suppressForecast}
                       />
                     </div>
-
-                    {/* Vertical divider — desktop only */}
                     <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
-
-                    {/* 3: KPI flat rail — flex-1 on desktop to fill remaining width */}
                     <div className="lg:flex-1 lg:pl-6">
                       <CityKpiRow
                         reviewCount={reviewWards.length}
@@ -262,9 +241,9 @@ export default function CommandView() {
                         latestReadingAgeMinutes={latestReadingAgeMinutes}
                       />
                     </div>
-
                   </div>
                 </div>
+
                 <HotspotsRiskTable
                   wards={displayWards}
                   forecasts={forecasts}
@@ -278,30 +257,19 @@ export default function CommandView() {
                   forecastSuppressed={suppressForecast}
                 />
 
-                <DataSourceConfidenceStrip />
-
-                <div className="grid items-start gap-4 lg:grid-cols-[1.3fr_1fr]">
+                {/* Priority alerts — only shown when there's something to act on */}
+                {severeAlerts.length > 0 && (
                   <PriorityAlertsPanel
                     alerts={severeAlerts}
                     windowHours={windowHours}
                     selectedWardId={selectedWardId}
                     onSelectWard={setSelectedWardId}
                   />
-                  <OperationalSummaryPanel metrics={metrics} slaBuckets={slaBuckets} accuracy={accuracy} />
-                </div>
+                )}
 
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <SourceMixPanel mix={sourceMix} />
-                  <ResponsePlanningPanel
-                    activeDispatches={dispatchPage.totalCount}
-                    overdue={slaBuckets.overdue}
-                    wardsNeedingReview={reviewWards.length}
-                  />
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <OperationalSummaryPanel metrics={metrics} slaBuckets={slaBuckets} accuracy={accuracy} />
                   <SensorHealthSnapshot rollup={stationRollup} dataSourceTally={dataSourceTally} />
-                  <TransportActivityPanel
-                    summary={transitState.data}
-                    highRiskHotspots={highRiskHotspots}
-                  />
                 </div>
               </>
             )

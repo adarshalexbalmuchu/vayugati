@@ -81,7 +81,7 @@ export default function CityKpiRow({
 
   // Forecast coverage: show operational status when run failed rather than
   // the configured-count (93/93) that contradicts the "unavailable" banner.
-  const forecastLabel = forecastRunFailed ? 'Forecast run' : 'Forecast'
+  const forecastLabel = forecastRunFailed ? 'Forecast run' : 'Wards forecast'
   const forecastValue = forecastRunFailed
     ? 'Failed'
     : coverage

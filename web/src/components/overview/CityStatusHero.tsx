@@ -9,21 +9,6 @@ const TREND_STYLE: Record<HotspotStatus, { color: string; dot: string }> = {
   no_data: { color: 'text-slate-400',       dot: 'bg-slate-300'       },
 }
 
-// Human-readable labels for known source enum values.
-// Fallback: underscore → space + title-case for any unknown value.
-const SOURCE_LABELS: Record<string, string> = {
-  construction_dust: 'Construction dust',
-  road_dust:         'Road dust',
-  industrial:        'Industrial activity',
-  vehicular:         'Vehicular emissions',
-  waste:             'Waste burning',
-}
-
-function formatSource(s: string | null): string | null {
-  if (!s) return null
-  return SOURCE_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
 function formatAge(minutes: number): string {
   if (minutes < 2) return 'Just now'
   if (minutes < 60) return `${Math.round(minutes)}m ago`
@@ -35,7 +20,6 @@ export default function CityStatusHero({
   aqi,
   wardName,
   trend,
-  source,
   forecastPeak,
   readingAgeMinutes,
   forecastLabel = 'PM₂.₅',
@@ -44,7 +28,7 @@ export default function CityStatusHero({
   aqi: number | null
   wardName: string | null
   trend: HotspotStatus | null
-  source: string | null
+  source?: string | null
   forecastPeak: number | null
   readingAgeMinutes: number | null
   forecastLabel?: string
@@ -62,8 +46,6 @@ export default function CityStatusHero({
     trend === 'severe' ? 'Severe imminent' :
     trend === 'stable' ? (forecastSuppressed ? null : 'Stable') :
     trend === 'stale'  ? 'Stale reading' : null
-
-  const formattedSource = formatSource(source)
 
   return (
     <div className="flex flex-col gap-1 min-w-0">
@@ -91,12 +73,6 @@ export default function CityStatusHero({
 
       {/* Contextual metadata rows */}
       <div className="mt-2 flex flex-col gap-0.5">
-        {formattedSource && (
-          <span className="text-xs text-slate-600 leading-snug">
-            <span className="font-medium">{formattedSource}</span>
-            {' '}source signal
-          </span>
-        )}
         {forecastPeak !== null && (
           <span className="text-xs text-slate-500 leading-snug">
             Forecast {forecastLabel} peak:{' '}

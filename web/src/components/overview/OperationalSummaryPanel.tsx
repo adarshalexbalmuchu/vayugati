@@ -66,49 +66,18 @@ export default function OperationalSummaryPanel({
         </div>
 
         <div>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Forecast trust</p>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Forecast pipeline</p>
           <div className="grid grid-cols-2 gap-2">
             <Stat
               value={forecastPipelineStatusLabel(accuracy.coverage)}
-              label="Pipeline"
+              label="Status"
               accent={PIPELINE_STATUS_TONE[forecastPipelineStatusLabel(accuracy.coverage)]}
             />
-            <Stat value={`${accuracy.coverage.freshCount}/${accuracy.coverage.totalPairs}`} label="Coverage" />
+            <Stat value={`${accuracy.coverage.freshCount}/${accuracy.coverage.totalPairs}`} label="Wards covered" />
           </div>
-
-          <div className="mt-2">
-            <div className="flex h-2 overflow-hidden rounded-full bg-slate-100">
-              {accuracy.methodMix.total > 0 && (
-                <>
-                  <div
-                    className="bg-accent-500"
-                    style={{ width: `${(accuracy.methodMix.lightgbmCount / accuracy.methodMix.total) * 100}%` }}
-                    title={`ML selected: ${accuracy.methodMix.lightgbmCount}`}
-                  />
-                  <div
-                    className="bg-slate-300"
-                    style={{ width: `${(accuracy.methodMix.diurnalPersistenceCount / accuracy.methodMix.total) * 100}%` }}
-                    title={`Safer baseline: ${accuracy.methodMix.diurnalPersistenceCount}`}
-                  />
-                </>
-              )}
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-accent-700">
-                <span className="h-2 w-2 rounded-full bg-accent-500" aria-hidden />
-                ML selected {accuracy.methodMix.lightgbmCount}
-              </span>
-              <span className="flex items-center gap-1.5 font-semibold text-slate-500">
-                <span className="h-2 w-2 rounded-full bg-slate-300" aria-hidden />
-                Safer baseline {accuracy.methodMix.diurnalPersistenceCount}
-              </span>
-            </div>
-          </div>
-
-          <p className="mt-1.5 text-xs text-slate-500">ML is used only when it beats strong simple baselines.</p>
           {accuracy.coverage.latestGeneratedAt && (
-            <p className="mt-1 text-[11px] text-slate-400">
-              Latest forecast cycle: {new Date(accuracy.coverage.latestGeneratedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+            <p className="mt-2 text-[11px] text-slate-400">
+              Last run: {new Date(accuracy.coverage.latestGeneratedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
             </p>
           )}
         </div>
