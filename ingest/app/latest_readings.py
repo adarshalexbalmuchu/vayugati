@@ -113,11 +113,10 @@ def reconcile_latest(
 
         cpcb_aqi = None
         if cpcb_usable:
-            # Prefer the AQI already stored in our readings table (written by
-            # _ingest_from_cpcb using compute_aqi(avg_value) directly). The
-            # data.gov.in avg_value IS the 24h rolling average that CPCB uses
-            # for their official portal, so compute_aqi(avg_value) matches the
-            # CPCB website AQI exactly — no re-averaging needed.
+            # Prefer the AQI already stored in our readings table. The stored
+            # value is the 24h-average AQI written by _recompute_24h_aqi() in
+            # ingest.py — it averages 24h of hourly DB readings and matches
+            # CPCB's official portal methodology.
             if (openaq_entry
                     and openaq_entry.get("ingest_source") == "cpcb"
                     and openaq_entry.get("aqi") is not None):
