@@ -256,9 +256,20 @@ export interface StationMarker {
  *  true last reading (not silently "no data") - a fixed recent-time-window
  *  filter on the single query was considered and rejected for exactly that
  *  reason. */
+// Readings older than this are treated as stale: AQI is suppressed to null
+// so the marker renders grey rather than showing a misleading outdated value.
+// 3h matches the ingest service's own STALE_MINUTES=180 convention.
+const STATION_AQI_STALE_MS = 3 * 60 * 60 * 1000
+
 export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
   const { data: stations } = await supabase.from('stations').select('id, name, lat, lng').order('name')
   if (!stations) return []
+
+  // Only look at readings from the last 3 hours. Readings older than that
+  // are stale — showing their AQI as current would mislead (e.g. Wazirpur
+  // at 274 when CPCB has no data for it means the station went offline after
+  // its last report, not that it's currently at 274).
+  const staleCutoff = new Date(Date.now() - STATION_AQI_STALE_MS).toISOString()
 
   const latestByStation = new Map<number, { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null }>()
   await Promise.all(
@@ -267,6 +278,7 @@ export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
         .from('readings')
         .select('aqi, pm25, pm10, no2')
         .eq('station_id', s.id)
+        .gte('ts', staleCutoff)
         .order('ts', { ascending: false })
         .limit(1)
         .maybeSingle()

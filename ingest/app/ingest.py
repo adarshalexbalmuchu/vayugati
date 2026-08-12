@@ -268,9 +268,14 @@ def run() -> dict:
     summary["cpcb_unmatched_stations"] = cpcb_unmatched
     summary["errors"].extend(cpcb_errors)
 
-    # Recompute AQI from 24h rolling averages to match CPCB's official methodology.
-    # Must run after all CPCB rows are written so the 24h window has the new reading.
-    summary["aqi_patched"] = _recompute_24h_aqi(cpcb_station_ts)
+    # CPCB path: do NOT re-average. data.gov.in avg_value is already a 24h
+    # average (CPCB methodology: PM2.5/PM10/NO2/SO2/NH3 = 24h, CO/O3 = 8h),
+    # so compute_aqi(avg_value) already matches the official CPCB website AQI.
+    # Re-averaging 24 of these already-24h values inflates results for stations
+    # with improving conditions (e.g. monsoon) because old high readings drag
+    # the average above the current correct value. The initial computed_aqi
+    # written in _ingest_from_cpcb() is the right number — don't overwrite it.
+    summary["aqi_patched"] = 0
 
     # ── OpenAQ fallback ───────────────────────────────────────────────────────
     # Only runs when OPENAQ_API_KEY is set. Iterates over stations that have an
