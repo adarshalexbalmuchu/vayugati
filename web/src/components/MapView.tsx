@@ -71,7 +71,9 @@ const AQI_HEATMAP_LAYER_ID = 'aqi-station-heatmap-layer'
 
 // ── VoxCity-inspired environment layers ───────────────────────────────────────
 const VEGETATION_LAYER_ID = 'osm-vegetation-3d'
+const LANDCOVER_TREES_LAYER_ID = 'osm-landcover-trees'
 const LANDUSE_LAYER_ID = 'osm-landuse-fill'
+const WATER_LAYER_ID = 'osm-water-fill'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
 const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
@@ -927,6 +929,35 @@ export default function MapView({
     else map.once('style.load', addAqiHeatmap)
     map.on('style.load', addAqiHeatmap)
 
+    // ── Water bodies (Yamuna + lakes) — base context always on ───────────
+    // Renders the `water` OpenMapTiles source-layer as a vivid blue fill so
+    // the Yamuna river reads clearly against the dark basemap. Always visible
+    // when vector tiles are present — it's baseline geographic context, not a
+    // data overlay, so no toggle is needed. Inserted above the AQI heatmap
+    // so the river cuts cleanly through the green/yellow gradient.
+    const addWater = () => {
+      if (map.getLayer(WATER_LAYER_ID)) return
+      const src = detectVectorSource(map, 'water', WATER_LAYER_ID)
+      if (!src) return
+      map.addLayer(
+        {
+          id: WATER_LAYER_ID,
+          type: 'fill',
+          source: src,
+          'source-layer': 'water',
+          layout: { visibility: 'visible' },
+          paint: {
+            'fill-color': '#0284c7',
+            'fill-opacity': 0.80,
+          },
+        },
+        BOUNDARY_FILL_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addWater()
+    else map.once('style.load', addWater)
+    map.on('style.load', addWater)
+
     // ── Land use colour overlay (below vegetation, below ward fill) ───────
     // Colour-codes OSM land use polygons: industrial = orange, commercial =
     // amber, residential = muted blue. Uses 'landuse' OpenMapTiles source-
@@ -989,11 +1020,11 @@ export default function MapView({
           layout: { visibility: showVegetation3DRef.current ? 'visible' : 'none' },
           paint: {
             'fill-extrusion-color': ['match', ['get', 'class'],
-              'forest',    '#14532d',
-              'park',      '#166534',
-              'grass',     '#15803d',
-              'cemetery',  '#1a3a28',
-              '#166534',
+              'forest',    '#22c55e',
+              'park',      '#4ade80',
+              'grass',     '#86efac',
+              'cemetery',  '#166534',
+              '#22c55e',
             ] as maplibregl.ExpressionSpecification,
             'fill-extrusion-height': ['match', ['get', 'class'],
               'forest',   14,
@@ -1003,7 +1034,7 @@ export default function MapView({
               5,
             ] as maplibregl.ExpressionSpecification,
             'fill-extrusion-base': 0,
-            'fill-extrusion-opacity': 0.72,
+            'fill-extrusion-opacity': 0.85,
           },
         },
         BOUNDARY_FILL_LAYER_ID,
@@ -1012,6 +1043,36 @@ export default function MapView({
     if (map.isStyleLoaded()) addVegetation3D()
     else map.once('style.load', addVegetation3D)
     map.on('style.load', addVegetation3D)
+
+    // ── Landcover trees (OSM `landcover.wood` — forest/tree-cover patches) ──
+    // Supplements the `landuse.forest` layer with the separate `landcover`
+    // source-layer which captures woodland not tagged as a land-use zone.
+    // Uses the same showVegetation3D toggle and the same bright-green palette.
+    const addLandcoverTrees = () => {
+      if (map.getLayer(LANDCOVER_TREES_LAYER_ID)) return
+      const src = detectVectorSource(map, 'landcover', LANDCOVER_TREES_LAYER_ID)
+      if (!src) return
+      map.addLayer(
+        {
+          id: LANDCOVER_TREES_LAYER_ID,
+          type: 'fill-extrusion',
+          source: src,
+          'source-layer': 'landcover',
+          filter: ['==', ['get', 'class'], 'wood'] as maplibregl.ExpressionSpecification,
+          layout: { visibility: showVegetation3DRef.current ? 'visible' : 'none' },
+          paint: {
+            'fill-extrusion-color': '#1fa64a',
+            'fill-extrusion-height': 12,
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.80,
+          },
+        },
+        BOUNDARY_FILL_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addLandcoverTrees()
+    else map.once('style.load', addLandcoverTrees)
+    map.on('style.load', addLandcoverTrees)
 
     map.once('load', () => {
       mapReadyRef.current = true
@@ -1364,13 +1425,14 @@ export default function MapView({
     else map.once('load', apply)
   }, [showAqiHeatmap])
 
-  // Toggle vegetation 3D visibility
+  // Toggle vegetation 3D visibility (covers both landuse + landcover layers)
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
     const vis = showVegetation3D ? 'visible' : 'none'
     const apply = () => {
       if (map.getLayer(VEGETATION_LAYER_ID)) map.setLayoutProperty(VEGETATION_LAYER_ID, 'visibility', vis)
+      if (map.getLayer(LANDCOVER_TREES_LAYER_ID)) map.setLayoutProperty(LANDCOVER_TREES_LAYER_ID, 'visibility', vis)
     }
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
