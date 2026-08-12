@@ -124,10 +124,13 @@ function featureLineWidthExpr(): maplibregl.ExpressionSpecification {
 }
 
 // AQI → extrusion colour (CPCB category breakpoints).
-// coalesce converts null → -1 so no-data wards get the grey default colour.
+// ['get','aqi'] returns null when the property value is null; coalesce
+// handles that directly — do NOT wrap in to-number first because
+// to-number(null) === 0 in MapLibre, which would collapse no-data into
+// the "Good" green bucket instead of the grey no-data default.
 function aqiExtrusionColorExpr(): maplibregl.ExpressionSpecification {
   return ['step',
-    ['coalesce', ['to-number', ['get', 'aqi']], -1],
+    ['coalesce', ['get', 'aqi'], -1],
     '#94a3b8',   // < 0  (null / no data)
     0, '#55a84f',
     50, '#a3c853',
@@ -139,9 +142,9 @@ function aqiExtrusionColorExpr(): maplibregl.ExpressionSpecification {
 }
 
 // AQI * 8 m so AQI 500 → 4 000 m — dramatic but readable at pitch 45°
-// to-number of null → 0, so no-data wards have zero height (flat).
+// coalesce before multiply: null AQI → 0 → no extrusion (flat ward).
 function aqiExtrusionHeightExpr(): maplibregl.ExpressionSpecification {
-  return ['*', ['coalesce', ['to-number', ['get', 'aqi']], 0], 8]
+  return ['*', ['coalesce', ['get', 'aqi'], 0], 8]
 }
 
 /** Returns an ImageData of a filled arrowhead pointing north (rotated at render time). */
@@ -1053,19 +1056,25 @@ export default function MapView({
     else map.once('load', apply)
   }, [dataQualityMode])
 
-  // Toggle 3D extrusion visibility and map pitch
+  // Toggle 3D extrusion visibility and map pitch.
+  // Camera movement has no layer dependency so easeTo fires unconditionally;
+  // only setLayoutProperty needs the layer to exist (hence mapReadyRef guard).
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const vis = show3D ? 'visible' : 'none'
-    const apply = () => {
+    const applyVisibility = () => {
       if (map.getLayer(BOUNDARY_EXTRUSION_LAYER_ID)) {
-        map.setLayoutProperty(BOUNDARY_EXTRUSION_LAYER_ID, 'visibility', vis)
+        map.setLayoutProperty(BOUNDARY_EXTRUSION_LAYER_ID, 'visibility', show3D ? 'visible' : 'none')
       }
-      map.easeTo({ pitch: show3D ? 45 : 0, bearing: show3D ? -12 : 0, duration: 800 })
     }
-    if (mapReadyRef.current) apply()
-    else map.once('load', apply)
+    if (mapReadyRef.current) applyVisibility()
+    else map.once('load', applyVisibility)
+    // Set pitch/bearing directly first (synchronous, guaranteed to apply),
+    // then easeTo for the smooth animation. easeTo alone can be suppressed
+    // if a concurrent fitBounds or style load is in progress.
+    map.setPitch(show3D ? 45 : 0)
+    map.setBearing(show3D ? -12 : 0)
+    map.easeTo({ pitch: show3D ? 45 : 0, bearing: show3D ? -12 : 0, duration: 600 })
   }, [show3D])
 
   // Push updated wind GeoJSON into the GL source
