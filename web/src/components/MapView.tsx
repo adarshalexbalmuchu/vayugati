@@ -63,6 +63,11 @@ const BOUNDARY_EXTRUSION_LAYER_ID = 'ward-boundaries-extrusion'
 const WIND_SOURCE_ID = 'wind-arrows'
 const WIND_LAYER_ID = 'wind-arrows-layer'
 const WIND_IMAGE_ID = 'wind-arrow-img'
+
+// ── City buildings + AQI heatmap constants ────────────────────────────────────
+const BUILDINGS_LAYER_ID = 'city-buildings-3d'
+const AQI_HEATMAP_SOURCE_ID = 'aqi-station-heatmap'
+const AQI_HEATMAP_LAYER_ID = 'aqi-station-heatmap-layer'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
 const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
@@ -178,6 +183,24 @@ function createWindArrowImage(): ImageData {
   return ctx.getImageData(0, 0, size, size)
 }
 
+/** Scan loaded style layers to find the source name that serves building polygons.
+ *  Different basemap providers name their sources differently (e.g. 'carto',
+ *  'maptiler_planet') but all use 'building' as the OpenMapTiles source-layer. */
+function detectBuildingSource(map: maplibregl.Map): string | null {
+  const style = map.getStyle()
+  if (!style?.layers) return null
+  for (const layer of style.layers) {
+    if (
+      'source-layer' in layer &&
+      (layer as { 'source-layer'?: string })['source-layer'] === 'building' &&
+      layer.id !== BUILDINGS_LAYER_ID
+    ) {
+      return (layer as { source?: string }).source ?? null
+    }
+  }
+  return null
+}
+
 /** Properties stored on each incident GeoJSON feature (built in MapPage). */
 export interface IncidentFeatureProps {
   id: number
@@ -240,6 +263,12 @@ interface Props {
   windGeoJSON?: FeatureCollection<Point, WindArrowProps>
   /** Toggle wind arrow layer visibility. */
   showWind?: boolean
+  /** Extrude real OSM building footprints from the basemap vector tile source. */
+  showBuildings3D?: boolean
+  /** Toggle the AQI station heatmap layer. */
+  showAqiHeatmap?: boolean
+  /** Station points with aqi weight — source for the heatmap layer. */
+  stationHeatmapGeoJSON?: FeatureCollection<Point, { aqi: number }>
   /** Stable string key derived from the current selection in MapPage.  When
    *  it changes to a value that does not match the spiderfy stack's owner,
    *  the expansion is collapsed.  Defaults to 'none' (no selection). */
@@ -279,6 +308,9 @@ export default function MapView({
   show3D = false,
   windGeoJSON,
   showWind = false,
+  showBuildings3D = false,
+  showAqiHeatmap = false,
+  stationHeatmapGeoJSON,
   selectionKey = 'none',
   selectedIncidentCoords = null,
 }: Props) {
@@ -320,6 +352,11 @@ export default function MapView({
   const windGeoJSONRef = useRef(windGeoJSON)
   const ensureWindLayerRef = useRef<(() => void) | null>(null)
 
+  // ── Buildings 3D + AQI heatmap refs ──────────────────────────────────────
+  const showBuildings3DRef = useRef(showBuildings3D)
+  const showAqiHeatmapRef = useRef(showAqiHeatmap)
+  const stationHeatmapGeoJSONRef = useRef(stationHeatmapGeoJSON)
+
   // ── Incident GL layer refs ────────────────────────────────────────────────
   const incidentGeoJSONRef = useRef(incidentGeoJSON)
   const onIncidentClickRef = useRef(onIncidentClick)
@@ -353,15 +390,12 @@ export default function MapView({
     dataQualityModeRef.current = dataQualityMode
   }, [dataQualityMode])
 
-  useEffect(() => {
-    show3DRef.current = show3D
-  }, [show3D])
-  useEffect(() => {
-    showWindRef.current = showWind
-  }, [showWind])
-  useEffect(() => {
-    windGeoJSONRef.current = windGeoJSON
-  }, [windGeoJSON])
+  useEffect(() => { show3DRef.current = show3D }, [show3D])
+  useEffect(() => { showWindRef.current = showWind }, [showWind])
+  useEffect(() => { windGeoJSONRef.current = windGeoJSON }, [windGeoJSON])
+  useEffect(() => { showBuildings3DRef.current = showBuildings3D }, [showBuildings3D])
+  useEffect(() => { showAqiHeatmapRef.current = showAqiHeatmap }, [showAqiHeatmap])
+  useEffect(() => { stationHeatmapGeoJSONRef.current = stationHeatmapGeoJSON }, [stationHeatmapGeoJSON])
 
   useEffect(() => {
     wardBoundariesRef.current = wardBoundaries
@@ -795,6 +829,90 @@ export default function MapView({
     else map.once('style.load', addWindLayer)
     map.on('style.load', addWindLayer)
 
+    // ── City buildings 3D layer ────────────────────────────────────────────
+    // Reads building footprints + heights from the basemap's own vector tile
+    // source (auto-detected by scanning the loaded style for 'building'
+    // source-layer). Only visible at zoom ≥ 13 so it doesn't affect city-
+    // level overview. Inserted below wind arrows so arrows stay on top.
+    const addBuildings3D = () => {
+      if (map.getLayer(BUILDINGS_LAYER_ID)) return
+      const buildingSource = detectBuildingSource(map)
+      if (!buildingSource) return
+      map.addLayer(
+        {
+          id: BUILDINGS_LAYER_ID,
+          type: 'fill-extrusion',
+          source: buildingSource,
+          'source-layer': 'building',
+          minzoom: 13,
+          layout: { visibility: showBuildings3DRef.current ? 'visible' : 'none' },
+          paint: {
+            'fill-extrusion-color': '#0f172a',
+            'fill-extrusion-height': [
+              'coalesce', ['get', 'render_height'], ['get', 'height'], 5,
+            ] as maplibregl.ExpressionSpecification,
+            'fill-extrusion-base': [
+              'coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0,
+            ] as maplibregl.ExpressionSpecification,
+            'fill-extrusion-opacity': 0.92,
+          },
+        },
+        WIND_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addBuildings3D()
+    else map.once('style.load', addBuildings3D)
+    map.on('style.load', addBuildings3D)
+
+    // ── AQI station heatmap layer ──────────────────────────────────────────
+    // Smooth AQI gradient from real station readings. Source creates/updates
+    // from stationHeatmapGeoJSONRef; layer inserted below ward fill so ward
+    // polygons remain the primary spatial unit.
+    const addAqiHeatmap = () => {
+      const empty: FeatureCollection<Point, { aqi: number }> = { type: 'FeatureCollection', features: [] }
+      const data = stationHeatmapGeoJSONRef.current ?? empty
+      const existing = map.getSource(AQI_HEATMAP_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (existing) {
+        existing.setData(data)
+        return
+      }
+      map.addSource(AQI_HEATMAP_SOURCE_ID, { type: 'geojson', data })
+      map.addLayer(
+        {
+          id: AQI_HEATMAP_LAYER_ID,
+          type: 'heatmap',
+          source: AQI_HEATMAP_SOURCE_ID,
+          layout: { visibility: showAqiHeatmapRef.current ? 'visible' : 'none' },
+          paint: {
+            'heatmap-weight': [
+              'interpolate', ['linear'], ['coalesce', ['get', 'aqi'], 0], 0, 0, 500, 1,
+            ] as maplibregl.ExpressionSpecification,
+            'heatmap-intensity': [
+              'interpolate', ['linear'], ['zoom'], 7, 0.8, 11, 2.0, 14, 3.5,
+            ] as maplibregl.ExpressionSpecification,
+            'heatmap-color': [
+              'interpolate', ['linear'], ['heatmap-density'],
+              0,    'rgba(0,0,0,0)',
+              0.12, 'rgba(85,168,79,0.55)',
+              0.30, 'rgba(163,200,83,0.70)',
+              0.48, 'rgba(255,248,51,0.78)',
+              0.64, 'rgba(242,156,43,0.86)',
+              0.80, 'rgba(233,63,51,0.92)',
+              1.0,  'rgba(175,45,36,0.97)',
+            ] as maplibregl.ExpressionSpecification,
+            'heatmap-radius': [
+              'interpolate', ['linear'], ['zoom'], 7, 55, 10, 80, 14, 35,
+            ] as maplibregl.ExpressionSpecification,
+            'heatmap-opacity': 0.82,
+          },
+        },
+        BOUNDARY_FILL_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addAqiHeatmap()
+    else map.once('style.load', addAqiHeatmap)
+    map.on('style.load', addAqiHeatmap)
+
     map.once('load', () => {
       mapReadyRef.current = true
     })
@@ -1109,6 +1227,42 @@ export default function MapView({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [showWind])
+
+  // Push updated station heatmap data into the GL source
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !stationHeatmapGeoJSON) return
+    const apply = () => {
+      const src = map.getSource(AQI_HEATMAP_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      if (src) src.setData(stationHeatmapGeoJSON)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [stationHeatmapGeoJSON])
+
+  // Toggle 3D city buildings visibility
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = showBuildings3D ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(BUILDINGS_LAYER_ID)) map.setLayoutProperty(BUILDINGS_LAYER_ID, 'visibility', vis)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [showBuildings3D])
+
+  // Toggle AQI heatmap visibility
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = showAqiHeatmap ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(AQI_HEATMAP_LAYER_ID)) map.setLayoutProperty(AQI_HEATMAP_LAYER_ID, 'visibility', vis)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [showAqiHeatmap])
 
   // Toggle the selected CSS class on the appropriate DOM marker element.
   // Uses a querySelectorAll on the map container rather than recreating all

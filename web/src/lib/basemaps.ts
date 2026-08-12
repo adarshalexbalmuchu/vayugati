@@ -55,7 +55,7 @@ export const BASEMAP_OPTIONS: BasemapOption[] = [
   { mode: 'minimal-grey', label: 'Minimal Grey GIS', description: 'Lowest-noise base for dense overlays', maptilerStyleId: 'backdrop' },
 ]
 
-export const DEFAULT_BASEMAP_MODE: BasemapMode = 'operational-light'
+export const DEFAULT_BASEMAP_MODE: BasemapMode = 'operational-dark'
 
 export function maptilerKey(): string | null {
   const key = import.meta.env.VITE_MAPTILER_KEY

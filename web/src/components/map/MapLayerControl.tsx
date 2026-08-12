@@ -13,10 +13,14 @@ export type MapLayerKey =
   | 'transitActivity'
   | 'aqiExtrusion'
   | 'windFlow'
+  | 'buildings3D'
+  | 'aqiHeatmap'
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
   'aqiExtrusion',
+  'aqiHeatmap',
+  'buildings3D',
   'windFlow',
   'wardMarkers',
   'stations',
@@ -33,7 +37,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
 const LAYER_GROUPS: { label: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
-    keys: ['wardBoundaries', 'aqiExtrusion', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
+    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
   },
   {
     label: 'Operations',
@@ -106,6 +110,16 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Live wind direction and speed at each ward centroid from Open-Meteo.',
   },
+  buildings3D: {
+    label: '3D City buildings',
+    available: false,
+    note: 'Real OSM building footprints extruded to actual heights. Visible at street-level zoom (13+). Requires a vector basemap.',
+  },
+  aqiHeatmap: {
+    label: 'AQI heat map',
+    available: false,
+    note: 'Smooth AQI gradient from station readings — shows where pollution is concentrated across the city.',
+  },
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -125,6 +139,8 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   transitActivity: false,
   aqiExtrusion: false,
   windFlow: false,
+  buildings3D: true,
+  aqiHeatmap: true,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -159,6 +175,8 @@ export default function MapLayerControl({
   transitActivityAvailable = false,
   aqiExtrusionAvailable = false,
   windFlowAvailable = false,
+  buildings3DAvailable = false,
+  aqiHeatmapAvailable = false,
   forecastSuppressed = false,
 }: {
   layers: Record<MapLayerKey, boolean>
@@ -172,6 +190,10 @@ export default function MapLayerControl({
   aqiExtrusionAvailable?: boolean
   /** True once wind readings are present for at least one ward. */
   windFlowAvailable?: boolean
+  /** True when a vector basemap is loaded (MapTiler key configured). */
+  buildings3DAvailable?: boolean
+  /** True once station AQI readings are available for the heatmap. */
+  aqiHeatmapAvailable?: boolean
   forecastSuppressed?: boolean
 }) {
   // Compute effective meta for each key (same logic as before, now used in
@@ -197,6 +219,10 @@ export default function MapLayerControl({
     } else if (key === 'aqiExtrusion' && aqiExtrusionAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'windFlow' && windFlowAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key === 'buildings3D' && buildings3DAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key === 'aqiHeatmap' && aqiHeatmapAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'predictedHotspots' && forecastSuppressed) {
       meta = { ...meta, available: false, note: 'Unavailable — latest forecast run failed.' }

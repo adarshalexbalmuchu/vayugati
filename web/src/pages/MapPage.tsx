@@ -18,7 +18,7 @@ import SelectedStationPanel, { type SelectedStation, type StationHistoricalCompa
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
 import SelectedWardPanel from '../components/map/SelectedWardPanel'
 import SpatialSummaryPanel from '../components/map/SpatialSummaryPanel'
-import { DEFAULT_BASEMAP_MODE, resolveStyleUrl, type BasemapMode } from '../lib/basemaps'
+import { DEFAULT_BASEMAP_MODE, maptilerKey, resolveStyleUrl, type BasemapMode } from '../lib/basemaps'
 import {
   fetchAllForecasts,
   fetchAllOpenReports,
@@ -782,6 +782,22 @@ export default function MapPage() {
   // Lookup map for fast AQI join into ward boundary properties
   const wardsById = useMemo(() => new Map(wards.map((w) => [w.id, w])), [wards])
 
+  // Station points with AQI weight — source for the AQI heatmap layer
+  const stationHeatmapGeoJSON = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point, { aqi: number }>>(() => ({
+    type: 'FeatureCollection',
+    features: stations
+      .filter((s): s is typeof s & { lat: number; lng: number } => s.lat != null && s.lng != null)
+      .flatMap((s) => {
+        const aqi = s.aqi
+        if (aqi == null) return []
+        return [{
+          type: 'Feature' as const,
+          properties: { aqi },
+          geometry: { type: 'Point' as const, coordinates: [s.lng, s.lat] },
+        }]
+      }),
+  }), [stations])
+
   // Real Supabase boundary rows only (see lib/data.ts's fetchAllWardBoundaries)
   // - an empty array here means the layer control correctly shows the
   // toggle as unavailable (MapLayerControl's wardBoundariesAvailable prop),
@@ -1067,6 +1083,9 @@ export default function MapPage() {
                   show3D={layers.aqiExtrusion && wardBoundariesAvailable}
                   windGeoJSON={windGeoJSON}
                   showWind={layers.windFlow && windGeoJSON.features.length > 0}
+                  showBuildings3D={layers.buildings3D && maptilerKey() != null}
+                  showAqiHeatmap={layers.aqiHeatmap && stationHeatmapGeoJSON.features.length > 0}
+                  stationHeatmapGeoJSON={stationHeatmapGeoJSON}
                   selectionKey={selectionKey}
                   selectedIncidentCoords={selectedIncidentCoords}
                 />
@@ -1081,6 +1100,8 @@ export default function MapPage() {
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
                     aqiExtrusionAvailable={wardBoundariesAvailable}
                     windFlowAvailable={windGeoJSON.features.length > 0}
+                    buildings3DAvailable={maptilerKey() != null}
+                    aqiHeatmapAvailable={stationHeatmapGeoJSON.features.length > 0}
                     forecastSuppressed={forecastSuppressed}
                   />
                   <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
