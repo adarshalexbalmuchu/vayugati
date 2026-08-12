@@ -1,4 +1,4 @@
-import { Database, Radio } from 'lucide-react'
+import { Database } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { DataSourceTally } from '../../lib/latestReadingRules'
 import type { StationHealthRollup } from '../../lib/overviewRules'
@@ -39,12 +39,7 @@ export default function SensorHealthSnapshot({
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
       <CardHeader
-        title={
-          <span className="flex items-center gap-1.5">
-            <Radio className="h-4 w-4 text-accent-600" aria-hidden />
-            Feed Health
-          </span>
-        }
+        title="Feed Health"
         right={
           <Link
             to="/sensors"

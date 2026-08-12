@@ -1,4 +1,3 @@
-import { Activity } from 'lucide-react'
 import type { ForecastAccuracySummary, GatiMetrics } from '../../lib/data'
 import { forecastPipelineStatusLabel } from '../../lib/forecastTrustRules'
 import type { DispatchSlaBuckets } from '../../lib/overviewRules'
@@ -26,12 +25,7 @@ export default function OperationalSummaryPanel({
   return (
     <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <CardHeader
-        title={
-          <span className="flex items-center gap-1.5">
-            <Activity className="h-4 w-4 text-accent-600" aria-hidden />
-            Operational Summary
-          </span>
-        }
+        title="Operational Summary"
         subtitle="Live snapshot of the current queue and forecast trust"
       />
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">

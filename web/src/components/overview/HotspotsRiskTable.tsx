@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { ChevronDown, ChevronRight, Clock, Flame, Info } from 'lucide-react'
+import { ChevronDown, ChevronRight, Clock, Info } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
@@ -192,12 +192,7 @@ export default function HotspotsRiskTable({
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
       <CardHeader
-        title={
-          <span className="flex items-center gap-1.5">
-            <Flame className="h-4 w-4 text-status-warning" aria-hidden />
-            Wards by risk
-          </span>
-        }
+        title="Wards by risk"
         subtitle="Ranked by current AQI and forecast trajectory."
         right={
           <div className="flex flex-wrap items-center gap-2">

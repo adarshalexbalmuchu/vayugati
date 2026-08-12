@@ -72,7 +72,7 @@ export default function CommandView() {
               {state.stale && <StaleBadge />}
             </div>
             <p className="mt-0.5 text-xs font-medium text-slate-500">
-              Air response command centre · Official AQ readings, forecast risk, and action tracking.
+              Live readings · forecast · incidents
             </p>
           </div>
 

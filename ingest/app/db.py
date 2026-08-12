@@ -160,7 +160,12 @@ def _is_transient_network_error(exc: Exception) -> bool:
     # HTTP/2 stream-state errors: the server closed or reset an idle connection
     # and the client tried to reuse it. "send_headers in state" is the canonical
     # httpcore LocalProtocolError message for this scenario.
-    if "send_headers in state" in msg or "localprotocolerror" in type(exc).__name__.lower():
+    exc_type = type(exc).__name__.lower()
+    if "send_headers in state" in msg or "localprotocolerror" in exc_type:
+        return True
+    # HTTP/2 RemoteProtocolError: the server terminated the connection mid-stream
+    # (ConnectionTerminated error_code:1). Seen from Supabase after idle periods.
+    if "remoteprotocolerror" in exc_type or "connectionterminated" in msg:
         return True
     return False
 
