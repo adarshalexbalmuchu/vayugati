@@ -1086,6 +1086,8 @@ export default function MapPage() {
                   showBuildings3D={layers.buildings3D && maptilerKey() != null}
                   showAqiHeatmap={layers.aqiHeatmap && stationHeatmapGeoJSON.features.length > 0}
                   stationHeatmapGeoJSON={stationHeatmapGeoJSON}
+                  showVegetation3D={layers.vegetation3D && maptilerKey() != null}
+                  showLandUse={layers.landUse && maptilerKey() != null}
                   selectionKey={selectionKey}
                   selectedIncidentCoords={selectedIncidentCoords}
                 />
@@ -1102,6 +1104,8 @@ export default function MapPage() {
                     windFlowAvailable={windGeoJSON.features.length > 0}
                     buildings3DAvailable={maptilerKey() != null}
                     aqiHeatmapAvailable={stationHeatmapGeoJSON.features.length > 0}
+                    vegetation3DAvailable={maptilerKey() != null}
+                    landUseAvailable={maptilerKey() != null}
                     forecastSuppressed={forecastSuppressed}
                   />
                   <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />

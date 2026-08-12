@@ -15,12 +15,16 @@ export type MapLayerKey =
   | 'windFlow'
   | 'buildings3D'
   | 'aqiHeatmap'
+  | 'vegetation3D'
+  | 'landUse'
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
   'aqiExtrusion',
   'aqiHeatmap',
   'buildings3D',
+  'vegetation3D',
+  'landUse',
   'windFlow',
   'wardMarkers',
   'stations',
@@ -37,7 +41,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
 const LAYER_GROUPS: { label: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
-    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
+    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'vegetation3D', 'landUse', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
   },
   {
     label: 'Operations',
@@ -120,6 +124,16 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Smooth AQI gradient from station readings — shows where pollution is concentrated across the city.',
   },
+  vegetation3D: {
+    label: 'Green spaces (3D)',
+    available: false,
+    note: 'Parks and forests extruded as green 3D blocks — approximates urban tree canopy in the VoxCity style. Requires a vector basemap.',
+  },
+  landUse: {
+    label: 'Land use zones',
+    available: false,
+    note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
+  },
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -141,6 +155,8 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   windFlow: false,
   buildings3D: true,
   aqiHeatmap: true,
+  vegetation3D: true,
+  landUse: false,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -177,6 +193,8 @@ export default function MapLayerControl({
   windFlowAvailable = false,
   buildings3DAvailable = false,
   aqiHeatmapAvailable = false,
+  vegetation3DAvailable = false,
+  landUseAvailable = false,
   forecastSuppressed = false,
 }: {
   layers: Record<MapLayerKey, boolean>
@@ -194,6 +212,10 @@ export default function MapLayerControl({
   buildings3DAvailable?: boolean
   /** True once station AQI readings are available for the heatmap. */
   aqiHeatmapAvailable?: boolean
+  /** True when a vector basemap is loaded — same gate as buildings. */
+  vegetation3DAvailable?: boolean
+  /** True when a vector basemap is loaded — same gate as buildings. */
+  landUseAvailable?: boolean
   forecastSuppressed?: boolean
 }) {
   // Compute effective meta for each key (same logic as before, now used in
@@ -223,6 +245,10 @@ export default function MapLayerControl({
     } else if (key === 'buildings3D' && buildings3DAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'aqiHeatmap' && aqiHeatmapAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key === 'vegetation3D' && vegetation3DAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key === 'landUse' && landUseAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'predictedHotspots' && forecastSuppressed) {
       meta = { ...meta, available: false, note: 'Unavailable — latest forecast run failed.' }

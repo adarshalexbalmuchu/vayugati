@@ -68,6 +68,10 @@ const WIND_IMAGE_ID = 'wind-arrow-img'
 const BUILDINGS_LAYER_ID = 'city-buildings-3d'
 const AQI_HEATMAP_SOURCE_ID = 'aqi-station-heatmap'
 const AQI_HEATMAP_LAYER_ID = 'aqi-station-heatmap-layer'
+
+// ── VoxCity-inspired environment layers ───────────────────────────────────────
+const VEGETATION_LAYER_ID = 'osm-vegetation-3d'
+const LANDUSE_LAYER_ID = 'osm-landuse-fill'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
 const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
@@ -183,19 +187,19 @@ function createWindArrowImage(): ImageData {
   return ctx.getImageData(0, 0, size, size)
 }
 
-/** Scan loaded style layers to find the source name that serves building polygons.
- *  Different basemap providers name their sources differently (e.g. 'carto',
- *  'maptiler_planet') but all use 'building' as the OpenMapTiles source-layer. */
-function detectBuildingSource(map: maplibregl.Map): string | null {
+/** Scan the loaded basemap style for the vector tile source that contains a
+ *  given OpenMapTiles source-layer name (e.g. 'building', 'landuse',
+ *  'landcover'). Skips our own layer IDs so it never returns our own sources.
+ *  All OmT-compatible providers (MapTiler, CARTO GL, Protomaps) put every
+ *  source-layer in a single vector source, so any match gives the right name. */
+function detectVectorSource(map: maplibregl.Map, sourceLayer: string, ...excludeIds: string[]): string | null {
+  const skip = new Set(excludeIds)
   const style = map.getStyle()
   if (!style?.layers) return null
   for (const layer of style.layers) {
-    if (
-      'source-layer' in layer &&
-      (layer as { 'source-layer'?: string })['source-layer'] === 'building' &&
-      layer.id !== BUILDINGS_LAYER_ID
-    ) {
-      return (layer as { source?: string }).source ?? null
+    if ('source-layer' in layer && !skip.has(layer.id)) {
+      const sl = (layer as { 'source-layer'?: string })['source-layer']
+      if (sl === sourceLayer) return (layer as { source?: string }).source ?? null
     }
   }
   return null
@@ -269,6 +273,10 @@ interface Props {
   showAqiHeatmap?: boolean
   /** Station points with aqi weight — source for the heatmap layer. */
   stationHeatmapGeoJSON?: FeatureCollection<Point, { aqi: number }>
+  /** Render parks/forests/grass as green 3D blocks (VoxCity-style canopy). */
+  showVegetation3D?: boolean
+  /** Colour-code land use polygons (industrial/commercial/residential). */
+  showLandUse?: boolean
   /** Stable string key derived from the current selection in MapPage.  When
    *  it changes to a value that does not match the spiderfy stack's owner,
    *  the expansion is collapsed.  Defaults to 'none' (no selection). */
@@ -311,6 +319,8 @@ export default function MapView({
   showBuildings3D = false,
   showAqiHeatmap = false,
   stationHeatmapGeoJSON,
+  showVegetation3D = false,
+  showLandUse = false,
   selectionKey = 'none',
   selectedIncidentCoords = null,
 }: Props) {
@@ -356,6 +366,8 @@ export default function MapView({
   const showBuildings3DRef = useRef(showBuildings3D)
   const showAqiHeatmapRef = useRef(showAqiHeatmap)
   const stationHeatmapGeoJSONRef = useRef(stationHeatmapGeoJSON)
+  const showVegetation3DRef = useRef(showVegetation3D)
+  const showLandUseRef = useRef(showLandUse)
 
   // ── Incident GL layer refs ────────────────────────────────────────────────
   const incidentGeoJSONRef = useRef(incidentGeoJSON)
@@ -396,6 +408,8 @@ export default function MapView({
   useEffect(() => { showBuildings3DRef.current = showBuildings3D }, [showBuildings3D])
   useEffect(() => { showAqiHeatmapRef.current = showAqiHeatmap }, [showAqiHeatmap])
   useEffect(() => { stationHeatmapGeoJSONRef.current = stationHeatmapGeoJSON }, [stationHeatmapGeoJSON])
+  useEffect(() => { showVegetation3DRef.current = showVegetation3D }, [showVegetation3D])
+  useEffect(() => { showLandUseRef.current = showLandUse }, [showLandUse])
 
   useEffect(() => {
     wardBoundariesRef.current = wardBoundaries
@@ -836,7 +850,7 @@ export default function MapView({
     // level overview. Inserted below wind arrows so arrows stay on top.
     const addBuildings3D = () => {
       if (map.getLayer(BUILDINGS_LAYER_ID)) return
-      const buildingSource = detectBuildingSource(map)
+      const buildingSource = detectVectorSource(map, 'building', BUILDINGS_LAYER_ID)
       if (!buildingSource) return
       map.addLayer(
         {
@@ -912,6 +926,92 @@ export default function MapView({
     if (map.isStyleLoaded()) addAqiHeatmap()
     else map.once('style.load', addAqiHeatmap)
     map.on('style.load', addAqiHeatmap)
+
+    // ── Land use colour overlay (below vegetation, below ward fill) ───────
+    // Colour-codes OSM land use polygons: industrial = orange, commercial =
+    // amber, residential = muted blue. Uses 'landuse' OpenMapTiles source-
+    // layer from whatever basemap is loaded. Inserted before BOUNDARY_FILL so
+    // the ward fill (very low opacity) remains the top-most spatial reference.
+    const addLandUse = () => {
+      if (map.getLayer(LANDUSE_LAYER_ID)) return
+      const src = detectVectorSource(map, 'landuse', LANDUSE_LAYER_ID, VEGETATION_LAYER_ID)
+      if (!src) return
+      map.addLayer(
+        {
+          id: LANDUSE_LAYER_ID,
+          type: 'fill',
+          source: src,
+          'source-layer': 'landuse',
+          filter: ['in', ['get', 'class'], ['literal', ['industrial', 'commercial', 'residential', 'retail', 'railway']]] as maplibregl.ExpressionSpecification,
+          layout: { visibility: showLandUseRef.current ? 'visible' : 'none' },
+          paint: {
+            'fill-color': ['match', ['get', 'class'],
+              'industrial',  '#c45c20',
+              'commercial',  '#c49a20',
+              'residential', '#3a6baa',
+              'retail',      '#a04060',
+              'railway',     '#505060',
+              '#000000',
+            ] as maplibregl.ExpressionSpecification,
+            'fill-opacity': ['match', ['get', 'class'],
+              'industrial',  0.48,
+              'commercial',  0.42,
+              'residential', 0.28,
+              'retail',      0.38,
+              'railway',     0.30,
+              0,
+            ] as maplibregl.ExpressionSpecification,
+          },
+        },
+        BOUNDARY_FILL_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addLandUse()
+    else map.once('style.load', addLandUse)
+    map.on('style.load', addLandUse)
+
+    // ── Vegetation 3D layer (parks / forests as green blocks) ─────────────
+    // Extrudes OSM park/forest/grass landuse polygons as low 3D green volumes
+    // to approximate tree canopy — the VoxCity-style "urban vegetation" layer.
+    // Height varies by class: forests 14 m, parks 8 m, grass 2 m.
+    // Inserted above land-use and below ward fill so outlines read over trees.
+    const addVegetation3D = () => {
+      if (map.getLayer(VEGETATION_LAYER_ID)) return
+      const src = detectVectorSource(map, 'landuse', VEGETATION_LAYER_ID, LANDUSE_LAYER_ID)
+      if (!src) return
+      map.addLayer(
+        {
+          id: VEGETATION_LAYER_ID,
+          type: 'fill-extrusion',
+          source: src,
+          'source-layer': 'landuse',
+          filter: ['in', ['get', 'class'], ['literal', ['park', 'forest', 'grass', 'cemetery']]] as maplibregl.ExpressionSpecification,
+          layout: { visibility: showVegetation3DRef.current ? 'visible' : 'none' },
+          paint: {
+            'fill-extrusion-color': ['match', ['get', 'class'],
+              'forest',    '#14532d',
+              'park',      '#166534',
+              'grass',     '#15803d',
+              'cemetery',  '#1a3a28',
+              '#166534',
+            ] as maplibregl.ExpressionSpecification,
+            'fill-extrusion-height': ['match', ['get', 'class'],
+              'forest',   14,
+              'park',      8,
+              'grass',     2,
+              'cemetery',  3,
+              5,
+            ] as maplibregl.ExpressionSpecification,
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.72,
+          },
+        },
+        BOUNDARY_FILL_LAYER_ID,
+      )
+    }
+    if (map.isStyleLoaded()) addVegetation3D()
+    else map.once('style.load', addVegetation3D)
+    map.on('style.load', addVegetation3D)
 
     map.once('load', () => {
       mapReadyRef.current = true
@@ -1263,6 +1363,30 @@ export default function MapView({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [showAqiHeatmap])
+
+  // Toggle vegetation 3D visibility
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = showVegetation3D ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(VEGETATION_LAYER_ID)) map.setLayoutProperty(VEGETATION_LAYER_ID, 'visibility', vis)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [showVegetation3D])
+
+  // Toggle land use overlay visibility
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const vis = showLandUse ? 'visible' : 'none'
+    const apply = () => {
+      if (map.getLayer(LANDUSE_LAYER_ID)) map.setLayoutProperty(LANDUSE_LAYER_ID, 'visibility', vis)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [showLandUse])
 
   // Toggle the selected CSS class on the appropriate DOM marker element.
   // Uses a querySelectorAll on the map container rather than recreating all
