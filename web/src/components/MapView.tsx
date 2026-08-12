@@ -1,8 +1,9 @@
 import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson'
 import maplibregl, { type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FALLBACK_STYLE } from '../lib/basemaps'
+import WindParticles from './WindParticles'
 import {
   areIdenticalCoords,
   clusterTooltipHtml,
@@ -328,6 +329,9 @@ export default function MapView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  // Exposed via state so child components (WindParticles) can access the map
+  // instance. Set once in the mount effect; never causes a map re-creation.
+  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null)
 
   // Ward-boundary GL layers are wiped by every setStyle() call (unlike the
   // DOM-based markers below, which survive it) and are read from inside
@@ -836,7 +840,10 @@ export default function MapView({
           ] as maplibregl.ExpressionSpecification,
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          visibility: showWindRef.current ? 'visible' : 'none',
+          // Wind particles (WindParticles canvas) replace arrows as the visual —
+          // arrows stay registered because WIND_LAYER_ID is used as beforeId
+          // for the buildings layer, but are never made visible.
+          visibility: 'none',
         },
       })
     }
@@ -1079,6 +1086,7 @@ export default function MapView({
     })
 
     mapRef.current = map
+    setMapInstance(map)
     return () => {
       canvas.removeEventListener('webglcontextlost', onContextLost)
       canvas.removeEventListener('webglcontextrestored', onContextRestored)
@@ -1375,19 +1383,7 @@ export default function MapView({
     else map.once('load', apply)
   }, [windGeoJSON])
 
-  // Toggle wind arrow layer visibility
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    const vis = showWind ? 'visible' : 'none'
-    const apply = () => {
-      if (map.getLayer(WIND_LAYER_ID)) {
-        map.setLayoutProperty(WIND_LAYER_ID, 'visibility', vis)
-      }
-    }
-    if (mapReadyRef.current) apply()
-    else map.once('load', apply)
-  }, [showWind])
+  // Wind arrows replaced by WindParticles canvas — no GL layer toggle needed.
 
   // Push updated station heatmap data into the GL source
   useEffect(() => {
@@ -1465,5 +1461,23 @@ export default function MapView({
     }
   }, [selectedMarkerId])
 
-  return <div ref={containerRef} className="h-full w-full" />
+  // Extract point data for the particle system from the GL GeoJSON source
+  // (which already has the right ward centroid positions + wind readings).
+  const windPoints = useMemo(
+    () =>
+      (windGeoJSON?.features ?? []).map((f) => ({
+        lng: f.geometry.coordinates[0],
+        lat: f.geometry.coordinates[1],
+        dir: f.properties.wind_dir,
+        speed: f.properties.wind_speed,
+      })),
+    [windGeoJSON],
+  )
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={containerRef} className="h-full w-full" />
+      <WindParticles map={mapInstance} points={windPoints} visible={showWind} />
+    </div>
+  )
 }
