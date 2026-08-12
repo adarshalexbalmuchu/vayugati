@@ -294,50 +294,74 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
+def _max_8h_rolling_avg(values: list[float]) -> float:
+    """Maximum of all possible 8-hour rolling averages from a time-ordered series.
+    CPCB's National AQI methodology uses this window for O3 and CO instead of
+    a 24h simple average — the highest 8h mean is what drives the sub-index."""
+    n = len(values)
+    if n == 0:
+        return 0.0
+    window = min(8, n)
+    best = 0.0
+    for i in range(n - window + 1):
+        avg = sum(values[i : i + window]) / window
+        if avg > best:
+            best = avg
+    return best
+
+
 def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
-    """Per-station 24h average concentrations for AQI recomputation.
+    """Per-station concentrations for AQI recomputation, matching CPCB's exact
+    averaging methodology:
+      PM2.5 / PM10 / NO2 / SO2 / NH3 → 24-hour simple average
+      O3 / CO                         → maximum 8-hour rolling average
 
-    CPCB's AQI breakpoints are calibrated for 24h averages; using hourly
-    snapshots inflates AQI by 1.5–3×. This query averages all readings in the
-    last 24h and returns one dict per station with pollutant averages.
-
-    CO is normalised to mg/m³ here (CPCB stores mg/m³, OpenAQ stores µg/m³
-    tagged by ingest_source) so the caller can pass `co` directly as `co_mg`
-    to aqi.compute_aqi() without further conversion."""
+    CO is normalised to mg/m³ (CPCB stores mg/m³, OpenAQ µg/m³ tagged by
+    ingest_source) so the caller can pass it directly as co_mg to compute_aqi()."""
     if not station_ids:
         return {}
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    rows = (
-        client()
+    rows = _with_retry(lambda: client()
         .table("readings")
-        .select("station_id, pm25, pm10, no2, so2, co, o3, nh3, ingest_source")
+        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, nh3, ingest_source")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
+        .order("ts")
         .execute()
-        .data
-    )
-    sums: dict[int, dict[str, float]] = {}
-    counts: dict[int, dict[str, int]] = {}
+    ).data or []
+
+    # Group time-ordered rows per station for rolling-window computation
+    by_station: dict[int, list[dict]] = {}
     for row in rows:
-        sid = row["station_id"]
-        source = row.get("ingest_source") or "openaq"  # pre-Phase2 rows were OpenAQ (CO in µg/m³)
-        sums.setdefault(sid, {})
-        counts.setdefault(sid, {})
-        for col in ("pm25", "pm10", "no2", "so2", "o3", "nh3"):
-            val = row.get(col)
-            if val is not None:
-                sums[sid][col] = sums[sid].get(col, 0.0) + val
-                counts[sid][col] = counts[sid].get(col, 0) + 1
-        # CO: normalise to mg/m³ before averaging
-        co = row.get("co")
-        if co is not None:
-            co_mg = co if source == "cpcb" else co / 1000.0
-            sums[sid]["co"] = sums[sid].get("co", 0.0) + co_mg
-            counts[sid]["co"] = counts[sid].get("co", 0) + 1
-    return {
-        sid: {col: sums[sid][col] / counts[sid][col] for col in sums[sid]}
-        for sid in sums
-    }
+        by_station.setdefault(row["station_id"], []).append(row)
+
+    result: dict[int, dict] = {}
+    for sid, readings in by_station.items():
+        avg: dict[str, float] = {}
+
+        # 24h simple average — PM2.5 / PM10 / NO2 / SO2 / NH3
+        for col in ("pm25", "pm10", "no2", "so2", "nh3"):
+            vals = [r[col] for r in readings if r.get(col) is not None]
+            if vals:
+                avg[col] = sum(vals) / len(vals)
+
+        # 8h rolling maximum — O3 (CPCB: highest 8h running average in the day)
+        o3_vals = [r["o3"] for r in readings if r.get("o3") is not None]
+        if o3_vals:
+            avg["o3"] = _max_8h_rolling_avg(o3_vals)
+
+        # 8h rolling maximum — CO (normalised to mg/m³ before windowing)
+        co_vals: list[float] = []
+        for r in readings:
+            co = r.get("co")
+            if co is not None:
+                source = r.get("ingest_source") or "openaq"
+                co_vals.append(co if source == "cpcb" else co / 1000.0)
+        if co_vals:
+            avg["co"] = _max_8h_rolling_avg(co_vals)
+
+        result[sid] = avg
+    return result
 
 
 def set_reading_aqi(station_id: int, ts: str, aqi_value: int) -> None:
