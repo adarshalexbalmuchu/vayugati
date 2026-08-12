@@ -154,7 +154,15 @@ def upsert_weather(row: dict) -> None:
 
 def _is_transient_network_error(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(s in msg for s in ("disconnected", "connection reset", "connection error", "eof occurred"))
+    # String-match patterns for TCP-level resets from Render → Supabase.
+    if any(s in msg for s in ("disconnected", "connection reset", "connection error", "eof occurred")):
+        return True
+    # HTTP/2 stream-state errors: the server closed or reset an idle connection
+    # and the client tried to reuse it. "send_headers in state" is the canonical
+    # httpcore LocalProtocolError message for this scenario.
+    if "send_headers in state" in msg or "localprotocolerror" in type(exc).__name__.lower():
+        return True
+    return False
 
 
 def _with_retry(fn, max_attempts: int = 3):
