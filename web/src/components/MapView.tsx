@@ -850,7 +850,11 @@ export default function MapView({
     // city scale, even in theory.
     // Extra right padding accounts for the ~256px contextual right panel so
     // selected features are not hidden behind it on fitBounds / Reset to Delhi.
-    map.fitBounds(bounds, { padding: { top: 48, bottom: 48, left: 48, right: 280 }, minZoom: 9, maxZoom: 13, duration: 600 })
+    // Preserve pitch/bearing if 3D extrusion is active — fitBounds resets them
+    // to 0 by default, which would flatten the map unexpectedly.
+    const pitch = show3DRef.current ? 45 : 0
+    const bearing = show3DRef.current ? -12 : 0
+    map.fitBounds(bounds, { padding: { top: 48, bottom: 48, left: 48, right: 280 }, minZoom: 9, maxZoom: 13, duration: 600, pitch, bearing })
   }, [fitBoundsTo])
 
   // sync markers whenever they change (or map is ready)
@@ -1069,12 +1073,14 @@ export default function MapView({
     }
     if (mapReadyRef.current) applyVisibility()
     else map.once('load', applyVisibility)
-    // Set pitch/bearing directly first (synchronous, guaranteed to apply),
-    // then easeTo for the smooth animation. easeTo alone can be suppressed
-    // if a concurrent fitBounds or style load is in progress.
-    map.setPitch(show3D ? 45 : 0)
-    map.setBearing(show3D ? -12 : 0)
-    map.easeTo({ pitch: show3D ? 45 : 0, bearing: show3D ? -12 : 0, duration: 600 })
+    // jumpTo is synchronous and cannot be cancelled by concurrent operations
+    // (unlike easeTo which can be pre-empted by fitBounds or style reloads).
+    // We jumpTo first to guarantee the camera state is set, then immediately
+    // start an easeTo from the same position to produce a smooth animation.
+    const targetPitch = show3D ? 45 : 0
+    const targetBearing = show3D ? -12 : 0
+    map.jumpTo({ pitch: targetPitch, bearing: targetBearing })
+    map.easeTo({ pitch: targetPitch, bearing: targetBearing, duration: 600 })
   }, [show3D])
 
   // Push updated wind GeoJSON into the GL source
