@@ -7,6 +7,7 @@ Trigger now:  curl -X POST localhost:8000/run
 import logging
 import secrets
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -74,6 +75,12 @@ _last_intel: dict | None = None
 _last_ops: dict | None = None
 _last_transit: dict | None = None
 _last_cpcb_reconcile: list[dict] | None = None
+
+# Public /refresh cooldown — prevents frontend-triggered reconciles from
+# hammering data.gov.in. 10 minutes matches the scheduled reconcile interval.
+_REFRESH_COOLDOWN_S = 600
+_last_public_refresh_ts: float = 0.0
+_public_refresh_lock = threading.Lock()
 
 
 def run_ingest() -> dict:
@@ -367,6 +374,45 @@ def trigger_readings_refresh():
         return run_cpcb_reconcile()
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.post("/refresh")
+def public_refresh():
+    """Public rate-limited endpoint for the frontend Refresh button.
+
+    Runs the CPCB reconcile (reads data.gov.in + Supabase, no DB writes)
+    and returns fresh station readings. Rate-limited to once per 10 minutes
+    server-side — no auth key required, safe to call from the browser.
+
+    Returns:
+      200 {"status": "ok", "refreshed_at": <epoch>, "stations": [...]}
+      429 {"status": "recent", "refreshed_at": <epoch>, "next_in_s": <int>}
+      409 {"status": "busy"} if another reconcile is already in progress
+    """
+    global _last_public_refresh_ts
+    now = time.time()
+    elapsed = now - _last_public_refresh_ts
+    remaining = int(_REFRESH_COOLDOWN_S - elapsed)
+
+    if elapsed < _REFRESH_COOLDOWN_S:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "status": "recent",
+                "refreshed_at": _last_public_refresh_ts,
+                "next_in_s": remaining,
+            },
+            headers={"Retry-After": str(remaining)},
+        )
+
+    if not _public_refresh_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="busy")
+    try:
+        result = run_cpcb_reconcile()
+        _last_public_refresh_ts = time.time()
+        return {"status": "ok", "refreshed_at": _last_public_refresh_ts, "stations": result}
+    finally:
+        _public_refresh_lock.release()
 
 
 @app.get("/readings/latest")

@@ -1038,6 +1038,34 @@ export interface LatestReadingReconciliation {
 }
 
 const LATEST_READINGS_TIMEOUT_MS = 8_000
+const REFRESH_TIMEOUT_MS = 15_000
+
+/**
+ * Ask the ingest service to re-fetch fresh CPCB data from data.gov.in right
+ * now, without needing an API key. The server enforces a 10-minute cooldown
+ * so this is safe to call on every button click.
+ *
+ * Returns:
+ *   { status: 'ok', refreshed_at: number }          — fresh data fetched
+ *   { status: 'recent', next_in_s: number }          — still within cooldown
+ *   null                                              — ingest service unreachable
+ */
+export async function triggerIngestRefresh(): Promise<
+  { status: 'ok'; refreshed_at: number } | { status: 'recent'; next_in_s: number } | null
+> {
+  try {
+    const res = await fetch(`${INGEST_URL}/refresh`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
+    })
+    const data: unknown = await res.json()
+    if (res.status === 429) return { status: 'recent', next_in_s: (data as { next_in_s: number }).next_in_s ?? 600 }
+    if (!res.ok) return null
+    return { status: 'ok', refreshed_at: (data as { refreshed_at: number }).refreshed_at }
+  } catch {
+    return null
+  }
+}
 
 /**
  * Best-effort fetch of the ingest service's CPCB-preferred-latest-reading

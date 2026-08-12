@@ -30,6 +30,7 @@ import {
   fetchHistoricalStationReadings,
   fetchLatestReadingsPreferred,
   fetchTransportActivity,
+  triggerIngestRefresh,
   type HistoricalStationReading,
   type Report,
   type StationMarker,
@@ -1013,12 +1014,13 @@ export default function MapPage() {
     }
   }, [selection, wardBoundaries, stationHealth, stations, stationHealthById, incidents, forecasts, pollutant, forecastPollutant])
 
-  // Same "must refresh every independent fetch, not just the main bundle"
-  // fix as Overview's Refresh button - transitState/latestReadingsState
-  // otherwise stay on whatever they resolved to on first mount (commonly
-  // "unavailable" if the ingest service's first scheduled refresh hadn't
-  // landed yet) even after the visible Refresh button is clicked.
-  const refreshAll = () => {
+  // Ask the ingest service to pull fresh data from data.gov.in before
+  // re-fetching from Supabase. The server enforces a 10-min cooldown so
+  // rapid clicks just get a "recent" response and we fall through to a
+  // normal Supabase re-fetch, which is still useful (picks up any ingest
+  // that ran in the background since the last page load).
+  const refreshAll = async () => {
+    await triggerIngestRefresh()
     state.refresh()
     transitState.refresh()
     latestReadingsState.refresh()

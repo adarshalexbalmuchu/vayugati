@@ -9,7 +9,7 @@ import SensorFilterBar, { ALL, type SensorFilters } from '../components/sensors/
 import SensorHealthTable, { type SensorRow } from '../components/sensors/SensorHealthTable'
 import { sensorStatus, type SensorStatus } from '../components/sensors/SensorStatusBadge'
 import { useAuth } from '../lib/auth'
-import { fetchAllStationsWithReadings, fetchDataFootprint, fetchForecastAccuracySummary, fetchLatestReadingsPreferred } from '../lib/data'
+import { fetchAllStationsWithReadings, fetchDataFootprint, fetchForecastAccuracySummary, fetchLatestReadingsPreferred, triggerIngestRefresh } from '../lib/data'
 import { listIncidents } from '../lib/incidents'
 import { tallyDataSourceConfidence, timestampMismatchMinutes, TIMESTAMP_MISMATCH_MINUTES_THRESHOLD } from '../lib/latestReadingRules'
 import { fetchStationHealth, setStationActive, type StationHealthRow } from '../lib/ops'
@@ -216,7 +216,8 @@ export default function SensorsView() {
           </div>
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              await triggerIngestRefresh()
               state.refresh()
               incidentsState.refresh()
               footprintState.refresh()
