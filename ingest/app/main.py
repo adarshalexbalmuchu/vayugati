@@ -321,11 +321,12 @@ class ClassifyRequest(BaseModel):
     photo_url: str | None = None
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     """Degraded, not just up/down (plan §9): reports database connectivity,
     reading freshness, and every tracked job's last-run status via the same
-    system_health_summary() the command-centre System Health screen reads."""
+    system_health_summary() the command-centre System Health screen reads.
+    HEAD is accepted so load-balancers that probe with HEAD don't get 405."""
     result = compute_health()
     result["last_run"] = _last_run
     result["last_intel"] = _last_intel

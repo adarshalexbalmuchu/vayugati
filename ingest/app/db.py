@@ -1,5 +1,6 @@
 """Supabase access. Uses the service_role key: writes bypass RLS by design."""
 
+import concurrent.futures
 import time
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -388,10 +389,21 @@ def delete_old_readings(days: int = 90) -> int:
     return deleted
 
 
-def call_rpc(name: str, params: dict) -> list:
-    """Call a Supabase RPC with the same transient-error retry as all writes.
-    Returns resp.data or [] — callers never see a raw httpx/httpcore error."""
-    resp = _with_retry(lambda: client().rpc(name, params).execute())
+def call_rpc(name: str, params: dict, timeout: float = 30.0) -> list:
+    """Call a Supabase RPC with transient-error retry + a hard wall-clock timeout.
+
+    postgrest-py's httpx client defaults to no timeout, so a slow or hung
+    Supabase stored-procedure call can block the APScheduler thread indefinitely
+    (seen: escalation job stuck >60 min). ThreadPoolExecutor.result(timeout=...)
+    gives us a portable deadline that works from worker threads (signal.alarm
+    is main-thread-only and would raise ValueError here).
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_with_retry, lambda: client().rpc(name, params).execute())
+        try:
+            resp = future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"call_rpc({name!r}) timed out after {timeout}s")
     return resp.data or []
 
 
