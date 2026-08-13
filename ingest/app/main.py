@@ -27,7 +27,7 @@ from . import (
     dispatch,
     forecast,
     ingest,
-    latest_readings,
+    latest_readings,  # used by run_ingest to rebuild live reconcile post-ingest
     notifications,
     source_attribution,
     station_matching,
@@ -84,11 +84,24 @@ _public_refresh_lock = threading.Lock()
 
 
 def run_ingest() -> dict:
-    global _last_run
+    global _last_run, _last_cpcb_reconcile
     if not _lock.acquire(blocking=False):
         raise RuntimeError("ingest already running")
     try:
         _last_run = run_tracked("ingest", ingest.run)
+        # Rebuild live-display reconcile using data already fetched by this
+        # ingest run — no second data.gov.in call needed.
+        try:
+            fetch = ingest.get_last_cpcb_fetch()
+            if fetch is not None:
+                cpcb_by_station, match_index = fetch
+                our_stations = db.get_all_stations()
+                our_latest = db.get_latest_readings_by_station([s["id"] for s in our_stations])
+                _last_cpcb_reconcile = latest_readings.reconcile_latest(
+                    our_stations, cpcb_by_station, match_index, our_latest
+                )
+        except Exception:
+            logging.getLogger("ingest").exception("post-ingest reconcile update failed")
         return _last_run
     finally:
         _lock.release()
@@ -203,14 +216,13 @@ def run_retention() -> dict:
 
 
 def run_cpcb_reconcile() -> list[dict]:
-    """CPCB/data.gov preferred-latest-reading reconciliation (audit/context
-    integration - see docs/data/cpcb-data-gov-primary-latest-integration-
-    report.md). Runs plainly, not via run_tracked(), same reason as
-    run_transit() above. Never raises: an unset DATA_GOV_API_KEY or a
-    failed fetch leaves data_gov_cpcb.fetch_delhi_records() returning None,
-    which reconcile_latest() below still handles cleanly - every one of our
-    stations still gets a row, just with source_used='openaq_fallback'
-    across the board, not an empty/broken result."""
+    """On-demand CPCB/data.gov preferred-latest-reading reconciliation.
+    No longer scheduled — run_ingest() now rebuilds _last_cpcb_reconcile
+    after each 15-min ingest cycle using the CPCB data it already fetched
+    (zero extra API calls). This function is kept for the /refresh and
+    /readings/refresh endpoints, which allow a user-triggered fresh fetch
+    between scheduled ingest cycles. Never raises — a missing key or failed
+    fetch produces source_used='openaq_fallback' for all stations."""
     global _last_cpcb_reconcile
     if not _cpcb_lock.acquire(blocking=False):
         raise RuntimeError("cpcb reconcile already running")
@@ -265,10 +277,6 @@ async def lifespan(app: FastAPI):
     # A no-op (unavailable_summary) rather than an error when unconfigured -
     # see run_transit's own docstring.
     scheduler.add_job(run_transit, "interval", minutes=5)
-    # every 10 minutes: refresh the CPCB/data.gov preferred-latest-reading
-    # reconciliation - see run_cpcb_reconcile's own docstring for its
-    # graceful-degradation contract.
-    scheduler.add_job(run_cpcb_reconcile, "interval", minutes=10)
     # daily at 03:00 UTC: purge readings older than 90 days to bound table growth.
     scheduler.add_job(run_retention, "cron", hour=3, minute=0)
     scheduler.start()
@@ -291,10 +299,9 @@ async def lifespan(app: FastAPI):
             run_transit()
         except Exception:
             logging.exception("bootstrap transit failed")
-        try:
-            run_cpcb_reconcile()
-        except Exception:
-            logging.exception("bootstrap cpcb reconcile failed")
+        # run_cpcb_reconcile no longer runs separately — run_ingest() rebuilds
+        # _last_cpcb_reconcile from the CPCB data it already fetched, so the
+        # reconcile cache is already populated when run_ingest() above returns.
 
     threading.Thread(target=_bootstrap, daemon=True).start()
     yield

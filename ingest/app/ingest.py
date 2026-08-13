@@ -14,6 +14,17 @@ from . import aqi, config, data_gov_cpcb, db, open_meteo, openaq, station_matchi
 
 log = logging.getLogger("ingest")
 
+# Last CPCB fetch cached so main.py can rebuild the live-display reconcile
+# after each ingest without a second data.gov.in API call.
+_last_cpcb_fetch: tuple[dict, dict] | None = None  # (cpcb_by_station, match_index)
+
+
+def get_last_cpcb_fetch() -> tuple[dict, dict] | None:
+    """Returns (cpcb_by_station, match_index) from the most recent run().
+    Call this from main.py immediately after run_tracked("ingest", ingest.run)."""
+    return _last_cpcb_fetch
+
+
 # IST offset for parsing CPCB's 'DD-MM-YYYY HH:MM:SS' last_update strings.
 # The same constant appears in latest_readings.py — one source of truth for
 # the IST convention that CPCB's live feed uses.
@@ -59,8 +70,11 @@ def _ingest_from_cpcb(
 
     One API call per cycle returns all Delhi stations — no per-station loop,
     no per-month quota. Returns (rows_written, errors, station_ids_covered,
-    unmatched_stations, station_ts) where station_ts maps station_id -> ts of
-    the row just written (used by the 24h-average AQI recomputation step)."""
+    unmatched_stations, station_ts, cpcb_by_station) where station_ts maps
+    station_id -> ts of the row just written (used by the 24h-average AQI
+    recomputation step) and cpcb_by_station is the raw grouped CPCB feed
+    (cached by run() so main.py can rebuild the live reconcile without a
+    second API call)."""
     records = data_gov_cpcb.fetch_delhi_records()
     if records is None:
         msg = "CPCB fetch returned None — DATA_GOV_API_KEY unset or API unavailable"
@@ -162,7 +176,7 @@ def _ingest_from_cpcb(
         "%d unmatched, %d errors",
         rows_written, len(covered), len(cpcb_by_station), len(unmatched), len(errors),
     )
-    return rows_written, errors, covered, unmatched, station_ts
+    return rows_written, errors, covered, unmatched, station_ts, cpcb_by_station
 
 
 def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
@@ -249,7 +263,10 @@ def run() -> dict:
     """One full ingestion pass. CPCB/data.gov.in is the primary AQ source;
     OpenAQ runs only for stations that CPCB's name-match didn't cover (or
     when DATA_GOV_API_KEY is unset). Open-Meteo weather is independent.
-    Safe to run every 15 minutes; all upserts are idempotent (station_id,ts)."""
+    Safe to run every 15 minutes; all upserts are idempotent (station_id,ts).
+    Caches (cpcb_by_station, match_index) in _last_cpcb_fetch so main.py can
+    rebuild the live-display reconcile without a second data.gov.in call."""
+    global _last_cpcb_fetch
     summary: dict = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "cpcb_rows_written": 0,
@@ -270,7 +287,8 @@ def run() -> dict:
     }
     match_index = station_matching.build_match_index(all_stations)
 
-    cpcb_rows, cpcb_errors, cpcb_covered, cpcb_unmatched, cpcb_station_ts = _ingest_from_cpcb(match_index)
+    cpcb_rows, cpcb_errors, cpcb_covered, cpcb_unmatched, cpcb_station_ts, cpcb_by_station = _ingest_from_cpcb(match_index)
+    _last_cpcb_fetch = (cpcb_by_station, match_index)
     summary["cpcb_rows_written"] = cpcb_rows
     summary["cpcb_unmatched_stations"] = cpcb_unmatched
     summary["errors"].extend(cpcb_errors)
