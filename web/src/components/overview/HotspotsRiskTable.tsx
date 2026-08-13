@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { ChevronRight, Clock, Info } from 'lucide-react'
+import { ChevronRight, Clock, Info, MapPin } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { ForecastPoint, LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
 import OverviewChoroplethMap from './OverviewChoroplethMap'
@@ -387,11 +387,27 @@ function WardDetailPanel({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Ward header */}
-      <div className="border-b border-slate-100 px-4 pb-3 pt-4">
-        <div className="flex items-start justify-between gap-2">
+      {/* AQI-coloured hero — serves as the visual "photo" area; swap for a real
+          station image once we discover the CPCB CDN URL pattern. */}
+      <div
+        className="relative shrink-0 overflow-hidden px-4 pb-3 pt-4"
+        style={{
+          background: `linear-gradient(135deg, ${level.hex}22 0%, ${level.hex}0a 100%)`,
+          borderBottom: `2px solid ${level.hex}35`,
+        }}
+      >
+        {/* Subtle dot grid for texture */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px)',
+            backgroundSize: '14px 14px',
+          }}
+        />
+        <div className="relative flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-bold text-slate-800">{ward.name}</h3>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Ward</p>
+            <h3 className="mt-0.5 truncate text-sm font-bold text-slate-800">{ward.name}</h3>
             {displayAqi != null && (
               <p className="mt-0.5 text-xs font-semibold" style={{ color: level.hex }}>
                 {level.label}
@@ -400,7 +416,7 @@ function WardDetailPanel({
           </div>
           {displayAqi != null && (
             <span
-              className="shrink-0 text-2xl font-extrabold tabular-nums leading-none"
+              className="shrink-0 text-3xl font-extrabold tabular-nums leading-none"
               style={{ color: level.hex }}
             >
               {displayAqi}
@@ -442,6 +458,44 @@ function WardDetailPanel({
               <PollutantRow key={k} id={k} value={readings[k]!} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Monitoring station info */}
+      {(ward.station_name || ward.station_agency || (ward.lat != null && ward.lng != null)) && (
+        <div className="border-t border-slate-100 px-4 py-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Monitoring station
+          </p>
+
+          {/* Location card — tap to open in Google Maps */}
+          {ward.lat != null && ward.lng != null && (
+            <a
+              href={`https://maps.google.com/?q=${ward.lat},${ward.lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group mb-2.5 flex items-center gap-2.5 overflow-hidden rounded-lg border border-slate-100 bg-gradient-to-br from-sky-50 to-blue-50 px-3 py-2 transition hover:border-sky-200 hover:from-sky-100 hover:to-blue-100"
+            >
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 transition group-hover:bg-sky-200">
+                <MapPin className="h-3.5 w-3.5 text-sky-500" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-sky-600">Open in Maps ↗</p>
+                <p className="font-mono text-[10px] text-slate-500 tabular-nums">
+                  {ward.lat.toFixed(5)}, {ward.lng.toFixed(5)}
+                </p>
+              </div>
+            </a>
+          )}
+
+          {ward.station_name && (
+            <p className="truncate text-xs font-semibold leading-tight text-slate-700">
+              {ward.station_name}
+            </p>
+          )}
+          {ward.station_agency && (
+            <p className="mt-0.5 text-[11px] text-slate-400">{ward.station_agency}</p>
+          )}
         </div>
       )}
 
