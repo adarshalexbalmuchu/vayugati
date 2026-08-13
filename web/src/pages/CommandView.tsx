@@ -3,12 +3,10 @@ import { RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
-import OperationalSummaryPanel from '../components/overview/OperationalSummaryPanel'
 import { CityAqiGauge } from '../components/overview/CityAqiGauge'
 import CityStatusHero from '../components/overview/CityStatusHero'
 import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
-import SensorHealthSnapshot from '../components/overview/SensorHealthSnapshot'
 import {
   fetchAllForecasts,
   fetchAllWardsAqi,
@@ -16,16 +14,11 @@ import {
   fetchGatiMetrics,
   fetchLatestReadingsPreferred,
 } from '../lib/data'
-import { listActiveTaskDispatches } from '../lib/incidents'
-import { tallyDataSourceConfidence } from '../lib/latestReadingRules'
 import { forecastPollutantFor, type MapPollutant } from '../lib/mapRules'
-import { fetchStationHealth } from '../lib/ops'
 import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
-  bucketDispatchSla,
   hotspotStatus,
   peakWithinWindow,
-  rollupStationHealth,
   severeWardsWithin,
   wardsNeedingReview,
   type TimeWindowHours,
@@ -51,8 +44,6 @@ export default function CommandView() {
       Promise.all([
         fetchAllWardsAqi(),
         fetchGatiMetrics(),
-        listActiveTaskDispatches({ offset: 0, pageSize: 200 }),
-        fetchStationHealth(),
         fetchForecastAccuracySummary(),
       ]),
     [],
@@ -97,10 +88,6 @@ export default function CommandView() {
           <>
             <Skeleton className="h-[122px] shrink-0 rounded-xl" />
             <Skeleton className="min-h-0 flex-1 rounded-xl" />
-            <div className="grid h-[190px] shrink-0 grid-cols-2 gap-3">
-              <Skeleton className="h-full rounded-xl" />
-              <Skeleton className="h-full rounded-xl" />
-            </div>
           </>
         ) : state.error ? (
           <Card>
@@ -109,7 +96,7 @@ export default function CommandView() {
         ) : (
           state.data &&
           (() => {
-            const [wards, metrics, dispatchPage, stationHealth, accuracy] = state.data
+            const [wards, metrics, accuracy] = state.data
             const rawForecasts = forecastsState.data ?? new Map()
             const latestReadingsByWard = new Map(
               (latestReadingsState.data ?? [])
@@ -151,10 +138,7 @@ export default function CommandView() {
               : sortedWards
             const forecasts = suppressForecast ? new Map() : rawForecasts
             const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
-            const slaBuckets = bucketDispatchSla(dispatchPage.rows)
-            const stationRollup = rollupStationHealth(stationHealth)
             const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
-            const dataSourceTally = latestReadingsState.data?.length ? tallyDataSourceConfidence(latestReadingsState.data) : null
 
             // Trend status for the worst ward — same hotspotStatus() the table uses
             // per row, computed once here for the hero, not duplicated.
@@ -265,11 +249,6 @@ export default function CommandView() {
                   />
                 </div>
 
-                {/* Bottom row — fixed height, cards scroll internally */}
-                <div className="grid h-[190px] shrink-0 grid-cols-2 gap-3">
-                  <OperationalSummaryPanel metrics={metrics} slaBuckets={slaBuckets} accuracy={accuracy} />
-                  <SensorHealthSnapshot rollup={stationRollup} dataSourceTally={dataSourceTally} />
-                </div>
               </>
             )
           })()
