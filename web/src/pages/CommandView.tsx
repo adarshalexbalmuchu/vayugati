@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
@@ -44,7 +44,7 @@ export default function CommandView() {
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [windowHours, setWindowHours] = useState<TimeWindowHours>(24)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
-  const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh, health } = useIngestHealth()
+  const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh } = useIngestHealth()
 
   const state = useAsync(
     () =>
@@ -150,13 +150,6 @@ export default function CommandView() {
             const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
             const dataSourceTally = latestReadingsState.data?.length ? tallyDataSourceConfidence(latestReadingsState.data) : null
 
-            // Data freshness banner: show when readings are confirmed stale or pipeline down
-            const healthAge = health?.checks.reading_freshness.latest_reading_age_minutes ?? null
-            const dataIsStale = healthLoaded && (!readingConfirmedFresh || (healthAge != null && healthAge >= 60))
-            const staleAgeLabel = healthAge != null
-              ? healthAge < 60 ? `${Math.round(healthAge)}m` : `${Math.round(healthAge / 60)}h`
-              : null
-
             // Trend status for the worst ward — same hotspotStatus() the table uses
             // per row, computed once here for the hero, not duplicated.
             const worstWard = displayWards[0] ?? null
@@ -201,18 +194,6 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Stale data banner — shown prominently when readings are old */}
-                {dataIsStale && (
-                  <div className="flex items-center gap-2.5 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-2.5 text-sm text-status-warning">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" aria-hidden />
-                    <span>
-                      <span className="font-semibold">Data delayed</span>
-                      {staleAgeLabel ? ` — last reading ${staleAgeLabel} ago.` : '.'}
-                      {' '}AQI values on this page may not reflect current conditions.
-                    </span>
-                  </div>
-                )}
-
                 {/* Hero area — gauge | ward summary | KPI rail */}
                 <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-0">
