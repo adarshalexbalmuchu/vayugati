@@ -28,12 +28,16 @@ function formatSource(s: string): string {
 }
 
 function ageMinutes(ts: string | null): number | null {
-  return ts ? (Date.now() - new Date(ts).getTime()) / 60_000 : null
+  if (!ts) return null
+  const ms = Date.now() - new Date(ts).getTime()
+  return isNaN(ms) ? null : ms / 60_000
 }
 
 function timeAgo(ts: string | null): string {
   if (!ts) return '—'
-  const h = Math.floor((Date.now() - new Date(ts).getTime()) / 3_600_000)
+  const ms = Date.now() - new Date(ts).getTime()
+  if (isNaN(ms)) return '—'
+  const h = Math.floor(ms / 3_600_000)
   return h < 1 ? '<1h' : `${h}h`
 }
 
@@ -273,8 +277,9 @@ export default function HotspotsRiskTable({
               const preferred = latestReadingsByWard?.get(ward.id)
               const windowed = peakWithinWindow(forecast, windowHours)
               // ward.ts is null when compute_ward_aqi skips stale wards; fall
-              // back to the reading-level timestamp from the reconciliation row.
-              const displayTs = ward.ts ?? preferred?.openaqLastUpdate ?? preferred?.cpcbLastUpdate ?? null
+              // back to the ISO timestamp from the reconciliation row.
+              // cpcbLastUpdate is DD-MM-YYYY HH:MM:SS (unparseable by JS) — excluded.
+              const displayTs = ward.ts ?? preferred?.openaqLastUpdate ?? null
               const status = hotspotStatus(
                 {
                   hoursToSevere: forecast?.hoursToSevere ?? null,

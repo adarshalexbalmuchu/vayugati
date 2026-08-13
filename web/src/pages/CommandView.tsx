@@ -164,14 +164,14 @@ export default function CommandView() {
             // the gauge showing 500 (OpenAQ 24h average) while the table shows 277 (CPCB live).
             const worstPreferred = worstWard ? latestReadingsByWard.get(worstWard.id) : undefined
             // ward.ts is null when compute_ward_aqi skips stale wards; fall back
-            // to the reading-level timestamp from the reconciliation row.
-            const worstTs = worstWard?.ts
-              ?? worstPreferred?.openaqLastUpdate
-              ?? worstPreferred?.cpcbLastUpdate
-              ?? null
-            const worstReadingAge = worstTs
-              ? (Date.now() - new Date(worstTs).getTime()) / 60_000
-              : null
+            // to the ISO timestamp from the reconciliation row.
+            // cpcbLastUpdate is in DD-MM-YYYY HH:MM:SS (unparseable by JS) — excluded.
+            const worstTs = worstWard?.ts ?? worstPreferred?.openaqLastUpdate ?? null
+            const worstReadingAge = (() => {
+              if (!worstTs) return null
+              const ms = Date.now() - new Date(worstTs).getTime()
+              return isNaN(ms) ? null : ms / 60_000
+            })()
             const worstDisplayAqi = (worstPreferred?.sourceUsed === 'cpcb' && worstPreferred.cpcbAqi != null)
               ? worstPreferred.cpcbAqi
               : (worstWard?.aqi ?? worstPreferred?.openaqAqi ?? null)

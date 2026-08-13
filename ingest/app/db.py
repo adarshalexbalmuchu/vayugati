@@ -67,11 +67,11 @@ def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     replaces N sequential round-trips (one per station) with one request."""
     if not station_ids:
         return {}
-    # Fetch the latest 2 hours of readings for all stations in one query.
-    # The readings(station_id, ts desc) index makes this efficient regardless
-    # of table size. 2h window covers any realistic ingest cadence while
-    # keeping the result set small.
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    # Fetch the latest 24 hours of readings for all stations in one query.
+    # 24h (not 2h) so that the last-known reading is always returned even
+    # during a prolonged ingest outage — reconcile_latest() uses this to
+    # display stale-but-real values rather than blanks.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     rows = (
         client()
         .table("readings")

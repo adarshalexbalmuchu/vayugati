@@ -141,6 +141,22 @@ def reconcile_latest(
                 )
 
         openaq_aqi = openaq_entry.get("aqi") if openaq_entry else None
+        # readings.aqi is null for readings that predate _recompute_24h_aqi or
+        # when an ingest cycle failed before writing the AQI patch. Compute it
+        # from stored concentrations so the last-known value is never blank.
+        if openaq_aqi is None and openaq_entry:
+            co_raw = openaq_entry.get("co")
+            source = openaq_entry.get("ingest_source") or "openaq"
+            co_mg = co_raw if source == "cpcb" else (co_raw / 1000.0 if co_raw is not None else None)
+            openaq_aqi = aqi.compute_aqi(
+                openaq_entry.get("pm25"),
+                openaq_entry.get("pm10"),
+                no2=openaq_entry.get("no2"),
+                so2=openaq_entry.get("so2"),
+                o3=openaq_entry.get("o3"),
+                co_mg=co_mg,
+                nh3=openaq_entry.get("nh3"),
+            )
 
         if cpcb_aqi is not None and openaq_aqi is not None and abs(cpcb_aqi - openaq_aqi) > VALUE_MISMATCH_AQI_THRESHOLD:
             flags.append("value_mismatch")
