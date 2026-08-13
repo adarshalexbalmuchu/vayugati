@@ -1,4 +1,4 @@
-import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson'
+import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from 'geojson'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -7,24 +7,31 @@ import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSumm
 
 const DELHI_CENTER: [number, number] = [77.209, 28.6139]
 const DELHI_ZOOM = 9.6
-const SRC = 'ov-wards'
-const FILL = 'ov-ward-fill'
-const LINE = 'ov-ward-line'
+
+// Boundary polygon layer (all ~250 wards — geographic context, grey).
+const SRC    = 'ov-wards'
+const FILL   = 'ov-ward-fill'
+const LINE   = 'ov-ward-line'
+
+// Circle marker layer (the 13 monitored hotspot wards — colored by AQI).
+// Hotspot wards don't have boundary polygons yet, so we use their lat/lng centroids.
+const CSRC   = 'ov-ward-centers'
+const CIRCLE = 'ov-ward-circle'
 
 type WardFeatureProps = { id: number; name: string; aqi: number | null }
 type WardGeoJSON = FeatureCollection<Polygon | MultiPolygon, WardFeatureProps>
+type CenterGeoJSON = FeatureCollection<Point, WardFeatureProps>
 
-// CPCB AQI breakpoints — same scale used everywhere in this app.
 const AQI_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   'step',
   ['coalesce', ['get', 'aqi'], -1],
-  '#cbd5e1',          // -1  → no data (slate-300)
-  0,   '#55a84f',     //   0 → Good
-  50,  '#a3c853',     //  51 → Satisfactory
-  100, '#fff833',     // 101 → Moderate
-  200, '#f29c2b',     // 201 → Poor
-  300, '#e93f33',     // 301 → Very Poor
-  400, '#af2d24',     // 401 → Severe
+  '#94a3b8',          // no data → slate-400
+  0,   '#55a84f',
+  50,  '#a3c853',
+  100, '#fff833',
+  200, '#f29c2b',
+  300, '#e93f33',
+  400, '#af2d24',
 ]
 
 const LEGEND_ITEMS = [
@@ -34,7 +41,6 @@ const LEGEND_ITEMS = [
   { label: 'Poor',         color: '#f29c2b' },
   { label: 'Very Poor',    color: '#e93f33' },
   { label: 'Severe',       color: '#af2d24' },
-  { label: 'No data',      color: '#cbd5e1' },
 ]
 
 export default function OverviewChoroplethMap({
@@ -59,42 +65,61 @@ export default function OverviewChoroplethMap({
   useEffect(() => { onSelectRef.current = onSelectWard }, [onSelectWard])
   useEffect(() => { selectedRef.current = selectedWardId }, [selectedWardId])
 
-  // Ward boundaries fetched once — static geometry (shape data doesn't change).
+  // Ward boundaries fetched once — static geometry.
   const [boundaries, setBoundaries] = useState<Awaited<ReturnType<typeof fetchAllWardBoundaries>>>([])
   useEffect(() => { fetchAllWardBoundaries().then(setBoundaries) }, [])
 
-  // Hovered ward label for the floating name badge.
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
 
-  // Stable ward ref for flyTo — avoids re-registering selection effect on every poll.
+  // Stable ward ref for flyTo — avoids re-triggering selection effect on every poll.
   const wardsForFlyRef = useRef(wards)
   useEffect(() => { wardsForFlyRef.current = wards }, [wards])
 
-  // Build GeoJSON: only monitored wards (those present in `wards` prop).
-  // Hiding the ~250 unmonitored grey boundaries keeps the map focused.
+  // Polygon GeoJSON — ALL boundary wards (shown grey, provides geographic context).
+  // The 13 monitored hotspot wards are in a separate table row that has is_hotspot=true
+  // but no boundary polygon yet, so they will never appear here and are visualised
+  // via the circle layer below instead.
   const geojson = useMemo<WardGeoJSON>(() => {
     const wardMap = new Map(wards.map(w => [w.id, w]))
     return {
       type: 'FeatureCollection',
-      features: boundaries
-        .filter(b => wardMap.has(b.id))
-        .map((b): Feature<Polygon | MultiPolygon, WardFeatureProps> => {
-          const ward = wardMap.get(b.id)
-          const preferred = latestReadingsByWard?.get(b.id)
-          const aqi =
-            preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-              ? preferred.cpcbAqi
-              : (ward?.aqi ?? preferred?.openaqAqi ?? null)
-          return {
-            type: 'Feature',
-            id: b.id,              // top-level id for MapLibre promoteId
-            properties: { id: b.id, name: b.name, aqi },
-            geometry: b.geometry,
-          }
-        }),
+      features: boundaries.map((b): Feature<Polygon | MultiPolygon, WardFeatureProps> => {
+        const ward = wardMap.get(b.id)
+        const preferred = latestReadingsByWard?.get(b.id)
+        const aqi =
+          preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+            ? preferred.cpcbAqi
+            : (ward?.aqi ?? preferred?.openaqAqi ?? null)
+        return {
+          type: 'Feature',
+          id: b.id,
+          properties: { id: b.id, name: b.name, aqi },
+          geometry: b.geometry,
+        }
+      }),
     }
   }, [boundaries, wards, latestReadingsByWard])
+
+  // Circle GeoJSON — only the monitored wards (lat/lng centroids, colored by AQI).
+  const centersGeoJSON = useMemo<CenterGeoJSON>(() => ({
+    type: 'FeatureCollection',
+    features: wards
+      .filter(w => w.lat != null && w.lng != null)
+      .map((w): Feature<Point, WardFeatureProps> => {
+        const preferred = latestReadingsByWard?.get(w.id)
+        const aqi =
+          preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+            ? preferred.cpcbAqi
+            : (w.aqi ?? preferred?.openaqAqi ?? null)
+        return {
+          type: 'Feature',
+          id: w.id,
+          properties: { id: w.id, name: w.name, aqi },
+          geometry: { type: 'Point', coordinates: [w.lng!, w.lat!] },
+        }
+      }),
+  }), [wards, latestReadingsByWard])
 
   // Mount the map once.
   useEffect(() => {
@@ -118,45 +143,65 @@ export default function OverviewChoroplethMap({
 
     const addLayers = () => {
       if (map.getSource(SRC)) return
+
+      // ── Polygon boundary layer (all wards, grey context) ──────────────────
       map.addSource(SRC, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] } as WardGeoJSON,
-        // promoteId:'id' → MapLibre uses properties.id as feature ID so
-        // setFeatureState() keyed by ward.id resolves correctly.
         promoteId: 'id',
       })
-
       map.addLayer({
         id: FILL,
         type: 'fill',
         source: SRC,
         paint: {
-          'fill-color': AQI_COLOR_EXPR,
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false], 0.90,
-            ['boolean', ['feature-state', 'hover'], false],   0.82,
-            0.72,
-          ] as maplibregl.ExpressionSpecification,
+          'fill-color': '#cbd5e1',
+          'fill-opacity': 0.35,
         },
       })
-
       map.addLayer({
         id: LINE,
         type: 'line',
         source: SRC,
         paint: {
-          'line-color': [
+          'line-color': 'rgba(148,163,184,0.6)',
+          'line-width': 0.5,
+        },
+      })
+
+      // ── Circle marker layer (monitored wards, AQI-colored) ─────────────────
+      map.addSource(CSRC, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] } as CenterGeoJSON,
+        promoteId: 'id',
+      })
+      map.addLayer({
+        id: CIRCLE,
+        type: 'circle',
+        source: CSRC,
+        paint: {
+          'circle-color': AQI_COLOR_EXPR,
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            9, 11,
+            11, 16,
+            13, 22,
+          ] as maplibregl.ExpressionSpecification,
+          'circle-stroke-color': [
             'case',
             ['boolean', ['feature-state', 'selected'], false], '#1d4ed8',
-            ['boolean', ['feature-state', 'hover'], false],   '#3b82f6',
-            'rgba(255,255,255,0.55)',
+            'white',
           ] as maplibregl.ExpressionSpecification,
-          'line-width': [
+          'circle-stroke-width': [
             'case',
-            ['boolean', ['feature-state', 'selected'], false], 2.5,
-            ['boolean', ['feature-state', 'hover'], false],   1.5,
-            0.55,
+            ['boolean', ['feature-state', 'selected'], false], 3,
+            1.5,
+          ] as maplibregl.ExpressionSpecification,
+          'circle-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false], 1,
+            ['boolean', ['feature-state', 'hover'], false], 0.95,
+            0.88,
           ] as maplibregl.ExpressionSpecification,
         },
       })
@@ -166,39 +211,51 @@ export default function OverviewChoroplethMap({
     else map.once('style.load', addLayers)
     map.on('style.load', addLayers)
 
-    // Click: select ward (or deselect if already selected).
+    // Timestamp used to prevent FILL click firing right after a CIRCLE click.
+    let lastCircleClickTs = 0
+
+    // Circle layer: primary click target for monitored wards.
+    map.on('click', CIRCLE, (e) => {
+      const id = e.features?.[0]?.properties?.id as number | undefined
+      if (id != null) {
+        lastCircleClickTs = Date.now()
+        onSelectRef.current(id === selectedRef.current ? null : id)
+      }
+    })
+
+    // Fill layer: fallback click (ward boundary wards that aren't monitored).
+    // Skip if a circle click was just handled (same geographic point).
     map.on('click', FILL, (e) => {
+      if (Date.now() - lastCircleClickTs < 120) return
       const id = e.features?.[0]?.properties?.id as number | undefined
       if (id != null) {
         onSelectRef.current(id === selectedRef.current ? null : id)
       }
     })
 
-    // Hover: update feature state + name badge.
-    let hoveredId: number | null = null
-    const clearHover = () => {
-      map.getCanvas().style.cursor = ''
-      if (hoveredId !== null) {
-        if (map.getSource(SRC)) map.setFeatureState({ source: SRC, id: hoveredId }, { hover: false })
-        hoveredId = null
-      }
-      setHoveredNameRef.current(null)
-    }
-
-    map.on('mousemove', FILL, (e) => {
+    // Circle hover.
+    let hoveredCircleId: number | null = null
+    map.on('mousemove', CIRCLE, (e) => {
       const feat = e.features?.[0]
       const id = feat?.properties?.id as number | undefined
       map.getCanvas().style.cursor = 'pointer'
-      if (hoveredId !== null && hoveredId !== id) {
-        if (map.getSource(SRC)) map.setFeatureState({ source: SRC, id: hoveredId }, { hover: false })
+      if (hoveredCircleId !== null && hoveredCircleId !== id) {
+        if (map.getSource(CSRC)) map.setFeatureState({ source: CSRC, id: hoveredCircleId }, { hover: false })
       }
       if (id != null) {
-        hoveredId = id
-        if (map.getSource(SRC)) map.setFeatureState({ source: SRC, id }, { hover: true })
+        hoveredCircleId = id
+        if (map.getSource(CSRC)) map.setFeatureState({ source: CSRC, id }, { hover: true })
         setHoveredNameRef.current(feat?.properties?.name as string ?? null)
       }
     })
-    map.on('mouseleave', FILL, clearHover)
+    map.on('mouseleave', CIRCLE, () => {
+      map.getCanvas().style.cursor = ''
+      if (hoveredCircleId !== null && map.getSource(CSRC)) {
+        map.setFeatureState({ source: CSRC, id: hoveredCircleId }, { hover: false })
+        hoveredCircleId = null
+      }
+      setHoveredNameRef.current(null)
+    })
 
     map.once('load', () => { mapReadyRef.current = true })
     mapRef.current = map
@@ -228,7 +285,7 @@ export default function OverviewChoroplethMap({
     if (!isFinite(minLng)) return
 
     const doFit = () => {
-      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 32, maxZoom: 12, duration: 800 })
+      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 48, maxZoom: 11, duration: 800 })
       hasFittedRef.current = true
     }
     if (mapReadyRef.current) doFit()
@@ -249,7 +306,7 @@ export default function OverviewChoroplethMap({
     else map.once('load', doFly)
   }, [selectedWardId])
 
-  // Push updated GeoJSON into the source whenever ward AQI data changes.
+  // Push updated polygon GeoJSON.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -261,15 +318,32 @@ export default function OverviewChoroplethMap({
     else map.once('load', apply)
   }, [geojson])
 
-  // Sync selected-ward feature state.
+  // Push updated circle GeoJSON.
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
     const apply = () => {
-      if (!map.getSource(SRC)) return
+      const src = map.getSource(CSRC) as maplibregl.GeoJSONSource | undefined
+      if (src) src.setData(centersGeoJSON)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [centersGeoJSON])
+
+  // Sync selected feature state on both sources.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => {
       const prev = prevSelectedRef.current
-      if (prev !== null) map.setFeatureState({ source: SRC, id: prev }, { selected: false })
-      if (selectedWardId !== null) map.setFeatureState({ source: SRC, id: selectedWardId }, { selected: true })
+      if (map.getSource(CSRC)) {
+        if (prev !== null) map.setFeatureState({ source: CSRC, id: prev }, { selected: false })
+        if (selectedWardId !== null) map.setFeatureState({ source: CSRC, id: selectedWardId }, { selected: true })
+      }
+      if (map.getSource(SRC)) {
+        if (prev !== null) map.setFeatureState({ source: SRC, id: prev }, { selected: false })
+        if (selectedWardId !== null) map.setFeatureState({ source: SRC, id: selectedWardId }, { selected: true })
+      }
       prevSelectedRef.current = selectedWardId
     }
     if (mapReadyRef.current) apply()
