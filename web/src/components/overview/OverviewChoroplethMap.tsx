@@ -67,25 +67,32 @@ export default function OverviewChoroplethMap({
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
 
-  // Build GeoJSON: join boundaries with live AQI from wards + CPCB preferred.
+  // Stable ward ref for flyTo — avoids re-registering selection effect on every poll.
+  const wardsForFlyRef = useRef(wards)
+  useEffect(() => { wardsForFlyRef.current = wards }, [wards])
+
+  // Build GeoJSON: only monitored wards (those present in `wards` prop).
+  // Hiding the ~250 unmonitored grey boundaries keeps the map focused.
   const geojson = useMemo<WardGeoJSON>(() => {
     const wardMap = new Map(wards.map(w => [w.id, w]))
     return {
       type: 'FeatureCollection',
-      features: boundaries.map((b): Feature<Polygon | MultiPolygon, WardFeatureProps> => {
-        const ward = wardMap.get(b.id)
-        const preferred = latestReadingsByWard?.get(b.id)
-        const aqi =
-          preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-            ? preferred.cpcbAqi
-            : (ward?.aqi ?? preferred?.openaqAqi ?? null)
-        return {
-          type: 'Feature',
-          id: b.id,              // top-level id for MapLibre promoteId
-          properties: { id: b.id, name: b.name, aqi },
-          geometry: b.geometry,
-        }
-      }),
+      features: boundaries
+        .filter(b => wardMap.has(b.id))
+        .map((b): Feature<Polygon | MultiPolygon, WardFeatureProps> => {
+          const ward = wardMap.get(b.id)
+          const preferred = latestReadingsByWard?.get(b.id)
+          const aqi =
+            preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+              ? preferred.cpcbAqi
+              : (ward?.aqi ?? preferred?.openaqAqi ?? null)
+          return {
+            type: 'Feature',
+            id: b.id,              // top-level id for MapLibre promoteId
+            properties: { id: b.id, name: b.name, aqi },
+            geometry: b.geometry,
+          }
+        }),
     }
   }, [boundaries, wards, latestReadingsByWard])
 
@@ -204,6 +211,44 @@ export default function OverviewChoroplethMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Fit map to monitored wards once when data first loads.
+  const hasFittedRef = useRef(false)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || hasFittedRef.current || wards.length === 0) return
+
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+    for (const w of wards) {
+      if (w.lng == null || w.lat == null) continue
+      if (w.lng < minLng) minLng = w.lng
+      if (w.lng > maxLng) maxLng = w.lng
+      if (w.lat < minLat) minLat = w.lat
+      if (w.lat > maxLat) maxLat = w.lat
+    }
+    if (!isFinite(minLng)) return
+
+    const doFit = () => {
+      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 32, maxZoom: 12, duration: 800 })
+      hasFittedRef.current = true
+    }
+    if (mapReadyRef.current) doFit()
+    else map.once('load', doFit)
+  }, [wards])
+
+  // Fly to selected ward centroid on selection change.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || selectedWardId === null) return
+    const ward = wardsForFlyRef.current.find(w => w.id === selectedWardId)
+    if (!ward || ward.lng == null || ward.lat == null) return
+
+    const doFly = () => {
+      map.flyTo({ center: [ward.lng!, ward.lat!], zoom: Math.max(map.getZoom(), 11.5), duration: 500 })
+    }
+    if (mapReadyRef.current) doFly()
+    else map.once('load', doFly)
+  }, [selectedWardId])
+
   // Push updated GeoJSON into the source whenever ward AQI data changes.
   useEffect(() => {
     const map = mapRef.current
@@ -242,8 +287,8 @@ export default function OverviewChoroplethMap({
         </div>
       )}
 
-      {/* Compact AQI legend */}
-      <div className="absolute bottom-10 left-2 z-10 rounded-lg border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-sm backdrop-blur-sm">
+      {/* Compact AQI legend — bottom-right, clear of zoom controls */}
+      <div className="absolute bottom-10 right-14 z-10 rounded-lg border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-sm backdrop-blur-sm">
         <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">AQI</p>
         <div className="space-y-[3px]">
           {LEGEND_ITEMS.map((l) => (

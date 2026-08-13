@@ -298,12 +298,56 @@ function WardDetailPanel({
   const ward = wards.find((w) => w.id === selectedWardId) ?? null
 
   if (!ward) {
+    const withAqi = wards.filter(w => w.aqi != null)
+    const avgAqi = withAqi.length > 0
+      ? Math.round(withAqi.reduce((sum, w) => sum + w.aqi!, 0) / withAqi.length)
+      : null
+    const worstWard = withAqi[0] ?? null
+    const bestWard = withAqi[withAqi.length - 1] ?? null
+    const avgLevel = aqiLevel(avgAqi)
+    const worstLevel = aqiLevel(worstWard?.aqi ?? null)
+    const bestLevel = aqiLevel(bestWard?.aqi ?? null)
+
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <ChevronRight className="h-5 w-5 text-slate-200" aria-hidden />
-        <p className="text-[11px] leading-relaxed text-slate-300">
-          Select a ward row<br />to see its forecast
-        </p>
+      <div className="flex h-full flex-col overflow-y-auto">
+        <div className="border-b border-slate-100 px-4 pb-3 pt-4">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">City overview</p>
+          <p className="mt-0.5 text-sm font-bold text-slate-800">{wards.length} wards monitored</p>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {avgAqi != null && (
+            <div className="px-4 py-3">
+              <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">City avg AQI</p>
+              <span className="text-2xl font-extrabold tabular-nums leading-none" style={{ color: avgLevel.hex }}>
+                {avgAqi}
+              </span>
+              <p className="mt-0.5 text-xs font-semibold" style={{ color: avgLevel.hex }}>{avgLevel.label}</p>
+            </div>
+          )}
+          {worstWard && (
+            <div className="px-4 py-3">
+              <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Worst ward</p>
+              <p className="truncate text-sm font-bold text-slate-800">{worstWard.name}</p>
+              <p className="mt-0.5 text-xs font-semibold tabular-nums" style={{ color: worstLevel.hex }}>
+                AQI {worstWard.aqi} · {worstLevel.label}
+              </p>
+            </div>
+          )}
+          {bestWard && bestWard.id !== worstWard?.id && (
+            <div className="px-4 py-3">
+              <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Best ward</p>
+              <p className="truncate text-sm font-bold text-slate-800">{bestWard.name}</p>
+              <p className="mt-0.5 text-xs font-semibold tabular-nums" style={{ color: bestLevel.hex }}>
+                AQI {bestWard.aqi} · {bestLevel.label}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="mt-auto border-t border-slate-100 px-4 py-3">
+          <p className="text-[10px] leading-relaxed text-slate-400">
+            Select a ward row or tap the map for detailed forecast.
+          </p>
+        </div>
       </div>
     )
   }
@@ -497,9 +541,9 @@ export default function HotspotsRiskTable({
       <div className="flex min-h-0 flex-1 divide-x divide-slate-100 overflow-hidden">
 
         {/* Left: compact ward table */}
-        <div className="flex min-h-0 w-[280px] shrink-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 w-[300px] shrink-0 flex-col overflow-hidden">
           <div className="flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[280px] border-collapse text-sm">
+            <table className="w-full min-w-[300px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-1.5 font-semibold">Ward</th>
@@ -530,7 +574,7 @@ export default function HotspotsRiskTable({
                         onClick={() => onSelectWard(selected ? null : ward.id)}
                         className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="max-w-[90px] truncate px-2 py-1.5 font-medium text-slate-800">{ward.name}</td>
+                        <td className="max-w-[110px] truncate px-2 py-1.5 font-medium text-slate-800">{ward.name}</td>
                         <td className="px-2 py-1.5">
                           <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={preferred} />
                         </td>

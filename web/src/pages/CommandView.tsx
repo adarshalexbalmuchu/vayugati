@@ -95,9 +95,9 @@ export default function CommandView() {
       <div className="flex h-full flex-col overflow-hidden bg-sky-50 gap-2 p-3">
         {state.loading || forecastsState.loading ? (
           <>
-            <Skeleton className="h-[105px] shrink-0 rounded-xl" />
+            <Skeleton className="h-[122px] shrink-0 rounded-xl" />
             <Skeleton className="min-h-0 flex-1 rounded-xl" />
-            <div className="grid h-[168px] shrink-0 grid-cols-2 gap-3">
+            <div className="grid h-[190px] shrink-0 grid-cols-2 gap-3">
               <Skeleton className="h-full rounded-xl" />
               <Skeleton className="h-full rounded-xl" />
             </div>
@@ -210,7 +210,7 @@ export default function CommandView() {
                 <div className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
                   <div className="flex items-center gap-0">
                     <div className="flex-shrink-0 pr-5">
-                      <CityAqiGauge aqi={worstDisplayAqi} size={96} />
+                      <CityAqiGauge aqi={worstDisplayAqi} size={112} />
                     </div>
                     <div className="w-px self-stretch bg-slate-100" aria-hidden />
                     <div className="min-w-0 w-[260px] flex-none px-5">
@@ -266,7 +266,7 @@ export default function CommandView() {
                 </div>
 
                 {/* Bottom row — fixed height, cards scroll internally */}
-                <div className="grid h-[168px] shrink-0 grid-cols-2 gap-3">
+                <div className="grid h-[190px] shrink-0 grid-cols-2 gap-3">
                   <OperationalSummaryPanel metrics={metrics} slaBuckets={slaBuckets} accuracy={accuracy} />
                   <SensorHealthSnapshot rollup={stationRollup} dataSourceTally={dataSourceTally} />
                 </div>
