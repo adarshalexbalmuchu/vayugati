@@ -66,11 +66,12 @@ function StatusBadge({ status, title }: { status: HotspotStatus; title?: string 
 }
 
 
-/** AQI only: prefers CPCB/data.gov's own value when this ward's station is
- *  matched and CPCB is fresh (preferred.sourceUsed === 'cpcb') - falls back
- *  to the existing OpenAQ-sourced ward.aqi otherwise, unchanged from
- *  before. A small source dot makes which one is showing explicit, never
- *  silent. See docs/data/cpcb-data-gov-primary-latest-integration-report.md. */
+/** AQI only: prefers CPCB/data.gov's own value when fresh, falls back to
+ *  ward.aqi (OpenAQ 24h avg), and as a last resort uses preferred.openaqAqi
+ *  — the raw reading-table value — which is populated regardless of staleness.
+ *  This ensures the last-known AQI is always visible rather than showing "—"
+ *  during pipeline downtime. Stale fallback values are dimmed so it is clear
+ *  they are not current. */
 function CurrentReadingBadge({
   ward,
   pollutant,
@@ -89,12 +90,21 @@ function CurrentReadingBadge({
     )
   }
   const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-  const displayAqi = usingCpcb ? preferred!.cpcbAqi : ward.aqi
+  // ward.aqi is null when compute_ward_aqi() skips stale wards; fall back to
+  // the raw reading-table AQI which the reconciliation always returns.
+  const displayAqi = usingCpcb ? preferred!.cpcbAqi : (ward.aqi ?? preferred?.openaqAqi ?? null)
+  const isStaleValue = !usingCpcb && displayAqi != null && ward.aqi == null
   const level = aqiLevel(displayAqi)
   return (
     <span
-      title={usingCpcb ? 'Latest reading: CPCB/data.gov preferred' : 'Latest reading: OpenAQ fallback'}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold tabular-nums"
+      title={
+        usingCpcb
+          ? 'Latest reading: CPCB/data.gov preferred'
+          : isStaleValue
+          ? 'Last known value — readings are stale'
+          : 'Latest reading: OpenAQ fallback'
+      }
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold tabular-nums ${isStaleValue ? 'opacity-50' : ''}`}
       style={{ backgroundColor: `${level.hex}1f`, color: level.hex }}
     >
       <span
@@ -260,13 +270,17 @@ export default function HotspotsRiskTable({
           <tbody className="divide-y divide-slate-100">
             {wards.map((ward) => {
               const forecast = forecasts.get(ward.id)
+              const preferred = latestReadingsByWard?.get(ward.id)
               const windowed = peakWithinWindow(forecast, windowHours)
+              // ward.ts is null when compute_ward_aqi skips stale wards; fall
+              // back to the reading-level timestamp from the reconciliation row.
+              const displayTs = ward.ts ?? preferred?.openaqLastUpdate ?? preferred?.cpcbLastUpdate ?? null
               const status = hotspotStatus(
                 {
                   hoursToSevere: forecast?.hoursToSevere ?? null,
                   peakExcess: windowed.excess,
                   aqi: ward.aqi,
-                  readingAgeMinutes: ageMinutes(ward.ts),
+                  readingAgeMinutes: ageMinutes(displayTs),
                 },
                 windowHours,
               )
@@ -308,11 +322,11 @@ export default function HotspotsRiskTable({
                       ) : (
                         <StatusBadge
                           status={status}
-                          title={status === 'stale' ? `Last fresh reading ${timeAgo(ward.ts)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
+                          title={status === 'stale' ? `Last fresh reading ${timeAgo(displayTs)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
                         />
                       )}
                     </td>
-                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(ward.ts)}</td>
+                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(displayTs)}</td>
                     <td className="px-2 py-1.5 text-slate-300">
                       {selected ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                     </td>

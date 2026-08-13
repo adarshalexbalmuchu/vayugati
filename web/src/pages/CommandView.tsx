@@ -120,7 +120,12 @@ export default function CommandView() {
             // 24h-average stored in wards.aqi.
             const getEffectiveAqi = (ward: (typeof wards)[0]) => {
               const p = latestReadingsByWard.get(ward.id)
-              return p?.sourceUsed === 'cpcb' && p.cpcbAqi != null ? p.cpcbAqi : ward.aqi
+              // Fall through: CPCB fresh → ward.aqi (OpenAQ 24h) → openaqAqi
+              // (raw reading, always populated even when compute_ward_aqi returns
+              // null for stale wards — keeps sort order meaningful during outages)
+              return p?.sourceUsed === 'cpcb' && p.cpcbAqi != null
+                ? p.cpcbAqi
+                : (ward.aqi ?? p?.openaqAqi ?? null)
             }
             const sortedWards = [...wards].sort((a, b) => {
               const aqiA = getEffectiveAqi(a)
@@ -155,15 +160,21 @@ export default function CommandView() {
             const worstWard = displayWards[0] ?? null
             const worstForecast = worstWard ? forecasts.get(worstWard.id) : null
             const worstWindowed = worstForecast ? peakWithinWindow(worstForecast, windowHours) : null
-            const worstReadingAge = worstWard?.ts
-              ? (Date.now() - new Date(worstWard.ts).getTime()) / 60_000
-              : null
             // Hero shows CPCB-preferred AQI when available, matching the table — prevents
             // the gauge showing 500 (OpenAQ 24h average) while the table shows 277 (CPCB live).
             const worstPreferred = worstWard ? latestReadingsByWard.get(worstWard.id) : undefined
+            // ward.ts is null when compute_ward_aqi skips stale wards; fall back
+            // to the reading-level timestamp from the reconciliation row.
+            const worstTs = worstWard?.ts
+              ?? worstPreferred?.openaqLastUpdate
+              ?? worstPreferred?.cpcbLastUpdate
+              ?? null
+            const worstReadingAge = worstTs
+              ? (Date.now() - new Date(worstTs).getTime()) / 60_000
+              : null
             const worstDisplayAqi = (worstPreferred?.sourceUsed === 'cpcb' && worstPreferred.cpcbAqi != null)
               ? worstPreferred.cpcbAqi
-              : (worstWard?.aqi ?? null)
+              : (worstWard?.aqi ?? worstPreferred?.openaqAqi ?? null)
             const worstTrend = worstWard
               ? hotspotStatus(
                   { hoursToSevere: worstForecast?.hoursToSevere ?? null, peakExcess: worstWindowed?.excess ?? null, aqi: worstDisplayAqi, readingAgeMinutes: worstReadingAge },
