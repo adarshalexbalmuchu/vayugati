@@ -48,41 +48,39 @@ export default function CityStatusHero({
     trend === 'stale'  ? 'Stale reading' : null
 
   return (
-    <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-        Worst ward right now
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+        Worst ward
       </span>
 
-      <span className="text-2xl font-extrabold tracking-tight text-slate-900 leading-tight truncate">
+      <span className="truncate text-xl font-extrabold leading-tight tracking-tight text-slate-900">
         {wardName ?? '—'}
       </span>
 
-      {/* AQI category label only — the number already lives inside the gauge */}
-      {aqi !== null && (
-        <span className="text-sm font-semibold leading-none" style={{ color: level.hex }}>
-          {level.label}
-        </span>
-      )}
+      <div className="flex items-center gap-2">
+        {aqi !== null && (
+          <span className="text-xs font-semibold" style={{ color: level.hex }}>
+            {level.label}
+          </span>
+        )}
+        {ts && trendLabel && (
+          <span className={`flex items-center gap-1 text-xs font-medium ${ts.color}`}>
+            <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-sm ${ts.dot}`} aria-hidden />
+            {trendLabel}
+          </span>
+        )}
+      </div>
 
-      {ts && trendLabel && (
-        <span className={`mt-0.5 flex items-center gap-1.5 text-sm font-medium ${ts.color}`}>
-          <span className={`h-2 w-2 flex-shrink-0 rounded-sm ${ts.dot}`} aria-hidden />
-          {trendLabel}
-        </span>
-      )}
-
-      {/* Contextual metadata rows */}
-      <div className="mt-2 flex flex-col gap-0.5">
+      <div className="mt-0.5 flex flex-col gap-px">
         {forecastPeak !== null && (
-          <span className="text-xs text-slate-500 leading-snug">
-            Forecast {forecastLabel} peak:{' '}
+          <span className="text-[11px] leading-snug text-slate-500">
+            Peak {forecastLabel}:{' '}
             <span className="font-medium text-slate-700">{Math.round(forecastPeak)} µg/m³</span>
           </span>
         )}
         {readingAgeMinutes !== null && (
-          <span className="text-xs text-slate-500 leading-snug">
-            Last observation:{' '}
-            <span className="font-medium text-slate-600">{formatAge(readingAgeMinutes)}</span>
+          <span className="text-[11px] leading-snug text-slate-400">
+            {formatAge(readingAgeMinutes)}
           </span>
         )}
       </div>

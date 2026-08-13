@@ -445,7 +445,7 @@ export default function HotspotsRiskTable({
   const isForecastSuppressed = forecastSuppressed ?? false
 
   return (
-    <Card className="flex min-h-0 flex-col overflow-hidden">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
       <CardHeader
         title="Wards by risk"
         subtitle="Ranked by current AQI and forecast trajectory."

@@ -13,15 +13,15 @@ function MetricCell({
   valueColor?: string
 }) {
   return (
-    <div className="px-4 py-3.5">
-      <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+    <div className="px-3 py-2">
+      <span className="block text-[9px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </span>
-      <span className={`mt-1.5 block text-2xl font-extrabold tabular-nums leading-none ${valueColor}`}>
+      <span className={`mt-1 block text-xl font-extrabold tabular-nums leading-none ${valueColor}`}>
         {value}
       </span>
       {sub && (
-        <span className="mt-0.5 block text-[11px] leading-none text-slate-400">{sub}</span>
+        <span className="mt-0.5 block text-[10px] leading-none text-slate-400">{sub}</span>
       )}
     </div>
   )

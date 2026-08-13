@@ -92,15 +92,16 @@ export default function CommandView() {
         </div>
       }
     >
-      <div className="flex-1 space-y-4 overflow-y-auto bg-sky-50 p-3 sm:p-4">
+      <div className="flex h-full flex-col overflow-hidden bg-sky-50 gap-2 p-3">
         {state.loading || forecastsState.loading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-72 w-full rounded-xl" />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Skeleton className="h-64 rounded-xl" />
-              <Skeleton className="h-64 rounded-xl" />
+          <>
+            <Skeleton className="h-[105px] shrink-0 rounded-xl" />
+            <Skeleton className="min-h-0 flex-1 rounded-xl" />
+            <div className="grid h-[168px] shrink-0 grid-cols-2 gap-3">
+              <Skeleton className="h-full rounded-xl" />
+              <Skeleton className="h-full rounded-xl" />
             </div>
-          </div>
+          </>
         ) : state.error ? (
           <Card>
             <ErrorState message={state.error} onRetry={() => state.refresh()} />
@@ -205,14 +206,14 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero area — gauge | ward summary | KPI rail */}
-                <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-card">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:gap-0">
-                    <div className="flex-shrink-0 lg:pr-6">
-                      <CityAqiGauge aqi={worstDisplayAqi} />
+                {/* Hero — gauge | ward summary | KPI rail, compact single row */}
+                <div className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
+                  <div className="flex items-center gap-0">
+                    <div className="flex-shrink-0 pr-5">
+                      <CityAqiGauge aqi={worstDisplayAqi} size={96} />
                     </div>
-                    <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
-                    <div className="min-w-0 flex-1 lg:w-[300px] lg:flex-none lg:px-6">
+                    <div className="w-px self-stretch bg-slate-100" aria-hidden />
+                    <div className="min-w-0 w-[260px] flex-none px-5">
                       <CityStatusHero
                         aqi={worstDisplayAqi}
                         wardName={worstWard?.name ?? null}
@@ -224,8 +225,8 @@ export default function CommandView() {
                         forecastSuppressed={suppressForecast}
                       />
                     </div>
-                    <div className="hidden w-px flex-shrink-0 bg-slate-100 lg:block lg:self-stretch" aria-hidden />
-                    <div className="lg:flex-1 lg:pl-6">
+                    <div className="w-px self-stretch bg-slate-100" aria-hidden />
+                    <div className="flex-1 pl-5">
                       <CityKpiRow
                         reviewCount={reviewWards.length}
                         openIncidents={metrics.openCount}
@@ -236,30 +237,36 @@ export default function CommandView() {
                   </div>
                 </div>
 
-                <HotspotsRiskTable
-                  wards={displayWards}
-                  forecasts={forecasts}
-                  pollutant={pollutant}
-                  onPollutantChange={setPollutant}
-                  windowHours={windowHours}
-                  onWindowHoursChange={setWindowHours}
-                  selectedWardId={selectedWardId}
-                  onSelectWard={setSelectedWardId}
-                  latestReadingsByWard={latestReadingsByWard}
-                  forecastSuppressed={suppressForecast}
-                />
-
-                {/* Priority alerts — only shown when there's something to act on */}
+                {/* Priority alerts — compact banner, shown only when wards are flagged */}
                 {severeAlerts.length > 0 && (
-                  <PriorityAlertsPanel
-                    alerts={severeAlerts}
-                    windowHours={windowHours}
-                    selectedWardId={selectedWardId}
-                    onSelectWard={setSelectedWardId}
-                  />
+                  <div className="shrink-0 max-h-[96px] overflow-hidden">
+                    <PriorityAlertsPanel
+                      alerts={severeAlerts}
+                      windowHours={windowHours}
+                      selectedWardId={selectedWardId}
+                      onSelectWard={setSelectedWardId}
+                    />
+                  </div>
                 )}
 
-                <div className="grid gap-4 lg:grid-cols-2">
+                {/* Ward risk table — grows to fill all remaining vertical space */}
+                <div className="min-h-0 flex-1">
+                  <HotspotsRiskTable
+                    wards={displayWards}
+                    forecasts={forecasts}
+                    pollutant={pollutant}
+                    onPollutantChange={setPollutant}
+                    windowHours={windowHours}
+                    onWindowHoursChange={setWindowHours}
+                    selectedWardId={selectedWardId}
+                    onSelectWard={setSelectedWardId}
+                    latestReadingsByWard={latestReadingsByWard}
+                    forecastSuppressed={suppressForecast}
+                  />
+                </div>
+
+                {/* Bottom row — fixed height, cards scroll internally */}
+                <div className="grid h-[168px] shrink-0 grid-cols-2 gap-3">
                   <OperationalSummaryPanel metrics={metrics} slaBuckets={slaBuckets} accuracy={accuracy} />
                   <SensorHealthSnapshot rollup={stationRollup} dataSourceTally={dataSourceTally} />
                 </div>
