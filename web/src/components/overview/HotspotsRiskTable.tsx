@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react'
-import { ChevronDown, ChevronRight, Clock, Info } from 'lucide-react'
+import { ChevronRight, Clock, Info } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
-import type { LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
+import type { ForecastPoint, LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
@@ -69,13 +69,6 @@ function StatusBadge({ status, title }: { status: HotspotStatus; title?: string 
   )
 }
 
-
-/** AQI only: prefers CPCB/data.gov's own value when fresh, falls back to
- *  ward.aqi (OpenAQ 24h avg), and as a last resort uses preferred.openaqAqi
- *  — the raw reading-table value — which is populated regardless of staleness.
- *  This ensures the last-known AQI is always visible rather than showing "—"
- *  during pipeline downtime. Stale fallback values are dimmed so it is clear
- *  they are not current. */
 function CurrentReadingBadge({
   ward,
   pollutant,
@@ -94,8 +87,6 @@ function CurrentReadingBadge({
     )
   }
   const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-  // ward.aqi is null when compute_ward_aqi() skips stale wards; fall back to
-  // the raw reading-table AQI which the reconciliation always returns.
   const displayAqi = usingCpcb ? preferred!.cpcbAqi : (ward.aqi ?? preferred?.openaqAqi ?? null)
   const isStaleValue = !usingCpcb && displayAqi != null && ward.aqi == null
   const level = aqiLevel(displayAqi)
@@ -126,9 +117,6 @@ const AQ_SOURCE_TONE: Record<string, string> = {
   Review: 'text-status-warning ring-status-warning/30 bg-status-warning/10',
 }
 
-/** Which source is actually behind this ward's displayed AQI - see
- *  aqSourceLabel() in latestReadingRules.ts. "—" (not fabricated) when the
- *  reconciliation hasn't loaded for this ward. */
 function AqSourceBadge({ preferred }: { preferred: LatestReadingReconciliation | undefined }) {
   if (!preferred) return <span className="text-slate-300">—</span>
   const label = aqSourceLabel(preferred)
@@ -159,12 +147,273 @@ function DataConfidenceBadge({ preferred }: { preferred: LatestReadingReconcilia
   )
 }
 
-/** AQI has no forecast of its own (forecast.py never computes the composite
- *  index) - PM2.5/PM10/NO2 all do (forecast.py's DEFAULT_ENABLED_POLLUTANTS).
- *  Matches the same proxy convention Map uses (forecastPollutantFor). */
 function forecastPollutantFor(pollutant: MapPollutant): 'pm25' | 'pm10' | 'no2' {
   return pollutant === 'aqi' ? 'pm25' : pollutant
 }
+
+// ── Forecast chart ─────────────────────────────────────────────────────────────
+
+const AQI_BAND_COLORS = ['#55A84F', '#A3C853', '#FFF833', '#F29C33', '#E93F33', '#AF2D24']
+
+function levelColor(val: number, breaks: number[]): string {
+  for (let i = 0; i < breaks.length; i++) {
+    if (val <= breaks[i]) return AQI_BAND_COLORS[i]
+  }
+  return AQI_BAND_COLORS[5]
+}
+
+const FORECAST_BREAKS: Record<string, number[]> = {
+  pm25: [30, 60, 90, 120, 250],
+  pm10: [50, 100, 250, 350, 430],
+  no2:  [40, 80, 180, 280, 400],
+}
+
+function ForecastChart({ points, pollutant }: { points: ForecastPoint[]; pollutant: MapPollutant }) {
+  if (!points.length) {
+    return (
+      <div className="flex h-28 items-center justify-center">
+        <span className="text-[11px] text-slate-300">No forecast data</span>
+      </div>
+    )
+  }
+
+  const key = forecastPollutantFor(pollutant)
+  const breaks = FORECAST_BREAKS[key] ?? FORECAST_BREAKS.pm25
+  const vals = points.map((p) => (p.predicted_value ?? p.pm25_pred ?? 0) as number)
+  const maxVal = Math.max(...vals, 50)
+
+  const W = 260, H = 112, ML = 26, MB = 18, MT = 6, MR = 2
+  const cW = W - ML - MR
+  const cH = H - MT - MB
+  const n = points.length
+  const gap = 1.5
+  const bW = Math.max(2, cW / n - gap)
+
+  const yTicks = [0, Math.round(maxVal / 2), Math.round(maxVal)]
+
+  const xLabels: { x: number; label: string }[] = []
+  points.forEach((p, i) => {
+    const d = new Date(p.horizon_ts)
+    if (isNaN(d.getTime())) return
+    const h = d.getHours()
+    if (h % 6 === 0) {
+      const label = h === 0 ? '12AM' : h === 12 ? '12PM' : h < 12 ? `${h}AM` : `${h - 12}PM`
+      xLabels.push({ x: ML + (i / n) * cW + bW / 2, label })
+    }
+  })
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" height={H}>
+      {yTicks.map((v) => {
+        const y = MT + cH - (v / maxVal) * cH
+        return (
+          <g key={v}>
+            <line x1={ML} y1={y} x2={W - MR} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={ML - 3} y={y + 3} textAnchor="end" fontSize={6.5} fill="#cbd5e1">
+              {v}
+            </text>
+          </g>
+        )
+      })}
+      {vals.map((val, i) => {
+        const bH = val > 0 ? Math.max(2, (val / maxVal) * cH) : 0
+        const x = ML + (i / n) * cW + gap / 2
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={MT + cH - bH}
+            width={bW}
+            height={bH}
+            fill={levelColor(val, breaks)}
+            rx={1.5}
+            opacity={0.88}
+          />
+        )
+      })}
+      {xLabels.map(({ x, label }) => (
+        <text key={label} x={x} y={H - 2} textAnchor="middle" fontSize={6.5} fill="#94a3b8">
+          {label}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+// ── Pollutant breakdown ─────────────────────────────────────────────────────────
+
+// CPCB official breakpoints; CO in mg/m³, all others in µg/m³
+const POLLUTANT_CFG: Record<string, { label: string; unit: string; breaks: number[]; barMax: number }> = {
+  pm25: { label: 'PM₂.₅', unit: 'µg/m³', breaks: [30, 60, 90, 120, 250],        barMax: 300  },
+  pm10: { label: 'PM₁₀',  unit: 'µg/m³', breaks: [50, 100, 250, 350, 430],       barMax: 500  },
+  no2:  { label: 'NO₂',   unit: 'µg/m³', breaks: [40, 80, 180, 280, 400],        barMax: 450  },
+  so2:  { label: 'SO₂',   unit: 'µg/m³', breaks: [40, 80, 380, 800, 1600],       barMax: 500  },
+  o3:   { label: 'O₃',    unit: 'µg/m³', breaks: [50, 100, 168, 208, 748],       barMax: 400  },
+  co:   { label: 'CO',    unit: 'mg/m³', breaks: [1, 2, 10, 17, 34],             barMax: 40   },
+  nh3:  { label: 'NH₃',  unit: 'µg/m³', breaks: [200, 400, 800, 1200, 1800],    barMax: 2000 },
+}
+
+const POLLUTANT_ORDER = ['pm25', 'pm10', 'no2', 'so2', 'co', 'o3', 'nh3'] as const
+
+function PollutantRow({ id, value }: { id: string; value: number }) {
+  const cfg = POLLUTANT_CFG[id]
+  if (!cfg) return null
+  const color = levelColor(value, cfg.breaks)
+  const pct = Math.min(100, (value / cfg.barMax) * 100)
+  const display = id === 'co' ? value.toFixed(2) : Math.round(value)
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-9 shrink-0 text-[10px] font-semibold text-slate-400">{cfg.label}</span>
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      <span className="w-[68px] shrink-0 text-right text-[10px] tabular-nums text-slate-600">
+        {display}{' '}
+        <span className="text-slate-400">{cfg.unit}</span>
+      </span>
+    </div>
+  )
+}
+
+// ── Ward detail panel (right side) ─────────────────────────────────────────────
+
+function WardDetailPanel({
+  selectedWardId,
+  wards,
+  forecasts,
+  latestReadingsByWard,
+  pollutant,
+  windowHours,
+  forecastSuppressed,
+}: {
+  selectedWardId: number | null
+  wards: WardSummary[]
+  forecasts: Map<number, WardForecastSummary>
+  latestReadingsByWard?: Map<number, LatestReadingReconciliation>
+  pollutant: MapPollutant
+  windowHours: TimeWindowHours
+  forecastSuppressed?: boolean
+}) {
+  const ward = wards.find((w) => w.id === selectedWardId) ?? null
+
+  if (!ward) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+        <ChevronRight className="h-5 w-5 text-slate-200" aria-hidden />
+        <p className="text-[11px] leading-relaxed text-slate-300">
+          Select a ward row<br />to see its forecast
+        </p>
+      </div>
+    )
+  }
+
+  const forecast = forecasts.get(ward.id) ?? null
+  const preferred = latestReadingsByWard?.get(ward.id)
+  const forecastPoints = !forecastSuppressed && forecast?.points ? forecast.points : []
+
+  const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
+  const displayAqi = usingCpcb
+    ? preferred!.cpcbAqi
+    : (ward.aqi ?? preferred?.openaqAqi ?? null)
+  const level = aqiLevel(displayAqi)
+
+  // Build pollutant readings: CPCB → OpenAQ (skip CO from OpenAQ, wrong unit) → ward fields
+  const readings: Partial<Record<typeof POLLUTANT_ORDER[number], number>> = {}
+  if (preferred?.cpcbPollutants) {
+    for (const k of POLLUTANT_ORDER) {
+      const v = preferred.cpcbPollutants[k]
+      if (v?.avg != null) readings[k] = v.avg
+    }
+  }
+  if (preferred?.openaqPollutants) {
+    for (const k of POLLUTANT_ORDER) {
+      if (k === 'co') continue // OpenAQ CO is µg/m³; config expects mg/m³ — skip
+      const v = preferred.openaqPollutants[k]
+      if (!(k in readings) && (v as number | undefined) != null) readings[k] = v as number
+    }
+  }
+  if (!('pm25' in readings) && ward.pm25 != null) readings.pm25 = ward.pm25
+  if (!('pm10' in readings) && ward.pm10 != null) readings.pm10 = ward.pm10
+  if (!('no2' in readings) && ward.no2 != null) readings.no2 = ward.no2
+
+  const readingKeys = POLLUTANT_ORDER.filter((k) => readings[k] != null)
+
+  const forecastLabel = pollutant === 'aqi' ? 'PM₂.₅ (proxy)' : MAP_POLLUTANT_LABEL[pollutant]
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto">
+      {/* Ward header */}
+      <div className="border-b border-slate-100 px-4 pb-3 pt-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-bold text-slate-800">{ward.name}</h3>
+            {displayAqi != null && (
+              <p className="mt-0.5 text-xs font-semibold" style={{ color: level.hex }}>
+                {level.label}
+              </p>
+            )}
+          </div>
+          {displayAqi != null && (
+            <span
+              className="shrink-0 text-2xl font-extrabold tabular-nums leading-none"
+              style={{ color: level.hex }}
+            >
+              {displayAqi}
+            </span>
+          )}
+        </div>
+        {preferred && (
+          <div className="mt-2 flex items-center gap-1.5">
+            <AqSourceBadge preferred={preferred} />
+            <DataConfidenceBadge preferred={preferred} />
+          </div>
+        )}
+      </div>
+
+      {/* Forecast chart */}
+      <div className="px-4 pt-3">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          {forecastLabel} · next {windowHours}h
+        </p>
+        <ForecastChart points={forecastPoints} pollutant={pollutant} />
+        {forecast?.hoursToSevere != null && (
+          <p className="mt-1 text-[10px] font-semibold text-status-critical">
+            Predicted severe in {forecast.hoursToSevere}h
+          </p>
+        )}
+        {forecastSuppressed && (
+          <p className="mt-1 text-[10px] text-slate-400">Forecast unavailable</p>
+        )}
+      </div>
+
+      {/* Pollutant breakdown */}
+      {readingKeys.length > 0 && (
+        <div className="px-4 pt-4 pb-4">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Current readings
+          </p>
+          <div className="space-y-2">
+            {readingKeys.map((k) => (
+              <PollutantRow key={k} id={k} value={readings[k]!} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Dominant source */}
+      {ward.dominant_source && (
+        <div className="border-t border-slate-100 px-4 py-2.5 mt-auto">
+          <span className="text-[10px] text-slate-400">
+            Likely source:{' '}
+            <span className="font-semibold text-slate-500">{formatSource(ward.dominant_source)}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main export ────────────────────────────────────────────────────────────────
 
 export default function HotspotsRiskTable({
   wards,
@@ -179,9 +428,6 @@ export default function HotspotsRiskTable({
   forecastSuppressed,
 }: {
   wards: WardSummary[]
-  /** Keyed by ward id, values already scoped to whichever real forecast
-   *  pollutant forecastPollutantFor(pollutant) names - CommandView.tsx
-   *  fetches accordingly, this component never mixes pollutants itself. */
   forecasts: Map<number, WardForecastSummary>
   pollutant: MapPollutant
   onPollutantChange: (p: MapPollutant) => void
@@ -189,12 +435,7 @@ export default function HotspotsRiskTable({
   onWindowHoursChange: (h: TimeWindowHours) => void
   selectedWardId: number | null
   onSelectWard: (wardId: number | null) => void
-  /** Optional - CPCB/data.gov preferred-latest-reading reconciliation, keyed
-   *  by ward id. Missing/unmatched/stale all fall back to the existing
-   *  OpenAQ-sourced ward.aqi unchanged - see CurrentReadingBadge above. */
   latestReadingsByWard?: Map<number, LatestReadingReconciliation>
-  /** When true: forecast cells show "—", window buttons are disabled,
-   *  Status column shows "No forecast" for forecast-derived 'stable' badges. */
   forecastSuppressed?: boolean
 }) {
   const forecastPollutant = forecastPollutantFor(pollutant)
@@ -250,165 +491,125 @@ export default function HotspotsRiskTable({
           </div>
         }
       />
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              <th className="px-3 py-1.5 font-semibold">Ward</th>
-              <th className="px-3 py-1.5 font-semibold">
-                Current {MAP_POLLUTANT_LABEL[pollutant]}
-                {pollutant !== 'aqi' && <span className="normal-case"> (µg/m³)</span>}
-              </th>
-              <th
-                className="px-3 py-1.5 font-semibold"
-                title={isForecastSuppressed ? 'Forecast unavailable — latest run failed' : `Forecast peak within ${windowHours}h. Excess over current in parentheses.`}
-              >
-                Forecast peak
-                {isForecastSuppressed && <span className="normal-case font-normal text-slate-400"> · unavailable</span>}
-              </th>
-              <th className="px-3 py-1.5 font-semibold">Trend</th>
-              <th className="px-3 py-1.5 font-semibold">Age</th>
-              <th className="w-8 px-2 py-1.5" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {wards.map((ward) => {
-              const forecast = forecasts.get(ward.id)
-              const preferred = latestReadingsByWard?.get(ward.id)
-              const windowed = peakWithinWindow(forecast, windowHours)
-              // ward.ts is null when compute_ward_aqi skips stale wards; fall
-              // back to the ISO timestamp from the reconciliation row.
-              // cpcbLastUpdate is DD-MM-YYYY HH:MM:SS (unparseable by JS) — excluded.
-              const displayTs = ward.ts ?? preferred?.openaqLastUpdate ?? null
-              const status = hotspotStatus(
-                {
-                  hoursToSevere: forecast?.hoursToSevere ?? null,
-                  peakExcess: windowed.excess,
-                  aqi: ward.aqi,
-                  readingAgeMinutes: ageMinutes(displayTs),
-                },
-                windowHours,
-              )
-              const underlyingTrend = windowed.excess != null && windowed.excess > 0 ? 'was trending up' : null
-              const confidence = windowed.ts != null ? (forecast?.points.find((p) => p.horizon_ts === windowed.ts)?.confidence ?? null) : null
-              const confidenceTitle = confidence != null ? `Forecast confidence: ${Math.round(confidence * 100)}%` : undefined
-              const selected = ward.id === selectedWardId
-              return (
-                <Fragment key={ward.id}>
-                  <tr
-                    onClick={() => onSelectWard(selected ? null : ward.id)}
-                    className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
-                  >
-                    <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
-                    <td className="px-3 py-1.5">
-                      <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={latestReadingsByWard?.get(ward.id)} />
-                    </td>
-                    <td className="px-3 py-1.5 tabular-nums text-slate-600" title={confidenceTitle}>
-                      {windowed.value != null ? (
-                        <>
-                          {Math.round(windowed.value)} µg/m³
-                          {windowed.excess != null && (
-                            <span className={windowed.excess > 0 ? 'text-status-warning' : 'text-slate-400'}>
-                              {' '}
-                              ({windowed.excess > 0 ? '+' : ''}
-                              {Math.round(windowed.excess)})
+
+      {/* Split: table (left) + detail panel (right) */}
+      <div className="flex min-h-0 flex-1 divide-x divide-slate-100 overflow-hidden">
+
+        {/* Left: table */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-x-auto overflow-y-auto">
+            <table className="w-full min-w-[480px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-1.5 font-semibold">Ward</th>
+                  <th className="px-3 py-1.5 font-semibold">
+                    {MAP_POLLUTANT_LABEL[pollutant]}
+                    {pollutant !== 'aqi' && <span className="normal-case"> (µg/m³)</span>}
+                  </th>
+                  <th className="px-3 py-1.5 font-semibold">Trend</th>
+                  <th className="px-3 py-1.5 font-semibold">Age</th>
+                  <th className="w-8 px-2 py-1.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {wards.map((ward) => {
+                  const forecast = forecasts.get(ward.id)
+                  const preferred = latestReadingsByWard?.get(ward.id)
+                  const windowed = peakWithinWindow(forecast, windowHours)
+                  const displayTs = ward.ts ?? preferred?.openaqLastUpdate ?? null
+                  const status = hotspotStatus(
+                    {
+                      hoursToSevere: forecast?.hoursToSevere ?? null,
+                      peakExcess: windowed.excess,
+                      aqi: ward.aqi,
+                      readingAgeMinutes: ageMinutes(displayTs),
+                    },
+                    windowHours,
+                  )
+                  const selected = ward.id === selectedWardId
+                  return (
+                    <Fragment key={ward.id}>
+                      <tr
+                        onClick={() => onSelectWard(selected ? null : ward.id)}
+                        className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
+                      >
+                        <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
+                        <td className="px-3 py-1.5">
+                          <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={preferred} />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          {isForecastSuppressed && status === 'stable' ? (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
+                              No forecast
                             </span>
+                          ) : (
+                            <StatusBadge
+                              status={status}
+                              title={status === 'stale' ? `Last fresh reading ${timeAgo(displayTs)} ago` : undefined}
+                            />
                           )}
-                        </>
-                      ) : (
-                        <span className="text-slate-400">{isForecastSuppressed ? '—' : 'Unavailable'}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      {isForecastSuppressed && status === 'stable' ? (
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
-                          No forecast
-                        </span>
-                      ) : (
-                        <StatusBadge
-                          status={status}
-                          title={status === 'stale' ? `Last fresh reading ${timeAgo(displayTs)} ago${underlyingTrend ? ` - ${underlyingTrend}` : ''}` : undefined}
-                        />
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(displayTs)}</td>
-                    <td className="px-2 py-1.5 text-slate-300">
-                      {selected ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
-                    </td>
-                  </tr>
-                  {selected && (
-                    <tr className="bg-accent-50/60">
-                      <td colSpan={6} className="px-3 py-3">
-                        <div className="flex flex-wrap gap-x-8 gap-y-2 text-xs text-slate-600">
-                          <span>
-                            <span className="font-semibold text-slate-500">PM2.5 now:</span>{' '}
-                            {ward.pm25 != null ? `${Math.round(ward.pm25)} µg/m³` : 'no reading'}
-                          </span>
-                          <span>
-                            <span className="font-semibold text-slate-500">Likely source:</span>{' '}
-                            {ward.dominant_source ? formatSource(ward.dominant_source) : 'unknown'}
-                          </span>
-                          <span>
-                            <span className="font-semibold text-slate-500">Predicted severe in:</span>{' '}
-                            {forecast?.hoursToSevere != null ? `${forecast.hoursToSevere}h` : 'not predicted'}
-                          </span>
-                          <span>
-                            <span className="font-semibold text-slate-500">Forecast confidence:</span>{' '}
-                            {confidence != null ? `${Math.round(confidence * 100)}%` : 'unavailable'}
-                          </span>
-                          <span>
-                            <span className="font-semibold text-slate-500">Last reading:</span>{' '}
-                            {ward.ts ? new Date(ward.ts).toLocaleString() : 'unavailable'}
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <span className="font-semibold text-slate-500">AQ source:</span>
-                            <AqSourceBadge preferred={latestReadingsByWard?.get(ward.id)} />
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <span className="font-semibold text-slate-500">Data confidence:</span>
-                            <DataConfidenceBadge preferred={latestReadingsByWard?.get(ward.id)} />
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-      {wards.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-400">No ward data available.</p>}
-      <div className="flex items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-2">
-        <div className="relative flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setInfoOpen((v) => !v)}
-            aria-label="About these readings"
-            className="focus-ring flex items-center gap-1 rounded p-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-          >
-            <Info className="h-3.5 w-3.5" aria-hidden />
-            <span>About these readings</span>
-          </button>
-          {infoOpen && (
-            <div className="absolute bottom-full right-0 z-10 mb-1.5 w-72 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-relaxed text-slate-600 shadow-card-lg">
-              <p>
-                {pollutant === 'aqi'
-                  ? 'Current reading is colour-coded on the India NAQI scale.'
-                  : 'Current reading shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
-                {isProxy
-                  ? 'AQI itself is not forecast — PM2.5 is shown as the risk signal in its place.'
-                  : `Forecast peak and excess are both ${forecastPollutantLabel}, matching the selected metric.`}
-              </p>
-              <p className="mt-1.5">
-                Source attribution (in the expanded row) is a preliminary signal from the anomaly engine, not
-                confirmed evidence. Refined per-incident in the Incidents view.
-              </p>
-              <p className="mt-1.5">
-                Readings: CPCB/data.gov preferred, OpenAQ fallback. AQI computed using official CPCB breakpoints.
-              </p>
+                        </td>
+                        <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(displayTs)}</td>
+                        <td className="px-2 py-1.5 text-slate-300">
+                          <ChevronRight className={`h-4 w-4 transition-transform ${selected ? 'rotate-90 text-accent-500' : ''}`} aria-hidden />
+                        </td>
+                      </tr>
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+            {wards.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-slate-400">No ward data available.</p>
+            )}
+          </div>
+
+          {/* Table footer */}
+          <div className="flex items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-2">
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setInfoOpen((v) => !v)}
+                aria-label="About these readings"
+                className="focus-ring flex items-center gap-1 rounded p-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <Info className="h-3.5 w-3.5" aria-hidden />
+                <span>About these readings</span>
+              </button>
+              {infoOpen && (
+                <div className="absolute bottom-full right-0 z-10 mb-1.5 w-72 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-relaxed text-slate-600 shadow-card-lg">
+                  <p>
+                    {pollutant === 'aqi'
+                      ? 'Current reading is colour-coded on the India NAQI scale.'
+                      : 'Current reading shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
+                    {isProxy
+                      ? 'AQI itself is not forecast — PM2.5 is shown as the risk signal in its place.'
+                      : `Forecast peak and excess are both ${forecastPollutantLabel}, matching the selected metric.`}
+                  </p>
+                  <p className="mt-1.5">
+                    Source attribution is a preliminary signal from the anomaly engine, not confirmed evidence.
+                    Refined per-incident in the Incidents view.
+                  </p>
+                  <p className="mt-1.5">
+                    Readings: CPCB/data.gov preferred, OpenAQ fallback. AQI computed using official CPCB breakpoints.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+        </div>
+
+        {/* Right: ward detail panel */}
+        <div className="w-[320px] shrink-0 overflow-hidden">
+          <WardDetailPanel
+            selectedWardId={selectedWardId}
+            wards={wards}
+            forecasts={forecasts}
+            latestReadingsByWard={latestReadingsByWard}
+            pollutant={pollutant}
+            windowHours={windowHours}
+            forecastSuppressed={isForecastSuppressed}
+          />
         </div>
       </div>
     </Card>
