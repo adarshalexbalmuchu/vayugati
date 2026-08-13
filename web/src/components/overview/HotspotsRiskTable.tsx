@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { ChevronRight, Clock, Info } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { ForecastPoint, LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
+import OverviewChoroplethMap from './OverviewChoroplethMap'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
@@ -492,22 +493,18 @@ export default function HotspotsRiskTable({
         }
       />
 
-      {/* Split: table (left) + detail panel (right) */}
+      {/* Split: table (left) | map (center) | detail (right) */}
       <div className="flex min-h-0 flex-1 divide-x divide-slate-100 overflow-hidden">
 
-        {/* Left: table */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Left: compact ward table */}
+        <div className="flex min-h-0 w-[280px] shrink-0 flex-col overflow-hidden">
           <div className="flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[480px] border-collapse text-sm">
+            <table className="w-full min-w-[280px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-1.5 font-semibold">Ward</th>
-                  <th className="px-3 py-1.5 font-semibold">
-                    {MAP_POLLUTANT_LABEL[pollutant]}
-                    {pollutant !== 'aqi' && <span className="normal-case"> (µg/m³)</span>}
-                  </th>
-                  <th className="px-3 py-1.5 font-semibold">Trend</th>
-                  <th className="px-3 py-1.5 font-semibold">Age</th>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-2 py-1.5 font-semibold">Ward</th>
+                  <th className="px-2 py-1.5 font-semibold">{MAP_POLLUTANT_LABEL[pollutant]}</th>
+                  <th className="px-2 py-1.5 font-semibold">Trend</th>
                   <th className="w-8 px-2 py-1.5" />
                 </tr>
               </thead>
@@ -533,14 +530,14 @@ export default function HotspotsRiskTable({
                         onClick={() => onSelectWard(selected ? null : ward.id)}
                         className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="px-3 py-1.5 font-medium text-slate-800">{ward.name}</td>
-                        <td className="px-3 py-1.5">
+                        <td className="max-w-[90px] truncate px-2 py-1.5 font-medium text-slate-800">{ward.name}</td>
+                        <td className="px-2 py-1.5">
                           <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={preferred} />
                         </td>
-                        <td className="px-3 py-1.5">
+                        <td className="px-2 py-1.5">
                           {isForecastSuppressed && status === 'stable' ? (
-                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
-                              No forecast
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-inset ring-slate-200">
+                              —
                             </span>
                           ) : (
                             <StatusBadge
@@ -549,9 +546,8 @@ export default function HotspotsRiskTable({
                             />
                           )}
                         </td>
-                        <td className="px-3 py-1.5 tabular-nums text-slate-500">{timeAgo(displayTs)}</td>
                         <td className="px-2 py-1.5 text-slate-300">
-                          <ChevronRight className={`h-4 w-4 transition-transform ${selected ? 'rotate-90 text-accent-500' : ''}`} aria-hidden />
+                          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${selected ? 'rotate-90 text-accent-500' : ''}`} aria-hidden />
                         </td>
                       </tr>
                     </Fragment>
@@ -565,33 +561,29 @@ export default function HotspotsRiskTable({
           </div>
 
           {/* Table footer */}
-          <div className="flex items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-2">
+          <div className="flex items-center justify-end border-t border-slate-100 px-3 py-1.5">
             <div className="relative flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setInfoOpen((v) => !v)}
                 aria-label="About these readings"
-                className="focus-ring flex items-center gap-1 rounded p-0.5 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                className="focus-ring flex items-center gap-1 rounded p-0.5 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
-                <Info className="h-3.5 w-3.5" aria-hidden />
-                <span>About these readings</span>
+                <Info className="h-3 w-3" aria-hidden />
+                <span>About</span>
               </button>
               {infoOpen && (
-                <div className="absolute bottom-full right-0 z-10 mb-1.5 w-72 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-relaxed text-slate-600 shadow-card-lg">
+                <div className="absolute bottom-full left-0 z-10 mb-1.5 w-64 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] leading-relaxed text-slate-600 shadow-card-lg">
                   <p>
                     {pollutant === 'aqi'
-                      ? 'Current reading is colour-coded on the India NAQI scale.'
-                      : 'Current reading shown in µg/m³ — colour bands apply to the AQI view only.'}{' '}
+                      ? 'Current reading colour-coded on India NAQI scale.'
+                      : 'Current reading in µg/m³.'}{' '}
                     {isProxy
-                      ? 'AQI itself is not forecast — PM2.5 is shown as the risk signal in its place.'
-                      : `Forecast peak and excess are both ${forecastPollutantLabel}, matching the selected metric.`}
+                      ? 'AQI is not forecast — PM2.5 shown as proxy.'
+                      : `Forecast uses ${forecastPollutantLabel}.`}
                   </p>
                   <p className="mt-1.5">
-                    Source attribution is a preliminary signal from the anomaly engine, not confirmed evidence.
-                    Refined per-incident in the Incidents view.
-                  </p>
-                  <p className="mt-1.5">
-                    Readings: CPCB/data.gov preferred, OpenAQ fallback. AQI computed using official CPCB breakpoints.
+                    CPCB/data.gov preferred, OpenAQ fallback.
                   </p>
                 </div>
               )}
@@ -599,8 +591,18 @@ export default function HotspotsRiskTable({
           </div>
         </div>
 
+        {/* Center: AQI choropleth map */}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          <OverviewChoroplethMap
+            wards={wards}
+            selectedWardId={selectedWardId}
+            onSelectWard={onSelectWard}
+            latestReadingsByWard={latestReadingsByWard}
+          />
+        </div>
+
         {/* Right: ward detail panel */}
-        <div className="w-[320px] shrink-0 overflow-hidden">
+        <div className="w-[260px] shrink-0 overflow-hidden">
           <WardDetailPanel
             selectedWardId={selectedWardId}
             wards={wards}
