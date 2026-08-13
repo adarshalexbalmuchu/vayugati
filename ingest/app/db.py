@@ -300,14 +300,15 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
-def _max_8h_rolling_avg(values: list[float]) -> float:
+def _max_8h_rolling_avg(values: list[float], window_readings: int = 8) -> float:
     """Maximum of all possible 8-hour rolling averages from a time-ordered series.
     CPCB's National AQI methodology uses this window for O3 and CO instead of
-    a 24h simple average — the highest 8h mean is what drives the sub-index."""
+    a 24h simple average — the highest 8h mean is what drives the sub-index.
+    window_readings: number of readings that span 8 hours (8 for hourly, 32 for 15-min)."""
     n = len(values)
     if n == 0:
         return 0.0
-    window = min(8, n)
+    window = min(window_readings, n)
     best = 0.0
     for i in range(n - window + 1):
         avg = sum(values[i : i + window]) / window
@@ -345,6 +346,16 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
     for sid, readings in by_station.items():
         avg: dict[str, float] = {}
 
+        # Detect reading interval so the 8h rolling window covers 8 real hours.
+        # Hourly data → window_8h=8 readings; 15-min data → window_8h=32 readings.
+        window_8h = 8
+        if len(readings) >= 2:
+            t0 = datetime.fromisoformat(readings[0]["ts"].replace("Z", "+00:00"))
+            t1 = datetime.fromisoformat(readings[1]["ts"].replace("Z", "+00:00"))
+            interval_min = abs((t1 - t0).total_seconds() / 60)
+            if interval_min >= 1:
+                window_8h = max(1, round(480 / interval_min))
+
         # 24h simple average — PM2.5 / PM10 / NO2 / SO2 / NH3
         for col in ("pm25", "pm10", "no2", "so2", "nh3"):
             vals = [r[col] for r in readings if r.get(col) is not None]
@@ -354,7 +365,7 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
         # 8h rolling maximum — O3 (CPCB: highest 8h running average in the day)
         o3_vals = [r["o3"] for r in readings if r.get("o3") is not None]
         if o3_vals:
-            avg["o3"] = _max_8h_rolling_avg(o3_vals)
+            avg["o3"] = _max_8h_rolling_avg(o3_vals, window_8h)
 
         # 8h rolling maximum — CO (normalised to mg/m³ before windowing)
         co_vals: list[float] = []
@@ -364,7 +375,7 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
                 source = r.get("ingest_source") or "openaq"
                 co_vals.append(co if source == "cpcb" else co / 1000.0)
         if co_vals:
-            avg["co"] = _max_8h_rolling_avg(co_vals)
+            avg["co"] = _max_8h_rolling_avg(co_vals, window_8h)
 
         result[sid] = avg
     return result
@@ -380,7 +391,7 @@ def set_reading_aqi(station_id: int, ts: str, aqi_value: int) -> None:
 def delete_old_readings(days: int = 90) -> int:
     """Delete readings older than `days` days. Returns the number deleted.
     Called by the daily retention job in main.py to keep the readings table
-    from growing unboundedly (~1 100 rows/day at 46 stations × hourly cadence).
+    from growing unboundedly (~4 400 rows/day at 46 stations × 15-min cadence).
     Uses lt() on the indexed ts column — the (station_id, ts desc) index makes
     this a fast range scan regardless of table size."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()

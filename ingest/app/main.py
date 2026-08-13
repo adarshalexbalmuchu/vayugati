@@ -190,8 +190,8 @@ def run_transit() -> dict:
 
 def run_retention() -> dict:
     """Delete readings older than 90 days. Runs once daily at 03:00 UTC.
-    At ~1 100 rows/day (46 stations × hourly cadence), the table grows
-    ~400 k rows/year without this. 90 days keeps ~100 k rows — well within
+    At ~4 400 rows/day (46 stations × 15-min cadence), the table grows
+    ~1.6 M rows/year without this. 90 days keeps ~400 k rows — within
     Supabase free-tier limits and sufficient for 30-day forecast training."""
     try:
         deleted = db.delete_old_readings(days=90)
@@ -252,9 +252,12 @@ async def lifespan(app: FastAPI):
     # ordering alone, so the margin has to outlast every job's realistic
     # worst case instead (see cleanup_stuck_jobs' own docstring).
     scheduler.add_job(cleanup_stuck_jobs, "interval", minutes=10, kwargs={"stale_after_minutes": 60})
-    # minute 10 each hour: CPCB/DPCC stations publish on the hour, give them a head start
-    scheduler.add_job(run_ingest, "cron", minute=10)
-    # minute 25: recompute forecast + attribution on the freshly-ingested data
+    # every 15 minutes: data.gov.in CPCB feed refreshes on the same cadence,
+    # so we can capture sub-hourly readings. Timestamps are 15-min-floored in
+    # ingest.py, so each 15-min window gets its own (station_id, ts) row.
+    scheduler.add_job(run_ingest, "interval", minutes=15)
+    # once per hour: recompute forecast + attribution on the freshly-ingested data.
+    # Forecast model doesn't benefit from 15-min retraining cadence.
     scheduler.add_job(run_intel, "cron", minute=25)
     # every 5 minutes: drain pending notifications and escalate overdue tasks
     scheduler.add_job(run_ops, "interval", minutes=5)

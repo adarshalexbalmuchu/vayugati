@@ -20,9 +20,14 @@ log = logging.getLogger("ingest")
 _IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def _hour_floor_utc(ts_iso: str) -> str:
+def _15min_floor_utc(ts_iso: str) -> str:
     dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
-    return dt.replace(minute=0, second=0, microsecond=0).isoformat()
+    q = (dt.minute // 15) * 15
+    return dt.replace(minute=q, second=0, microsecond=0).isoformat()
+
+
+# Keep the old name as an alias so existing callers (OpenAQ path) don't need changes.
+_hour_floor_utc = _15min_floor_utc
 
 
 def _parse_cpcb_agency(cpcb_name: str) -> str | None:
@@ -36,11 +41,13 @@ def _parse_cpcb_agency(cpcb_name: str) -> str | None:
 
 
 def _parse_cpcb_ts(ts_str: str) -> str | None:
-    """Parse CPCB's 'DD-MM-YYYY HH:MM:SS' IST string -> UTC ISO hour floor.
+    """Parse CPCB's 'DD-MM-YYYY HH:MM:SS' IST string -> UTC ISO 15-min floor.
     Returns None on any parse failure rather than raising."""
     try:
         dt = datetime.strptime(ts_str, "%d-%m-%Y %H:%M:%S").replace(tzinfo=_IST)
-        return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()
+        utc = dt.astimezone(timezone.utc)
+        q = (utc.minute // 15) * 15
+        return utc.replace(minute=q, second=0, microsecond=0).isoformat()
     except (ValueError, TypeError):
         return None
 
@@ -242,7 +249,7 @@ def run() -> dict:
     """One full ingestion pass. CPCB/data.gov.in is the primary AQ source;
     OpenAQ runs only for stations that CPCB's name-match didn't cover (or
     when DATA_GOV_API_KEY is unset). Open-Meteo weather is independent.
-    Safe to run every hour; all upserts are idempotent."""
+    Safe to run every 15 minutes; all upserts are idempotent (station_id,ts)."""
     summary: dict = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "cpcb_rows_written": 0,
