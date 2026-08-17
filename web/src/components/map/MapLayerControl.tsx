@@ -66,7 +66,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
   wardMarkers: {
     label: 'Hotspot AQI markers',
     available: true,
-    note: 'Ward-linked AQI - the reading assigned to each of the 13 monitored hotspot wards via its own station, not an independent ward-level calculation. Off by default since it duplicates AQ station readings for the same 13 wards - see the legend for the full explanation.',
+    note: 'Ward-linked AQI - the reading assigned to each monitored ward (any ward with an active station) via its own station, not an independent ward-level calculation. Off by default since it duplicates AQ station readings for the same wards - see the legend for the full explanation.',
   },
   stations: {
     label: 'AQ station readings',
@@ -138,7 +138,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   wardBoundaries: true,
-  // Off by default: for the 13 hotspot wards, this duplicates AQ station
+  // Off by default: for monitored wards, this duplicates AQ station
   // readings (the ward's AQI is literally its own station's latest
   // reading, not an independent calculation) - AQ station readings stays
   // on as the single source of truth by default.

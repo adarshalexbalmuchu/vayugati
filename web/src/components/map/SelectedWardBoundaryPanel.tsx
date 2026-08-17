@@ -41,7 +41,7 @@ export interface WardBoundaryDetail {
   linkedIncidentCount: number
   /** Null when this ward has no forecast_runs/forecasts history at all -
    *  real for many of the 250 boundary-only wards too, since forecast.py
-   *  runs per-ward, not just for the 13 hotspot wards. */
+   *  runs per-ward, not just for monitored (has-a-station) wards. */
   forecastPeak: number | null
   forecastPollutantLabel: string | null
   /** Label for the "selected metric" value shown for the station refs
@@ -77,8 +77,8 @@ function StationRefBlock({ label, station, metricLabel }: { label: string; stati
  * jurisdictions (NDMC, Delhi Cantonment) imported from OpenStreetMap. Real
  * context where it exists (direct or nearest station, linked incidents,
  * forecast peak) - honest "no station-backed data" where it doesn't, never
- * a fabricated reading. The 13 monitored hotspot wards still use the full
- * SelectedWardPanel via their marker, unaffected.
+ * a fabricated reading. Monitored wards (those with an active station)
+ * still use the full SelectedWardPanel via their marker, unaffected.
  */
 export default function SelectedWardBoundaryPanel({
   detail,

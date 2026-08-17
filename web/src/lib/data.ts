@@ -116,12 +116,30 @@ export async function fetchCurrentWeather(wardId: number): Promise<Weather | nul
 }
 
 export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
-  // is_hotspot=true scopes this to the monitored hotspot wards only.
-  // 3 queries total (wards, stations, readings) instead of the previous
-  // 2-query-per-ward fan-out (26 queries for 13 wards). All joins done in JS.
-  const [{ data: wards }, { data: allStations }] = await Promise.all([
-    supabase.from('wards').select('id, name, dominant_source, lat, lng').eq('is_hotspot', true).order('name'),
-    supabase.from('stations').select('id, name, agency, ward_id, is_primary').eq('is_active', true),
+  // "Monitored" = has at least one active station, not the legacy
+  // is_hotspot=true seed flag (which only ever covered the original 13
+  // priority localities - 26 other wards have since gained real stations
+  // via the MCD/NDMC/Cantonment boundary import and were invisible here
+  // until this scoped on stations instead).
+  // 3 queries total (stations, wards, readings) instead of the previous
+  // 2-query-per-ward fan-out. All joins done in JS.
+  const { data: allStations } = await supabase.from('stations').select('id, name, agency, ward_id, is_primary').eq('is_active', true)
+  const monitoredWardIds = [...new Set((allStations ?? []).map((s) => s.ward_id).filter((id): id is number => id != null))]
+  if (monitoredWardIds.length === 0) return []
+
+  const allStationIds = (allStations ?? []).map((s) => s.id)
+  const since = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+
+  const [{ data: wards }, { data: recentReadings }] = await Promise.all([
+    supabase.from('wards').select('id, name, dominant_source, lat, lng').in('id', monitoredWardIds).order('name'),
+    // Latest reading per station: fetch recent window, keep first row per station.
+    supabase
+      .from('readings')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+      .in('station_id', allStationIds)
+      .gte('ts', since)
+      .order('ts', { ascending: false })
+      .limit(allStationIds.length * 4),
   ])
   if (!wards) return []
 
@@ -132,18 +150,6 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
     list.push({ id: s.id, name: s.name, agency: s.agency, is_primary: s.is_primary ?? false })
     wardStations.set(s.ward_id, list)
   }
-
-  const allStationIds = (allStations ?? []).map((s) => s.id)
-
-  // Latest reading per station: fetch recent window, keep first row per station.
-  const since = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
-  const { data: recentReadings } = await supabase
-    .from('readings')
-    .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
-    .in('station_id', allStationIds)
-    .gte('ts', since)
-    .order('ts', { ascending: false })
-    .limit(allStationIds.length * 4)
 
   const latestByStation = new Map<number, typeof recentReadings extends (infer T)[] | null ? T : never>()
   for (const r of recentReadings ?? []) {
@@ -195,13 +201,20 @@ export interface WardBoundary {
    *  "nearest station" honestly - never fabricated when absent. */
   lat: number | null
   lng: number | null
+  /** Set only for hotspot wards whose boundary was borrowed from an MCD
+   *  ward polygon (scripts/link-hotspot-ward-boundaries.ts) - the Ward_No
+   *  of that donor polygon, so the Overview map can hide the now-redundant
+   *  grey MCD polygon underneath the colored hotspot fill. Null for the
+   *  250 real municipal-boundary wards themselves and for any hotspot
+   *  ward not yet linked. */
+  donorWardNumber: number | null
 }
 
 /** Real ward boundary polygons for the Map's ward-boundary layer - covers
  *  every ward with real captured geometry (the Phase 2 municipal import,
- *  the NDMC/Cantonment OSM import, and any of the 13 hotspot wards if
- *  they're ever given one too), not just the monitored hotspot set
- *  fetchAllWardsAqi() is scoped to. Never a hardcoded polygon - if
+ *  the NDMC/Cantonment OSM import, and the 13 hotspot wards now linked by
+ *  scripts/link-hotspot-ward-boundaries.ts), not just the monitored-ward
+ *  set fetchAllWardsAqi() is scoped to. Never a hardcoded polygon - if
  *  Supabase has no boundary data yet, this returns an empty array and the
  *  layer stays disabled (see MapPage.tsx). */
 export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
@@ -214,7 +227,7 @@ export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
   return data
     .filter((w): w is typeof w & { boundary: NonNullable<typeof w.boundary> } => w.boundary != null)
     .map((w) => {
-      const meta = w.metadata as { jurisdiction_type?: string } | null
+      const meta = w.metadata as { jurisdiction_type?: string; donor_ward_number?: number } | null
       const jurisdictionType = meta?.jurisdiction_type === 'ndmc' || meta?.jurisdiction_type === 'cantonment' ? meta.jurisdiction_type : 'mcd'
       return {
         id: w.id,
@@ -224,6 +237,7 @@ export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
         geometry: w.boundary as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
         lat: w.lat,
         lng: w.lng,
+        donorWardNumber: typeof meta?.donor_ward_number === 'number' ? meta.donor_ward_number : null,
       }
     })
 }

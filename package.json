@@ -13,6 +13,7 @@
   },
   "scripts": {
     "import:delhi-wards": "tsx scripts/import-delhi-wards.ts",
-    "import:osm-jurisdictions": "tsx scripts/import-osm-jurisdictions.ts"
+    "import:osm-jurisdictions": "tsx scripts/import-osm-jurisdictions.ts",
+    "link:hotspot-ward-boundaries": "tsx scripts/link-hotspot-ward-boundaries.ts"
   }
 }
