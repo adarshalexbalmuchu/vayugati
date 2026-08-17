@@ -67,9 +67,19 @@ export default function OverviewChoroplethMap({
   useEffect(() => { onSelectRef.current = onSelectWard }, [onSelectWard])
   useEffect(() => { selectedRef.current = selectedWardId }, [selectedWardId])
 
-  // Ward boundaries fetched once — static geometry.
+  // Ward boundaries fetched once — static geometry. `boundariesLoaded` guards
+  // the circle fallback below: until this fetch resolves we don't yet know
+  // which monitored wards truly lack a polygon, so showing circles early
+  // would flash a dot for every monitored ward and then yank most of them
+  // away the instant boundaries arrive.
   const [boundaries, setBoundaries] = useState<Awaited<ReturnType<typeof fetchAllWardBoundaries>>>([])
-  useEffect(() => { fetchAllWardBoundaries().then(setBoundaries) }, [])
+  const [boundariesLoaded, setBoundariesLoaded] = useState(false)
+  useEffect(() => {
+    fetchAllWardBoundaries().then((b) => {
+      setBoundaries(b)
+      setBoundariesLoaded(true)
+    })
+  }, [])
 
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
@@ -115,11 +125,13 @@ export default function OverviewChoroplethMap({
   }, [boundaries, wards, latestReadingsByWard])
 
   // Circle GeoJSON — fallback for monitored wards that have no linked
-  // boundary yet (lat/lng centroid, colored by AQI).
+  // boundary yet (lat/lng centroid, colored by AQI). Empty until
+  // boundariesLoaded so we never flash a dot for a ward that's about to
+  // get a real polygon.
   const boundaryWardIds = useMemo(() => new Set(boundaries.map(b => b.id)), [boundaries])
   const centersGeoJSON = useMemo<CenterGeoJSON>(() => ({
     type: 'FeatureCollection',
-    features: wards
+    features: !boundariesLoaded ? [] : wards
       .filter(w => w.lat != null && w.lng != null && !boundaryWardIds.has(w.id))
       .map((w): Feature<Point, WardFeatureProps> => {
         const preferred = latestReadingsByWard?.get(w.id)
@@ -134,7 +146,7 @@ export default function OverviewChoroplethMap({
           geometry: { type: 'Point', coordinates: [w.lng!, w.lat!] },
         }
       }),
-  }), [wards, latestReadingsByWard, boundaryWardIds])
+  }), [wards, latestReadingsByWard, boundaryWardIds, boundariesLoaded])
 
   // Mount the map once.
   useEffect(() => {
