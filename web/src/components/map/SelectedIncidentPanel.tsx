@@ -15,8 +15,8 @@ const SEVERITY_TONE: Record<Severity, string> = {
   low: 'text-slate-500 ring-slate-300',
 }
 
-/** Deliberately thin - the Incidents page's own detail workspace
- *  (IncidentStatusHeader/tabs) is the authoritative place for the full
+/** Deliberately thin - the Incidents page's own case workspace
+ *  (IncidentCaseHeader/tabs) is the authoritative place for the full
  *  picture. This is a map-context preview with a prominent link out. */
 export default function SelectedIncidentPanel({
   incident,

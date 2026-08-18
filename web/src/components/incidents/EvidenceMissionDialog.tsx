@@ -1,8 +1,15 @@
 import { useState } from 'react'
 import { useAuth } from '../../lib/auth'
-import { createEvidenceMission, listAssignableOfficers, listLinkedReports, type AssignableOfficer, type Incident } from '../../lib/incidents'
+import { createEvidenceMission, listAssignableOfficers, listLinkedReports, type Incident } from '../../lib/incidents'
 import { useAsync } from '../../lib/useAsync'
 import { Modal, Skeleton } from '../ui'
+import OptionPicker from './OptionPicker'
+
+const MISSION_TYPE_OPTIONS = [
+  { value: 'field_photo' as const, label: 'Geotagged field photograph', description: 'An officer visits and photographs the source in place.' },
+  { value: 'source_status_check' as const, label: 'Source operating-status check', description: 'An officer confirms whether the suspected source is currently operating.' },
+  { value: 'citizen_verification' as const, label: 'Targeted citizen verification', description: 'Ask the person who reported this whether it is still happening.' },
+]
 
 /**
  * Next-best-evidence dialog (plan §10). The rationale is mandatory — the system
@@ -10,9 +17,11 @@ import { Modal, Skeleton } from '../ui'
  * mission with no assignee would never reach anyone, so the officer picker is
  * part of dispatching rather than an afterthought.
  *
- * Migrated onto the shared Modal primitive (ui.tsx) - this was the dialog
- * that predated it and was never moved over. Same fields/validation/handlers,
- * now with Escape-to-close and first-field autofocus for free.
+ * Every choice here (mission type, who it goes to) is a small, fully visible
+ * list via OptionPicker rather than a native <select> - with only 3 mission
+ * types and typically a handful of officers per ward, hiding them behind a
+ * dropdown costs more in "what all things do we have" clarity than it saves
+ * in space.
  */
 export default function EvidenceMissionDialog({
   incident,
@@ -36,7 +45,7 @@ export default function EvidenceMissionDialog({
   const [error, setError] = useState<string | null>(null)
 
   const officers = useAsync(() => listAssignableOfficers(incident.ward_id), [incident.ward_id])
-  const officerList: AssignableOfficer[] = officers.data ?? []
+  const officerList = officers.data ?? []
   const isCitizenMission = missionType === 'citizen_verification'
 
   // A citizen mission has to be addressed to a specific citizen: they only ever
@@ -84,15 +93,14 @@ export default function EvidenceMissionDialog({
       </p>
 
       <label className="mt-3 block text-xs font-semibold text-slate-700">Mission type</label>
-      <select
+      <OptionPicker
+        options={MISSION_TYPE_OPTIONS}
         value={missionType}
-        onChange={(e) => setMissionType(e.target.value as typeof missionType)}
-        className="focus-ring mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
-      >
-        <option value="field_photo">Geotagged field photograph (officer)</option>
-        <option value="source_status_check">Source operating-status check (officer)</option>
-        <option value="citizen_verification">Targeted citizen verification</option>
-      </select>
+        onChange={(v) => {
+          setMissionType(v)
+          setAssignee('')
+        }}
+      />
 
       <label className="mt-3 block text-xs font-semibold text-slate-700">
         {isCitizenMission ? 'Ask which reporter' : 'Assign to'}
@@ -102,44 +110,25 @@ export default function EvidenceMissionDialog({
       ) : (isCitizenMission ? reporters.error : officers.error) ? (
         <p className="mt-1 text-xs text-status-critical">{isCitizenMission ? reporters.error : officers.error}</p>
       ) : isCitizenMission ? (
-        reporterList.length === 0 ? (
-          <p className="mt-1 rounded-lg bg-status-warning/10 px-2.5 py-2 text-xs text-slate-600">
-            No citizen reports are linked to this incident, so there is nobody to ask. Use an officer mission instead.
-          </p>
-        ) : (
-          <select
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-            className="focus-ring mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
-          >
-            <option value="">Select a reporter…</option>
-            {reporterList.map((r) => (
-              <option key={r.id} value={r.reporter_id ?? ''}>
-                Reporter of #{r.id} · {new Date(r.created_at).toLocaleDateString()}
-              </option>
-            ))}
-          </select>
-        )
-      ) : officerList.length === 0 ? (
-        // Honest dead-end: a real operational state (no officer covers this
-        // ward), not an empty dropdown to shrug at.
-        <p className="mt-1 rounded-lg bg-status-warning/10 px-2.5 py-2 text-xs text-slate-600">
-          No field officer is assigned to this ward, so this mission cannot be dispatched. Ask an admin to assign a
-          field officer to this ward before dispatching.
-        </p>
-      ) : (
-        <select
+        <OptionPicker
+          options={reporterList.map((r) => ({
+            value: r.reporter_id ?? '',
+            label: `Reporter of #${r.id}`,
+            description: new Date(r.created_at).toLocaleDateString(),
+          }))}
           value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-          className="focus-ring mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
-        >
-          <option value="">Select an officer…</option>
-          {officerList.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.full_name ?? o.id.slice(0, 8)}
-            </option>
-          ))}
-        </select>
+          onChange={setAssignee}
+          emptyMessage="No citizen reports are linked to this incident, so there is nobody to ask. Use an officer mission instead."
+        />
+      ) : (
+        <OptionPicker
+          options={officerList.map((o) => ({ value: o.id, label: o.full_name ?? o.id.slice(0, 8) }))}
+          value={assignee}
+          onChange={setAssignee}
+          // Honest dead-end: a real operational state (no officer covers this
+          // ward), not an empty dropdown to shrug at.
+          emptyMessage="No field officer is assigned to this ward, so this mission cannot be dispatched. Ask an admin to assign a field officer to this ward before dispatching."
+        />
       )}
 
       {isCitizenMission && (

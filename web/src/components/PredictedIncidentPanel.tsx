@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { ArrowUpRight, Eye, GitMerge, XCircle } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import {
   DETECTION_STAGE_LABEL,
@@ -28,43 +27,82 @@ import {
   type IncidentDetail,
 } from '../lib/incidents'
 import { useAsync } from '../lib/useAsync'
-import { Label } from './ui'
 
 /**
- * Automated anomaly-detection summary + command review (Phase 6). Shown only
- * for an incident that originated from `evaluate_station_pollutant_anomaly`
+ * Automated anomaly-detection review (Phase 6). Shown only for an incident
+ * that originated from `evaluate_station_pollutant_anomaly`
  * (`incident.detection_stage` set) — a citizen-reported or manually-created
- * incident never has this panel.
+ * incident never has this panel. Rendered inside the Summary tab's "What
+ * should I do next?" section, alongside the general request-evidence/
+ * route-to-authority actions.
  *
- * The rule engine itself lives entirely in SQL; this panel only displays
- * what it already computed and stored on the latest linked
- * `anomaly_candidates` row, plus the plain command review actions (confirm /
- * continue monitoring / dismiss / merge). "Request evidence" is deliberately
- * NOT duplicated here — DetailHeader's existing button already works for any
- * incident, predicted or not.
+ * The rule engine itself lives entirely in SQL; the plain command review
+ * actions (confirm / continue monitoring / dismiss / merge) stay visible by
+ * default, but everything else this panel knows about the detection - the
+ * raw facts, the forecast chart, triggered rules, nearby stations - sits
+ * behind a collapsed <details> disclosure. It's real, checkable detail a
+ * commander may want, not something that needs to compete for space with
+ * the four questions the Summary tab is built around.
  */
 
 function fmt(n: number | null, digits = 1): string {
   return n == null ? '-' : n.toFixed(digits)
 }
 
-/** Compact inline-SVG forecast curve with an uncertainty band — no chart
+function FactCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-slate-200 p-2.5">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{title}</p>
+      <dl className="space-y-1">{children}</dl>
+    </div>
+  )
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-[11px]">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className="text-right font-semibold text-slate-700">{children}</dd>
+    </div>
+  )
+}
+
+/** Peak of a forecast curve - shared by the chart and the header stat line
+ *  above it, so the two numbers can never drift apart. */
+function forecastPeak(
+  points: { predicted_value: number | null }[],
+): number | null {
+  const values = points.map((p) => p.predicted_value).filter((v): v is number => v != null)
+  return values.length > 0 ? Math.max(...values) : null
+}
+
+/** Compact inline-SVG forecast curve with an uncertainty band - no chart
  *  library, matching ForecastChart.tsx's own approach, generalised to any
- *  pollutant and to the Phase 8 lower/upper bound columns. */
+ *  pollutant and to the Phase 8 lower/upper bound columns. Height trimmed
+ *  (96 → 60) and the in-chart "peak Xµg/m³" text label dropped - that
+ *  number now lives in the header stat line above instead, so the chart is
+ *  supporting evidence for it rather than a second place it's repeated. */
 function ForecastCurveChart({
   points,
+  threshold,
 }: {
   points: { horizon_ts: string; predicted_value: number | null; lower_bound: number | null; upper_bound: number | null }[]
+  /** anomalyCandidates[0].threshold_used, when this incident originated from
+   *  automated detection - drawn as a dashed reference line so "did the
+   *  forecast cross the same line that triggered detection" reads directly
+   *  off the chart instead of requiring a mental cross-reference against
+   *  the facts card. */
+  threshold: number | null
 }) {
   const data = points.filter((p) => p.predicted_value != null) as (typeof points[number] & { predicted_value: number })[]
   if (data.length < 2) return <p className="text-xs text-slate-400">No forecast curve yet.</p>
 
   const W = 320
-  const H = 96
-  const pad = { top: 8, right: 8, bottom: 16, left: 32 }
+  const H = 60
+  const pad = { top: 6, right: 8, bottom: 14, left: 32 }
   const innerW = W - pad.left - pad.right
   const innerH = H - pad.top - pad.bottom
-  const maxV = Math.max(...data.map((p) => p.upper_bound ?? p.predicted_value), 10)
+  const maxV = Math.max(...data.map((p) => p.upper_bound ?? p.predicted_value), threshold ?? 0, 10)
   const x = (i: number) => pad.left + (i / (data.length - 1)) * innerW
   const y = (v: number) => pad.top + innerH - (Math.max(v, 0) / maxV) * innerH
 
@@ -77,25 +115,16 @@ function ForecastCurveChart({
     : null
 
   const peak = data.reduce((a, b) => (b.predicted_value > a.predicted_value ? b : a), data[0])
-  const horizonHours = Math.round(
-    (new Date(data[data.length - 1].horizon_ts).getTime() - new Date(data[0].horizon_ts).getTime()) / 3_600_000,
-  )
 
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-[10px] text-slate-400">
-        <span>Next {horizonHours}h</span>
-        <span>µg/m³{hasBand ? ' · shaded band = uncertainty range' : ''}</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Forecast curve">
-        {band && <path d={band} fill="#7c3aed" fillOpacity={0.12} />}
-        <path d={line} fill="none" stroke="#7c3aed" strokeWidth={1.5} />
-        <circle cx={x(data.indexOf(peak))} cy={y(peak.predicted_value)} r={2.5} fill="#7c3aed" />
-        <text x={x(data.indexOf(peak))} y={y(peak.predicted_value) - 5} fontSize={8} textAnchor="middle" fill="#5b21b6">
-          peak {peak.predicted_value.toFixed(0)} µg/m³
-        </text>
-      </svg>
-    </div>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Forecast curve">
+      {band && <path d={band} fill="#7c3aed" fillOpacity={0.12} />}
+      {threshold != null && (
+        <line x1={pad.left} x2={W - pad.right} y1={y(threshold)} y2={y(threshold)} stroke="#dc2626" strokeWidth={1} strokeDasharray="3,2" />
+      )}
+      <path d={line} fill="none" stroke="#7c3aed" strokeWidth={1.5} />
+      <circle cx={x(data.indexOf(peak))} cy={y(peak.predicted_value)} r={2.5} fill="#7c3aed" />
+    </svg>
   )
 }
 
@@ -128,6 +157,15 @@ export default function PredictedIncidentPanel({ detail, onRefresh }: { detail: 
   const nearbyStations = (stations.data ?? []).filter((s) => s.id !== latest?.station_id)
   const triggeredRules = (latest?.triggered_rules as string[] | null) ?? []
   const run = forecastRun.data
+  const curveData = forecastCurve.data ?? []
+  const peak = forecastPeak(curveData)
+  const forecastHorizonHours =
+    curveData.length >= 2
+      ? Math.round(
+          (new Date(curveData[curveData.length - 1].horizon_ts).getTime() - new Date(curveData[0].horizon_ts).getTime()) /
+            3_600_000,
+        )
+      : null
 
   const act = async (fn: () => Promise<void>) => {
     if (!session) return
@@ -171,61 +209,68 @@ export default function PredictedIncidentPanel({ detail, onRefresh }: { detail: 
   const isActionable = incident.status !== 'closed'
 
   return (
-    <section className="border-t border-slate-100 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Label dark>Automated detection</Label>
-        <span className="rounded bg-accent-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-accent-800">
-          {DETECTION_STAGE_LABEL[incident.detection_stage]}
-        </span>
-      </div>
+    <div className="mt-2">
+      {isActionable && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <button type="button" disabled={busy} onClick={confirm} className="focus-ring font-semibold text-accent-700 hover:text-accent-800 disabled:opacity-50">
+            Promote to active incident
+          </button>
+          <button type="button" disabled={busy} onClick={continueMonitoring} className="focus-ring text-slate-500 hover:text-slate-700 disabled:opacity-50">
+            Continue monitoring
+          </button>
+          <button type="button" disabled={busy} onClick={dismiss} className="focus-ring text-slate-500 hover:text-slate-700 disabled:opacity-50">
+            Dismiss as data anomaly
+          </button>
+          <button type="button" disabled={busy} onClick={merge} className="focus-ring text-slate-500 hover:text-slate-700 disabled:opacity-50">
+            Merge with existing incident
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-status-critical">{error}</p>}
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] sm:grid-cols-4">
-        <div>
-          <dt className="text-slate-400">Location</dt>
-          <dd className="font-semibold text-slate-700">{incident.ward_name ?? 'Unknown ward'}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Pollutant</dt>
-          <dd className="font-semibold text-slate-700">{pollutant ? POLLUTANT_LABEL[pollutant] : '-'}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Current concentration</dt>
-          <dd className="font-semibold text-slate-700">{fmt(latest?.current_concentration ?? null)}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Local excess</dt>
-          <dd className="font-semibold text-slate-700">{fmt(latest?.local_excess ?? null)}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Rate of increase</dt>
-          <dd className="font-semibold text-slate-700">{latest?.rate_of_increase != null ? `${fmt(latest.rate_of_increase)}/h` : '-'}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Expected threshold crossing</dt>
-          <dd className="font-semibold text-slate-700">
-            {latest?.projected_crossing_at ? new Date(latest.projected_crossing_at).toLocaleString() : latest?.detection_stage === 'detected' ? 'Already crossed' : '-'}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Data confidence</dt>
-          <dd className="font-semibold text-slate-700">{latest?.confidence != null ? `${Math.round(latest.confidence * 100)}%` : '-'}</dd>
-        </div>
-        <div>
-          <dt className="text-slate-400">Sensor</dt>
-          <dd className="font-semibold text-slate-700">
+      <details className="mt-2 group">
+        <summary className="focus-ring cursor-pointer list-none text-xs font-semibold text-slate-400 hover:text-slate-600">
+          <span className="inline-flex items-center gap-1">
+            Automated detection details ({DETECTION_STAGE_LABEL[incident.detection_stage]})
+            <span className="transition group-open:rotate-90">›</span>
+          </span>
+        </summary>
+
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <FactCard title="Detection details">
+          <Fact label="Location">{incident.ward_name ?? 'Unknown ward'}</Fact>
+          <Fact label="Pollutant">{pollutant ? POLLUTANT_LABEL[pollutant] : '-'}</Fact>
+          <Fact label="Current concentration">{fmt(latest?.current_concentration ?? null)}</Fact>
+          <Fact label="Rate of increase">{latest?.rate_of_increase != null ? `${fmt(latest.rate_of_increase)}/h` : '-'}</Fact>
+          {latest?.prediction_method && (
+            <Fact label="Prediction method">{PREDICTION_METHOD_LABEL[latest.prediction_method as PredictionMethod]}</Fact>
+          )}
+        </FactCard>
+        <FactCard title="Threshold & confidence">
+          <Fact label="Expected threshold crossing">
+            {latest?.projected_crossing_at
+              ? new Date(latest.projected_crossing_at).toLocaleString()
+              : latest?.detection_stage === 'detected'
+                ? 'Already crossed'
+                : '-'}
+          </Fact>
+          <Fact label="Threshold used">{fmt(latest?.threshold_used ?? null)}</Fact>
+          <Fact label="Data confidence">{latest?.confidence != null ? `${Math.round(latest.confidence * 100)}%` : '-'}</Fact>
+          <Fact label="Sensor">
             {latest?.sensor_quality ?? '-'}
             {sensorQualityCaveat(latest?.sensor_quality ?? null) && (
               <span className="ml-1 font-normal text-slate-400">({sensorQualityCaveat(latest?.sensor_quality ?? null)})</span>
             )}
-          </dd>
-        </div>
-        {latest?.prediction_method && (
-          <div>
-            <dt className="text-slate-400">Prediction method</dt>
-            <dd className="font-semibold text-slate-700">{PREDICTION_METHOD_LABEL[latest.prediction_method as PredictionMethod]}</dd>
-          </div>
-        )}
-      </dl>
+          </Fact>
+        </FactCard>
+        <FactCard title="Local context">
+          <Fact label="Local excess">{fmt(latest?.local_excess ?? null)}</Fact>
+          <Fact label="Classification">
+            <span className="capitalize">{incident.classification ?? 'Not classified'}</span>
+          </Fact>
+          <Fact label="Assigned authority">{incident.assigned_authority ?? 'Not routed yet'}</Fact>
+        </FactCard>
+      </div>
 
       {latest?.prediction_method === 'validated_forecast' && run && run.method !== 'lightgbm' && (
         <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
@@ -255,13 +300,35 @@ export default function PredictedIncidentPanel({ detail, onRefresh }: { detail: 
 
       {run && (
         <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[11px] font-semibold text-slate-700">Forecast - {pollutant ? POLLUTANT_LABEL[pollutant] : ''}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold text-slate-700">
+              {pollutant ? POLLUTANT_LABEL[pollutant] : ''} forecast
+              {forecastHorizonHours != null && <span className="font-normal text-slate-400"> · next {forecastHorizonHours}h</span>}
+            </p>
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">{FORECAST_DISCLAIMER}</span>
           </div>
 
+          {/* Honest header stats, not a fabricated confidence tier - the
+              forecast has no single Low/Medium/High confidence value, only
+              a validated-horizon boundary (see "Validated up to" below), so
+              that's what stands in for confidence here too. */}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-600">
+            {latest?.current_concentration != null && peak != null && (
+              <span>
+                Current <span className="font-semibold tabular-nums text-slate-800">{fmt(latest.current_concentration, 0)}</span>
+                {' → '}
+                Peak <span className="font-semibold tabular-nums text-slate-800">{fmt(peak, 0)}</span> µg/m³
+              </span>
+            )}
+            {latest?.threshold_used != null && (
+              <span>
+                Threshold <span className="font-semibold tabular-nums text-slate-800">{fmt(latest.threshold_used, 0)}</span>
+              </span>
+            )}
+          </div>
+
           <div className="mt-2">
-            <ForecastCurveChart points={forecastCurve.data ?? []} />
+            <ForecastCurveChart points={forecastCurve.data ?? []} threshold={latest?.threshold_used ?? null} />
           </div>
 
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] sm:grid-cols-3">
@@ -325,28 +392,7 @@ export default function PredictedIncidentPanel({ detail, onRefresh }: { detail: 
       {anomalyCandidates.length > 1 && (
         <p className="mt-2 text-[11px] text-slate-400">{anomalyCandidates.length} detection signals recorded for this incident.</p>
       )}
-
-      {isActionable && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <button type="button" disabled={busy} onClick={continueMonitoring} className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <Eye className="h-3 w-3" strokeWidth={2} aria-hidden />
-            Continue monitoring
-          </button>
-          <button type="button" disabled={busy} onClick={confirm} className="focus-ring flex items-center gap-1.5 rounded-lg bg-accent-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-accent-700 disabled:opacity-50">
-            <ArrowUpRight className="h-3 w-3" strokeWidth={2} aria-hidden />
-            Promote to active incident
-          </button>
-          <button type="button" disabled={busy} onClick={dismiss} className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <XCircle className="h-3 w-3" strokeWidth={2} aria-hidden />
-            Dismiss as data anomaly
-          </button>
-          <button type="button" disabled={busy} onClick={merge} className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <GitMerge className="h-3 w-3" strokeWidth={2} aria-hidden />
-            Merge with existing incident
-          </button>
-        </div>
-      )}
-      {error && <p className="mt-2 text-xs text-status-critical">{error}</p>}
-    </section>
+      </details>
+    </div>
   )
 }

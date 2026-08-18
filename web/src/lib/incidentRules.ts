@@ -113,6 +113,20 @@ export function severityFromLocalExcess(excess: number | null | undefined): Seve
   return 'low'
 }
 
+/** CPCB AQI band name for a raw AQI number - the same breakpoints the
+ *  Overview map's choropleth colors by (0/50/100/200/300/400), as plain
+ *  text rather than a color. Lets a reading stand on its own ("387 · Very
+ *  Poor") instead of needing a second, separately-derived severity badge
+ *  next to it for the same "how bad is this" question. */
+export function aqiBandLabel(aqi: number): string {
+  if (aqi >= 400) return 'Severe'
+  if (aqi >= 300) return 'Very Poor'
+  if (aqi >= 200) return 'Poor'
+  if (aqi >= 100) return 'Moderate'
+  if (aqi >= 50) return 'Satisfactory'
+  return 'Good'
+}
+
 export const SEVERITY_RANK: Record<Severity, number> = {
   severe: 3,
   high: 2,
@@ -191,11 +205,11 @@ export const CORROBORATION_RULE =
 export type QueueKey = 'active' | 'predicted' | 'verification' | 'assigned' | 'escalated' | 'recurrence' | 'closed'
 
 export const QUEUE_LABELS: Record<QueueKey, string> = {
-  active: 'Active',
+  active: 'All Open',
   predicted: 'Predicted',
-  verification: 'Verification',
+  verification: 'Awaiting Verification',
   assigned: 'Assigned',
-  escalated: 'Escalated',
+  escalated: 'Needs Attention',
   recurrence: 'Recurrence',
   closed: 'Closed',
 }
@@ -284,6 +298,29 @@ export function isEscalated(i: QueueIncident, now: number = Date.now()): boolean
   if (DISPATCHED_STATUSES.includes(i.status)) return false
   const ageHours = (now - new Date(i.detected_at).getTime()) / 3_600_000
   return ageHours > ESCALATION_SLA_HOURS
+}
+
+export interface NextActionInput {
+  status: IncidentStatus
+  source_confidence: SourceConfidence
+  assigned_authority: string | null
+}
+
+/**
+ * One short, imperative label for "what does this incident need next" -
+ * replaces the old per-row severity + escalation badge pair, which lost all
+ * discriminatory value once the escalation rule (see isEscalated above)
+ * started matching nearly every open incident. Shared by the list row and
+ * the detail header's "recommended next action" so the two never disagree
+ * about what a given incident needs. Null only for a closed incident.
+ */
+export function nextActionLabel(i: NextActionInput): string | null {
+  if (i.status === 'closed') return null
+  if (i.status === 'verifying') return 'Awaiting verification'
+  if (DISPATCHED_STATUSES.includes(i.status)) return 'In progress'
+  if (i.status === 'routed' || i.status === 'action_approved' || i.assigned_authority != null) return 'Awaiting dispatch'
+  if (i.source_confidence === 'suspected') return 'Needs evidence'
+  return 'Ready to route'
 }
 
 export function inQueue(i: QueueIncident, queue: QueueKey, now: number = Date.now()): boolean {
@@ -1741,55 +1778,5 @@ export function collapseRepeatedTimelineEvents<T extends { event_type: string }>
     out.push({ representative: e, count: 1 })
   }
   return out
-}
-
-// ── action chain (launch positioning pass) ──────────────────────────────────
-//
-// The commander-facing "what stage is this incident at" strip - makes the
-// Monitor→...→Evaluate loop concrete for one specific incident, instead of
-// only existing as a product-level diagram in docs. Every stage's `done`
-// flag is derived from fields IncidentDetail already fetches (hypotheses,
-// missions, interventions, impactEvaluations) - no new query, no new table.
-//
-// `hasResponsibleAuthority` means the incident has actually been routed to
-// an authority (`incident.assigned_authority != null`, the same field
-// IncidentStatusHeader shows as "Not routed yet") - NOT whether a probable
-// registry match exists (that's the separate `responsibleAuthority` object
-// on IncidentDetail, which dispatchEmptyStateMessage below already uses for
-// its own, earlier-stage "is routing even possible yet" check).
-
-export type ActionChainStageKey = 'detected' | 'source' | 'evidence' | 'authority' | 'dispatch' | 'outcome'
-
-export interface ActionChainStage {
-  key: ActionChainStageKey
-  label: string
-  done: boolean
-}
-
-export interface ActionChainInput {
-  hasCurrentHypothesis: boolean
-  sourceConfidence: SourceConfidence
-  missionCount: number
-  hasResponsibleAuthority: boolean
-  interventionCount: number
-  isClosed: boolean
-  hasImpactEvaluation: boolean
-}
-
-/** Detected/Predicted is always "done" - an incident that exists has, by
- *  definition, been detected or predicted. Every later stage reflects a
- *  real, already-loaded fact - never inferred from a status string alone
- *  (e.g. "Evidence" also counts a dispatched mission, not just an elevated
- *  confidence level, since a mission can be in flight before it changes
- *  anything). */
-export function actionChainStages(input: ActionChainInput): ActionChainStage[] {
-  return [
-    { key: 'detected', label: 'Detected / Predicted', done: true },
-    { key: 'source', label: 'Likely source', done: input.hasCurrentHypothesis },
-    { key: 'evidence', label: 'Evidence', done: input.sourceConfidence !== 'suspected' || input.missionCount > 0 },
-    { key: 'authority', label: 'Responsible authority', done: input.hasResponsibleAuthority },
-    { key: 'dispatch', label: 'Dispatch', done: input.interventionCount > 0 },
-    { key: 'outcome', label: 'Outcome evaluation', done: input.isClosed || input.hasImpactEvaluation },
-  ]
 }
 

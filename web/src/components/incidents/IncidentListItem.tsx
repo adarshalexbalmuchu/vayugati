@@ -4,31 +4,31 @@ import {
   currentReading,
   ESCALATION_SLA_HOURS,
   isEscalated,
-  sourceCategoryLabel,
+  nextActionLabel,
   type Severity,
-  type SourceCategory,
 } from '../../lib/incidentRules'
 import type { Incident } from '../../lib/incidents'
 
-const SEVERITY_TONE: Record<Severity, string> = {
-  severe: 'text-status-critical ring-status-critical/40',
-  high: 'text-status-warning ring-status-warning/40',
-  moderate: 'text-status-warning ring-status-warning/30',
-  low: 'text-slate-500 ring-slate-300',
+// Severity now reads as an ambient left-edge accent rather than a
+// competing badge - "Severity unavailable" no longer needs a pill of its
+// own on the (common) rows where there's no forecast to derive it from.
+const SEVERITY_BORDER: Record<Severity, string> = {
+  severe: 'border-status-critical',
+  high: 'border-status-warning',
+  moderate: 'border-status-warning/60',
+  low: 'border-slate-300',
 }
 
-const EVIDENCE_TONE: Record<string, string> = {
-  suspected: 'text-slate-500 ring-slate-300',
-  corroborated: 'text-accent-700 ring-accent-300',
-  officially_verified: 'text-status-success ring-status-success/40',
-}
-
-function ageHours(ts: string): number {
-  return (Date.now() - new Date(ts).getTime()) / 3_600_000
+const NEXT_ACTION_TONE: Record<string, string> = {
+  'Needs evidence': 'bg-status-warning/10 text-status-warning',
+  'Ready to route': 'bg-accent-100 text-accent-800',
+  'Awaiting dispatch': 'bg-slate-100 text-slate-600',
+  'In progress': 'bg-slate-100 text-slate-600',
+  'Awaiting verification': 'bg-accent-100 text-accent-800',
 }
 
 function fmtAge(ts: string): string {
-  const h = ageHours(ts)
+  const h = (Date.now() - new Date(ts).getTime()) / 3_600_000
   if (h < 1) return '<1h'
   if (h < 48) return `${Math.floor(h)}h`
   return `${Math.floor(h / 24)}d`
@@ -48,77 +48,77 @@ function ReadingBadge({ wardAqi, localExcess }: { wardAqi: number | null; localE
 export default function IncidentListItem({
   incident,
   wardAqi,
-  leadingSource,
   selected,
   onSelect,
+  checked,
+  onToggleCheck,
 }: {
   incident: Incident
   wardAqi: number | null
-  leadingSource: SourceCategory | null
   selected: boolean
   onSelect: () => void
+  /** Undefined when this row isn't eligible for the bulk evidence-request
+   *  action (only 'suspected' incidents are) - no checkbox rendered then. */
+  checked?: boolean
+  onToggleCheck?: () => void
 }) {
   const severity = (incident.severity ?? null) as Severity | null
   const escalated = isEscalated(incident)
+  const nextAction = nextActionLabel(incident)
+  const checkable = onToggleCheck != null
 
   return (
-    <li>
+    <li
+      className={`flex items-start gap-1 border-l-[3px] pr-2 transition ${
+        selected
+          ? 'border-accent-600 bg-accent-50'
+          : `${severity ? SEVERITY_BORDER[severity] : 'border-slate-200'} hover:bg-slate-50`
+      }`}
+    >
+      {checkable && (
+        <input
+          type="checkbox"
+          checked={checked ?? false}
+          onChange={onToggleCheck}
+          aria-label="Select for bulk evidence request"
+          className="focus-ring mt-3 ml-2 h-3.5 w-3.5 flex-shrink-0 rounded border-slate-300"
+        />
+      )}
       <button
         type="button"
         onClick={onSelect}
         aria-current={selected ? 'true' : undefined}
-        className={`focus-ring w-full border-l-2 px-3 py-2.5 text-left transition ${
-          selected ? 'border-accent-600 bg-accent-50' : 'border-transparent hover:bg-slate-50'
-        }`}
+        className={`focus-ring min-w-0 flex-1 py-2 text-left ${checkable ? 'pl-1.5' : 'pl-3'}`}
       >
-        <div className="flex items-center gap-1.5">
-          {severity ? (
-            <span
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ring-1 ring-inset ${SEVERITY_TONE[severity]}`}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
-              {severity}
-            </span>
-          ) : (
-            <span
-              className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-400 ring-1 ring-inset ring-slate-200"
-              title="No forecast for this ward, so severity could not be derived"
-            >
-              Severity unavailable
-            </span>
-          )}
-          {escalated && (
-            <span
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-status-critical ring-1 ring-inset ring-status-critical/40"
-              title={`Escalated by rule: open longer than ${ESCALATION_SLA_HOURS}h with nothing dispatched - independent of severity`}
-            >
-              <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} aria-hidden />
-              Escalated by rule
-            </span>
-          )}
-          <span className="ml-auto text-[11px] tabular-nums text-slate-400">{fmtAge(incident.detected_at)}</span>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+            {incident.ward_name ?? `Incident #${incident.id}`}
+            {incident.primary_pollutant && (
+              <span className="ml-1 font-normal uppercase text-slate-400">· {incident.primary_pollutant}</span>
+            )}
+          </p>
+          <span className="flex-shrink-0 text-[11px] tabular-nums text-slate-400">{fmtAge(incident.detected_at)}</span>
         </div>
 
-        <p className="mt-1 line-clamp-2 text-sm font-medium text-slate-800">
-          {incident.summary ?? `Incident #${incident.id}`}
-        </p>
-
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-400">
-          <span>#{incident.id}</span>
-          {incident.ward_name && <span>· {incident.ward_name}</span>}
-          {incident.primary_pollutant && <span className="uppercase">· {incident.primary_pollutant}</span>}
-          <span>· {sourceCategoryLabel(leadingSource)}</span>
-        </div>
-
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+        <div className="mt-0.5 flex items-center gap-x-1.5 text-[11px] text-slate-500">
           <ReadingBadge wardAqi={wardAqi} localExcess={incident.local_excess} />
-          <span
-            className={`rounded px-1 font-semibold ring-1 ring-inset ${EVIDENCE_TONE[incident.source_confidence] ?? 'text-slate-500 ring-slate-300'}`}
-          >
-            {CONFIDENCE_LABEL[incident.source_confidence]}
-          </span>
-          <span className="capitalize text-slate-400">{incident.status.replace(/_/g, ' ')}</span>
+          <span>· {CONFIDENCE_LABEL[incident.source_confidence]}</span>
+          {escalated && (
+            <span title={`Open longer than ${ESCALATION_SLA_HOURS}h with nothing dispatched`}>
+              <AlertTriangle className="h-3 w-3 flex-shrink-0 text-status-critical" strokeWidth={2.5} aria-hidden />
+            </span>
+          )}
         </div>
+
+        {nextAction && (
+          <span
+            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+              NEXT_ACTION_TONE[nextAction] ?? 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {nextAction}
+          </span>
+        )}
       </button>
     </li>
   )

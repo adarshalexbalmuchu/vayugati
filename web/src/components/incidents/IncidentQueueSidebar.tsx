@@ -1,18 +1,21 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Inbox,
-  MapPin,
-  RotateCcw,
-  ShieldQuestion,
-  TrendingUp,
-  UserCheck,
-  type LucideIcon,
-} from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Inbox, ShieldQuestion, TrendingUp, UserCheck, type LucideIcon } from 'lucide-react'
 import { QUEUE_LABELS, type QueueKey } from '../../lib/incidentRules'
 
-const QUEUE_ORDER: QueueKey[] = ['active', 'predicted', 'verification', 'assigned', 'escalated', 'recurrence', 'closed']
+/** The 6 working views. `predicted` is a real nav row here (a saved lens
+ *  over the open set, same as e.g. Gmail's "Starred" sitting next to
+ *  "Inbox") - it does not need to be hidden to be honest about overlapping
+ *  with `active`, as long as nothing on the page implies these counts sum
+ *  to a total (they don't: there's no "N incidents total" figure anywhere
+ *  that a reader could misadd them into). `recurrence` stays a filter chip
+ *  inside the Closed queue instead (see IncidentList.tsx) - unlike
+ *  predicted it's only ever relevant once already viewing Closed, so a
+ *  permanent top-level row for it would be dead weight the rest of the
+ *  time. `escalated` (rendered "Needs Attention") is the one queue meant
+ *  to demand action regardless of what else is selected. Location Audit
+ *  lives in the page header now (IncidentsView.tsx) — it's a data-quality
+ *  tool, not an incident queue, and living here made it read as an 8th
+ *  queue in this same workflow. */
+const QUEUE_ORDER: QueueKey[] = ['active', 'escalated', 'predicted', 'verification', 'assigned', 'closed']
 
 const QUEUE_ICON: Record<QueueKey, LucideIcon> = {
   active: Inbox,
@@ -20,7 +23,7 @@ const QUEUE_ICON: Record<QueueKey, LucideIcon> = {
   verification: ShieldQuestion,
   assigned: UserCheck,
   escalated: AlertTriangle,
-  recurrence: RotateCcw,
+  recurrence: CheckCircle2,
   closed: CheckCircle2,
 }
 
@@ -37,13 +40,14 @@ export default function IncidentQueueSidebar({
   active: QueueKey
   onSelect: (q: QueueKey) => void
 }) {
-  const location = useLocation()
-  const onRemediation = location.pathname === '/incidents/remediation'
-
   return (
     <div className="flex gap-1.5 overflow-x-auto sm:flex-col sm:gap-0.5 sm:overflow-visible">
       {QUEUE_ORDER.map((q) => {
-        const selected = q === active
+        // `closed` stays highlighted while the recurrence filter chip is
+        // applied on top of it — recurrence has no sidebar slot of its own
+        // (see IncidentList.tsx), so falling back to `closed`'s highlight
+        // is more honest than showing no selection at all.
+        const selected = q === active || (q === 'closed' && active === 'recurrence')
         const Icon = QUEUE_ICON[q]
         return (
           <button
@@ -73,19 +77,6 @@ export default function IncidentQueueSidebar({
           </button>
         )
       })}
-      <div className="hidden sm:block sm:mt-2 sm:border-t sm:border-slate-200 sm:pt-2">
-        <Link
-          to="/incidents/remediation"
-          className={`focus-ring flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 text-sm transition ${
-            onRemediation
-              ? 'border-accent-600 bg-accent-50 font-semibold text-accent-800'
-              : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'
-          }`}
-        >
-          <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
-          <span className="flex-1 truncate">Location Audit</span>
-        </Link>
-      </div>
     </div>
   )
 }

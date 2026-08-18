@@ -78,7 +78,6 @@ import {
   SLA_CHECKPOINT_LABEL,
   TASK_DISPATCH_STATUS_LABEL,
   taskDispatchRequiresReason,
-  actionChainStages,
   cleanMissionRationale,
   collapseRepeatedTimelineEvents,
   dispatchEmptyStateMessage,
@@ -1308,53 +1307,3 @@ describe('collapseRepeatedTimelineEvents', () => {
   })
 })
 
-describe('actionChainStages', () => {
-  const NOTHING_DONE = {
-    hasCurrentHypothesis: false,
-    sourceConfidence: 'suspected' as const,
-    missionCount: 0,
-    hasResponsibleAuthority: false,
-    interventionCount: 0,
-    isClosed: false,
-    hasImpactEvaluation: false,
-  }
-
-  it('always marks Detected/Predicted done - an incident that exists has been detected or predicted', () => {
-    const stages = actionChainStages(NOTHING_DONE)
-    expect(stages[0]).toEqual({ key: 'detected', label: 'Detected / Predicted', done: true })
-  })
-
-  it('marks every later stage not-done when nothing has happened yet', () => {
-    const stages = actionChainStages(NOTHING_DONE)
-    expect(stages.slice(1).every((s) => s.done === false)).toBe(true)
-  })
-
-  it('marks Evidence done from a dispatched mission alone, even with confidence still suspected', () => {
-    const stages = actionChainStages({ ...NOTHING_DONE, missionCount: 1 })
-    expect(stages.find((s) => s.key === 'evidence')?.done).toBe(true)
-  })
-
-  it('marks Evidence done from elevated confidence alone, even with zero missions', () => {
-    const stages = actionChainStages({ ...NOTHING_DONE, sourceConfidence: 'corroborated' })
-    expect(stages.find((s) => s.key === 'evidence')?.done).toBe(true)
-  })
-
-  it('marks Outcome evaluation done when closed, or when an impact evaluation exists, independently', () => {
-    expect(actionChainStages({ ...NOTHING_DONE, isClosed: true }).find((s) => s.key === 'outcome')?.done).toBe(true)
-    expect(actionChainStages({ ...NOTHING_DONE, hasImpactEvaluation: true }).find((s) => s.key === 'outcome')?.done).toBe(true)
-  })
-
-  it('marks every stage done when everything real is true', () => {
-    const stages = actionChainStages({
-      hasCurrentHypothesis: true,
-      sourceConfidence: 'officially_verified',
-      missionCount: 2,
-      hasResponsibleAuthority: true,
-      interventionCount: 1,
-      isClosed: true,
-      hasImpactEvaluation: true,
-    })
-    expect(stages.every((s) => s.done)).toBe(true)
-    expect(stages).toHaveLength(6)
-  })
-})

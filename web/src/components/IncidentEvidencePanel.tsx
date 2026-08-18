@@ -3,7 +3,6 @@ import { cleanMissionRationale, groupDuplicateMissions, haversineMeters, mission
 import type { IncidentDetail } from '../lib/incidents'
 import EmptyIncidentState from './incidents/EmptyIncidentState'
 import EvidenceSummaryCard from './EvidenceSummaryCard'
-import IncidentTimeline from './IncidentTimeline'
 import { Label, PartialDataBadge, UnavailableBadge } from './ui'
 
 /**
@@ -46,7 +45,7 @@ function Section({
 }
 
 export default function IncidentEvidencePanel({ detail }: { detail: IncidentDetail }) {
-  const { incident, reports, evidence, missions, events, sensor, unavailable } = detail
+  const { incident, reports, evidence, missions, sensor, unavailable } = detail
   const missing = (label: string) => unavailable.includes(label)
 
   const supporting = evidence.filter((e) => e.supports === true)
@@ -236,11 +235,6 @@ export default function IncidentEvidencePanel({ detail }: { detail: IncidentDeta
             ))}
           </ul>
         )}
-      </Section>
-
-      {/* ── timeline ── */}
-      <Section title="Incident timeline" count={events.length} unavailable={missing('Timeline')}>
-        <IncidentTimeline events={events} showVisibility />
       </Section>
     </div>
   )

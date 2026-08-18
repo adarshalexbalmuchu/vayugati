@@ -1,7 +1,7 @@
 import { TASK_DISPATCH_STATUS_LABEL, type TaskDispatchStatus } from '../../lib/incidentRules'
 
 // Same critical/warning/success/info/neutral semantic grouping already
-// established for incident severity (IncidentListItem.tsx/IncidentStatusHeader.tsx)
+// established for incident severity (IncidentListItem.tsx/IncidentCaseHeader.tsx)
 // and hotspot status (HotspotsRiskTable.tsx) - not a new tone vocabulary.
 const STATUS_TONE: Record<TaskDispatchStatus, string> = {
   drafted: 'text-slate-500 ring-slate-300',

@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MousePointerClick } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { MapPin } from 'lucide-react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/AppShell'
-import EmptyIncidentState from '../components/incidents/EmptyIncidentState'
 import IncidentDetailPanel from '../components/incidents/IncidentDetailPanel'
 import IncidentList, { type IncidentListPagination } from '../components/incidents/IncidentList'
 import IncidentQueueSidebar from '../components/incidents/IncidentQueueSidebar'
 import { fetchAllWardsAqi } from '../lib/data'
-import { inQueue, SEVERITY_RANK, type QueueKey, type Severity } from '../lib/incidentRules'
+import { inQueue, QUEUE_LABELS, SEVERITY_RANK, type QueueKey, type Severity } from '../lib/incidentRules'
 import {
   getIncidentDetail,
   listClosedIncidents,
   listIncidents,
-  listLeadingSourceCategories,
   listRecurrenceQueueIncidents,
   type Incident,
   type IncidentsPage,
@@ -20,16 +18,15 @@ import {
 import { useAsync } from '../lib/useAsync'
 
 /**
- * Command incident queue — the Outlook-style list-detail-action workspace the
- * plan makes the *primary* command surface (§18-19). Redesigned onto the
- * design-token/lucide-icon system introduced for the Overview page: real
- * icons, status.* badges, denser rows with pollutant/reading/likely-source/
- * status. The underlying 3-pane structure, data fetching, and every action's
- * gating logic are unchanged from the prior Phase 11 redesign - only the
- * presentation layer and 2 small, real data joins (leading source category,
- * ward-level current reading) were added. See components/incidents/ for the
- * extracted pieces (IncidentQueueSidebar, IncidentList/IncidentListItem,
- * IncidentDetailPanel/IncidentStatusHeader/IncidentActionBar).
+ * Command incident workspace - a calm, single-pane case view, not a
+ * permanent list-detail split. The queue sidebar (left) and either the
+ * list OR the open case fill the content area; never list and case at
+ * once, so a selected incident gets the full width. Sequential processing
+ * through a queue happens via the case header's Prev/Next (see
+ * IncidentCaseHeader.tsx), not by keeping the list docked on screen.
+ * See components/incidents/ for the extracted pieces (IncidentQueueSidebar,
+ * IncidentList/IncidentListItem, IncidentDetailPanel/IncidentCaseHeader/
+ * IncidentSummaryTab).
  *
  * Added alongside the existing /command dashboard rather than replacing it: the
  * dashboard still works and is still useful, and the migration rule is to keep
@@ -60,9 +57,11 @@ const EMPTY_PAGE: PaginatedQueueState = { rows: [], totalCount: 0, hasMore: fals
 export default function IncidentsView() {
   const [queue, setQueue] = useState<QueueKey>('active')
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('summary')
   const [searchParams] = useSearchParams()
   const appliedDeepLinkRef = useRef(false)
+  const location = useLocation()
+  const onRemediation = location.pathname === '/incidents/remediation'
 
   // The 5 open queues, loaded in full (capped defensively - see OPEN_QUEUE_CAP).
   const list = useAsync(() => listIncidents({ limit: OPEN_QUEUE_CAP, excludeClosed: true }), [], {
@@ -138,14 +137,6 @@ export default function IncidentsView() {
       })
   }, [openIncidents, queue, closedState.rows, recurrenceState.rows])
 
-  // Likely source per visible row - bulk-fetched for whichever queue is on
-  // screen (refetches on queue switch / pagination, matching visibleRows).
-  const leadingSource = useAsync(
-    () => listLeadingSourceCategories(visibleRows.map((i) => i.id)),
-    [visibleRows],
-  )
-  const leadingSourceById = leadingSource.data ?? new Map()
-
   // Deep-link support (?incident=<id>) — e.g. a Tasks-page row linking
   // straight into this incident's detail workspace instead of the bare
   // queue. Applied once list.data is loaded, and only once per page load:
@@ -174,11 +165,11 @@ export default function IncidentsView() {
     { enabled: detailId != null },
   )
 
-  // A new incident selection always starts on Overview — staying on e.g.
-  // "Dispatch" from the previously-viewed incident would be a confusing
+  // A new incident selection always starts on Summary — staying on e.g.
+  // "Action" from the previously-viewed incident would be a confusing
   // leftover, not a deliberate choice.
   useEffect(() => {
-    setActiveTab('overview')
+    setActiveTab('summary')
   }, [detailId])
 
   const refreshBoth = useCallback(() => {
@@ -203,25 +194,54 @@ export default function IncidentsView() {
   const selectedWardId = detail.data?.incident.ward_id ?? null
   const selectedWardAqi = selectedWardId != null ? (wardAqiById.get(selectedWardId) ?? null) : null
 
+  // Sequential processing without a permanently-docked list: Prev/Next walk
+  // the currently-selected queue's own order, same rows the list would show.
+  const currentIndex = detailId != null ? visibleRows.findIndex((i) => i.id === detailId) : -1
+  const position = currentIndex >= 0 ? { index: currentIndex + 1, total: visibleRows.length } : null
+  const goPrev = currentIndex > 0 ? () => setSelectedId(visibleRows[currentIndex - 1].id) : undefined
+  const goNext =
+    currentIndex >= 0 && currentIndex < visibleRows.length - 1
+      ? () => setSelectedId(visibleRows[currentIndex + 1].id)
+      : undefined
+
   return (
     <AppShell
       subtitle="Incidents"
+      headerContent={
+        <div className="flex items-center gap-3">
+          <span className="truncate text-[15px] font-bold tracking-tight text-slate-900">Incidents</span>
+          {/* Location Audit is a coordinate/data-quality remediation tool, not
+              an incident queue - kept one click away while working incidents,
+              but deliberately out of the queue sidebar so it never reads as
+              an 8th queue in that same workflow. */}
+          <Link
+            to="/incidents/remediation"
+            className={`focus-ring flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
+              onRemediation ? 'bg-accent-50 text-accent-800' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+            }`}
+          >
+            <MapPin className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={2} aria-hidden />
+            Location Audit
+          </Link>
+        </div>
+      }
       secondaryNav={<IncidentQueueSidebar counts={counts} active={queue} onSelect={setQueue} />}
     >
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── list column: hidden on mobile once an incident is selected ── */}
-        <div
-          className={`min-h-0 w-full flex-col border-b border-slate-200 bg-white lg:flex lg:w-80 lg:border-b-0 lg:border-r ${
-            detailId != null ? 'hidden lg:flex' : 'flex'
-          }`}
-        >
+      {/* Single-pane, at every breakpoint: the list and the open case are
+          never shown side by side. A selected incident gets the full
+          content width instead of sharing it with a permanently-docked
+          list column - sequential processing through a queue happens via
+          the case header's Prev/Next, not by keeping the list in view. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className={`min-h-0 flex-1 flex-col bg-white ${detailId != null ? 'hidden' : 'flex'}`}>
           <IncidentList
             queue={queue}
+            onQueueChange={setQueue}
+            recurrenceCount={counts.recurrence}
             visibleRows={visibleRows}
             detailId={detailId}
             onSelectIncident={setSelectedId}
             wardAqiById={wardAqiById}
-            leadingSourceById={leadingSourceById}
             loading={activeLoading}
             error={activeError}
             onRefresh={refreshActiveQueue}
@@ -233,26 +253,22 @@ export default function IncidentsView() {
           />
         </div>
 
-        {/* ── detail column: hidden on mobile until an incident is selected;
-              a full-screen page there, not a squeezed side column ── */}
-        <div
-          className={`min-h-0 flex-1 flex-col bg-slate-50 lg:flex ${detailId != null ? 'flex' : 'hidden lg:flex'}`}
-        >
-          {detailId == null ? (
-            <EmptyIncidentState icon={MousePointerClick}>
-              Select an incident to see its evidence workspace.
-            </EmptyIncidentState>
-          ) : (
+        {detailId != null && (
+          <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
             <IncidentDetailPanel
               detail={detail}
               activeTab={activeTab}
               onTabChange={setActiveTab}
               onRefresh={refreshBoth}
               onBack={() => setSelectedId(null)}
+              onPrev={goPrev}
+              onNext={goNext}
+              position={position}
+              queueLabel={QUEUE_LABELS[queue]}
               wardAqi={selectedWardAqi}
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </AppShell>
   )
