@@ -1,0 +1,1294 @@
+[
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "430-510",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/5: [350,430] -> [300,400]",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 430,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_430",
+      "notes": "tier-5 ceiling — both profiles agree here, last point they do",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/6: [350,430] -> [300,400]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.6617647058823763,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "430-510",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 401,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 401.25,
+      "rounded_sub_index": 401,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 431,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_431",
+      "notes": "one past tier-5 — cpcb_workbook_formula_exact is already in its uncapped tail",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 401,
+      "formula_branch": "tier 6/6: [430,600] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.5882352941176,
+      "rounded_sub_index": 401,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 52.94117647058823,
+    "absolute_difference_rounded": 53,
+    "comparison_range": "430-510",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 510,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_510",
+      "notes": "cpcb_workbook_formula_exact reaches exactly 500 here; repo_current is still at 447",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 447,
+      "formula_branch": "tier 6/6: [430,600] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 447.05882352941177,
+      "rounded_sub_index": 447,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 53.60294117647061,
+    "absolute_difference_rounded": 53,
+    "comparison_range": "510-600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 501.25,
+      "rounded_sub_index": 501,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 511,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_511",
+      "notes": "cpcb_workbook_formula_exact now exceeds 500 (501); repo_current still below its own cap",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 448,
+      "formula_branch": "tier 6/6: [430,600] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 447.6470588235294,
+      "rounded_sub_index": 448,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 112.5,
+    "absolute_difference_rounded": 113,
+    "comparison_range": "510-600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 612.5,
+      "rounded_sub_index": 613,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 600,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_600",
+      "notes": "repo_current's OWN (uncontaminated-looking) top-tier ceiling — still ordinary interpolation for it, cap_applied=False",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [430,600] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 114,
+    "comparison_range": "above_600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 613.75,
+      "rounded_sub_index": 614,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 601,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_601",
+      "notes": "one past repo_current's table — its hard 500 clamp genuinely engages here",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 308,
+    "comparison_range": "above_600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 807.5,
+      "rounded_sub_index": 808,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 756,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_756",
+      "notes": "well above ceiling",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 344,
+    "comparison_range": "above_600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 843.75,
+      "rounded_sub_index": 844,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 785,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_785",
+      "notes": "well above ceiling",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 1113,
+    "comparison_range": "above_600",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 1612.5,
+      "rounded_sub_index": 1613,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 1400,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm10_1400",
+      "notes": "extreme — 2026 Delhi-plausible worst case",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm10",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 380,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm25_380",
+      "notes": "both profiles reach exactly 500 here — not contaminated",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm25",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [250,380] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 54,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 553.8461538461538,
+      "rounded_sub_index": 554,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 450,
+      "declared_unit": "ug/m3",
+      "fixture_id": "pm25_450",
+      "notes": "past the 500 crossing — repo_current caps, cpcb_workbook_formula_exact keeps climbing",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "pm25",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "in_range",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/5: [280,400] -> [300,400]",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 400,
+      "declared_unit": "ug/m3",
+      "fixture_id": "no2_400",
+      "notes": "real tier-5 ceiling — both profiles agree here (400)",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "no2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/6: [280,400] -> [300,400]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 70.0,
+    "absolute_difference_rounded": 70,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 520,
+      "declared_unit": "ug/m3",
+      "fixture_id": "no2_520",
+      "notes": "cpcb_workbook_formula_exact reaches exactly 500 here; repo_current, still on its own table, is not yet at 500",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "no2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 430,
+      "formula_branch": "tier 6/6: [400,800] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 430.0,
+      "rounded_sub_index": 430,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 233.33333333333326,
+    "absolute_difference_rounded": 233,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 733.3333333333333,
+      "rounded_sub_index": 733,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 800,
+      "declared_unit": "ug/m3",
+      "fixture_id": "no2_800",
+      "notes": "repo_current's own (contaminated) top-tier ceiling — 500 for repo_current, 733 for cpcb_workbook_formula_exact",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "no2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [400,800] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 358,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 858.3333333333334,
+      "rounded_sub_index": 858,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 950,
+      "declared_unit": "ug/m3",
+      "fixture_id": "no2_950",
+      "notes": "well above both ceilings",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "no2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "in_range",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/5: [800,1600] -> [300,400]",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 1600,
+      "declared_unit": "ug/m3",
+      "fixture_id": "so2_1600",
+      "notes": "real tier-5 ceiling — both profiles agree here (400)",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "so2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/6: [800,1600] -> [300,400]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 37.5,
+    "absolute_difference_rounded": 37,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 463,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 462.5,
+      "rounded_sub_index": 463,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 2100,
+      "declared_unit": "ug/m3",
+      "fixture_id": "so2_2100",
+      "notes": "repo_current's own (contaminated) top-tier ceiling — 500 for repo_current, 463 for cpcb_workbook_formula_exact",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "so2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [1600,2100] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 2400,
+      "declared_unit": "ug/m3",
+      "fixture_id": "so2_2400",
+      "notes": "cpcb_workbook_formula_exact reaches exactly 500 here; repo_current has been capped at 500 since 2100",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "so2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 13,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 512.5,
+      "rounded_sub_index": 513,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 2500,
+      "declared_unit": "ug/m3",
+      "fixture_id": "so2_2500",
+      "notes": "above both ceilings",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "so2",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "in_range",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/5: [17,34] -> [300,400]",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 34,
+      "declared_unit": "mg/m3",
+      "fixture_id": "co_34mg",
+      "notes": "real tier-5 ceiling — both profiles agree here (400)",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "co",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/6: [17,34] -> [300,400]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+    ]
+  },
+  {
+    "absolute_difference_raw": 17.64705882352939,
+    "absolute_difference_rounded": 18,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 482,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 482.3529411764706,
+      "rounded_sub_index": 482,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 48,
+      "declared_unit": "mg/m3",
+      "fixture_id": "co_48mg",
+      "notes": "repo_current's own (contaminated) top-tier ceiling — 500 for repo_current, 482 for cpcb_workbook_formula_exact",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "co",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [34,48] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+    ]
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 51,
+      "declared_unit": "mg/m3",
+      "fixture_id": "co_51mg",
+      "notes": "cpcb_workbook_formula_exact reaches exactly 500 here; repo_current has been capped at 500 since 48",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "co",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+    ]
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 53,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 552.9411764705883,
+      "rounded_sub_index": 553,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 60,
+      "declared_unit": "mg/m3",
+      "fixture_id": "co_60mg",
+      "notes": "above both ceilings, unambiguous unit",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "co",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+    ]
+  },
+  {
+    "absolute_difference_raw": 17.64705882352939,
+    "absolute_difference_rounded": 18,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 482,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 482.3529411764706,
+      "rounded_sub_index": 482,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 48000,
+      "declared_unit": "ug/m3",
+      "fixture_id": "co_48000ug",
+      "notes": "same physical concentration as co_48mg, declared in ug/m3 — exercises the conversion path",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "co",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [34,48] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": [
+        "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+      ]
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: CO unit semantics — declared_unit is trusted at face value; whether every upstream source reliably distinguishes mg/m3 from ug/m3 for CO has not been independently verified against live CPCB station payloads (evidence-collection phase, DATA_GOV_API_KEY)."
+    ]
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "in_range",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Poor",
+      "display_value": 300,
+      "formula_branch": "tier 4/5: [168,208] -> [200,300]",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 300.0,
+      "rounded_sub_index": 300,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 208,
+      "declared_unit": "ug/m3",
+      "fixture_id": "o3_208",
+      "notes": "tier-4/tier-5 boundary — averaging-behaviour question starts here",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "o3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Poor",
+      "display_value": 300,
+      "formula_branch": "tier 4/6: [168,208] -> [200,300]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 300.0,
+      "rounded_sub_index": 300,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": 0.18552875695729654,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "in_range",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/5: [208,748] -> [300,400] (workbook divisor is 539, not 540)",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 400.1855287569573,
+      "rounded_sub_index": 400,
+      "warnings": [
+        "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 748,
+      "declared_unit": "ug/m3",
+      "fixture_id": "o3_748",
+      "notes": "last point before the formula's real discontinuity — still ~400",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "o3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 5/6: [208,748] -> [300,400]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.0,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined."
+    ]
+  },
+  {
+    "absolute_difference_raw": 64.35271078128221,
+    "absolute_difference_rounded": 65,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 465,
+      "formula_branch": "above_748:DISCONTINUOUS — workbook anchors this branch on 400, not 748; see docstring",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 464.74953617810763,
+      "rounded_sub_index": 465,
+      "warnings": [
+        "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+        "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 749,
+      "declared_unit": "ug/m3",
+      "fixture_id": "o3_749",
+      "notes": "one unit past 748 — the ~64-point discontinuous jump has already happened here",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "o3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Very Poor",
+      "display_value": 400,
+      "formula_branch": "tier 6/6: [748,1000] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 400.3968253968254,
+      "rounded_sub_index": 400,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+      "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+    ]
+  },
+  {
+    "absolute_difference_raw": 11.317254174397021,
+    "absolute_difference_rounded": 11,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_748:DISCONTINUOUS — workbook anchors this branch on 400, not 748; see docstring",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 511.317254174397,
+      "rounded_sub_index": 511,
+      "warnings": [
+        "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+        "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 1000,
+      "declared_unit": "ug/m3",
+      "fixture_id": "o3_1000",
+      "notes": "well into the discontinuous tail",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "o3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [748,1000] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+      "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+    ]
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 48,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_748:DISCONTINUOUS — workbook anchors this branch on 400, not 748; see docstring",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 548.4230055658627,
+      "rounded_sub_index": 548,
+      "warnings": [
+        "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+        "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+      ]
+    },
+    "input": {
+      "averaging_window": "8h",
+      "concentration": 1200,
+      "declared_unit": "ug/m3",
+      "fixture_id": "o3_1200",
+      "notes": "further into the discontinuous tail",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "o3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": [
+      "unresolved: O3 averaging behaviour above 208 µg/m3 — CPCB documentation elsewhere describes averaging-window nuances for O3 that this harness has not verified against the workbook or live data; averaging_window is used as declared, unexamined.",
+      "unresolved: workbook formula artifact under investigation — O3's decoded formula produces an abrupt ~64-point upward jump at 748 µg/m3 (the branch for values above 748 anchors on 400 rather than the tier boundary 748, and divides by 539 instead of 540). This is NOT a confirmed CPCB policy or intentional design — it is preserved exactly as decoded from the BIFF8 formula record because this harness transcribes the workbook rather than correcting it, pending independent confirmation of whether it's an authoring error. See profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped docstring."
+    ]
+  },
+  {
+    "absolute_difference_raw": 0.0,
+    "absolute_difference_rounded": 0,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 2400,
+      "declared_unit": "ug/m3",
+      "fixture_id": "nh3_2400",
+      "notes": "both profiles reach exactly 500 here — not contaminated",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "nh3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": false,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "tier 6/6: [1800,2400] -> [400,500]",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": 500.0,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  },
+  {
+    "absolute_difference_raw": null,
+    "absolute_difference_rounded": 67,
+    "comparison_range": "above_ceiling",
+    "cpcb_workbook_formula_exact": {
+      "cap_applied": false,
+      "category_label": null,
+      "display_value": null,
+      "formula_branch": "above_tier5:extrapolated_same_slope_uncapped",
+      "profile": "cpcb_workbook_formula_exact",
+      "profile_version": "cpcb_workbook_formula_exact@2 (AQI-Calculator.xls sha256 in manifest; formulas decoded verbatim from BIFF8 records, see formula_extraction/)",
+      "raw_sub_index": 566.6666666666667,
+      "rounded_sub_index": 567,
+      "warnings": []
+    },
+    "input": {
+      "averaging_window": "24h",
+      "concentration": 2800,
+      "declared_unit": "ug/m3",
+      "fixture_id": "nh3_2800",
+      "notes": "past the 500 crossing — repo_current caps, cpcb_workbook_formula_exact keeps climbing",
+      "observation_ts": "2026-08-21T00:00:00Z",
+      "pollutant": "nh3",
+      "source": "synthetic_fixture",
+      "station_id": null,
+      "station_name": null
+    },
+    "repo_current": {
+      "cap_applied": true,
+      "category_label": "Severe",
+      "display_value": 500,
+      "formula_branch": "above_top_breakpoint:capped_500",
+      "profile": "repo_current",
+      "profile_version": "repo_current@ingest/app/aqi.py (imported live, no copy)",
+      "raw_sub_index": null,
+      "rounded_sub_index": 500,
+      "warnings": []
+    },
+    "unresolved_policy_warnings": []
+  }
+]

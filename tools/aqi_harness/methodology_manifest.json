@@ -1,0 +1,137 @@
+{
+  "manifest_version": 2,
+  "manifest_version_history": [
+    "v1 (2026-08-21, superseded): cpcb_workbook_formula_exact copied ingest/app/aqi.py's breakpoint tables directly and assumed uncapped extrapolation from repo's own top tier. Formula TEXT was not extracted (xlrd's public API only exposes cached cell VALUES). This was WRONG for PM10, SO2, NO2, and CO's severe band — see contamination_audit below.",
+    "v2 (this version): formula TEXT decoded directly from the raw BIFF8 records via xlrd's internal decompiler (xlrd.formula.decompile_formula) — see formula_extraction/. cpcb_workbook_formula_exact rebuilt from the decoded formulas, not from ingest/app/aqi.py. Every pollutant re-audited; corrections and the still-unresolved O3 discontinuity documented below."
+  ],
+  "generated_by": "manual research + BIFF8 decoding pass, Claude Code session, 2026-08-21",
+  "workbook": {
+    "official_urls_found": [
+      {
+        "url": "https://app.cpcbccr.com/ccr_docs/AQI-Calculator.xls",
+        "status": "DOES NOT SERVE THE RAW FILE — returns the app.cpcbccr.com Next.js SPA shell (HTML, 55564 bytes) as of 2026-08-21. Likely a stale link from before that site was rebuilt as a React app. Not used as the source for this manifest."
+      },
+      {
+        "url": "https://cpcb.gov.in/upload/national-air-quality-index/AQI-Calculator.xls",
+        "status": "SERVED THE REAL BINARY — used as the source for this manifest."
+      }
+    ],
+    "downloaded_from": "https://cpcb.gov.in/upload/national-air-quality-index/AQI-Calculator.xls",
+    "download_date": "2026-08-21",
+    "http_status": 200,
+    "file_size_bytes": 46080,
+    "sha256": "92eb788f7f61bd46edea1814a9e1b8f5dd75d05dfb88f34a460905bc07bd151a",
+    "file_type_magic": "Composite Document File V2 Document (legacy BIFF8 .xls), Little Endian, Windows",
+    "embedded_document_metadata": {
+      "author": "admin",
+      "last_saved_by": "Hewlett-Packard Company",
+      "creating_application": "Microsoft Excel",
+      "create_time": "2015-01-28T10:48:48",
+      "last_printed": "2015-01-29T12:01:05",
+      "last_saved_time": "2022-10-10T07:19:02",
+      "note": "Create date (Jan 2015) is consistent with CPCB's National AQI methodology being published in 2014 — this appears to be the original reference calculator, not a later reformulation."
+    },
+    "reproducibility": "Re-downloaded and re-hashed THREE separate times across this delivery's two passes (v1 and v2) — identical sha256 every time."
+  },
+  "formula_extraction": {
+    "artifact_script": "tools/aqi_harness/formula_extraction/extract_formulas.py",
+    "artifact_output": "tools/aqi_harness/formula_extraction/decoded_formulas.json",
+    "method": "The workbook is a legacy .xls (BIFF8 / OLE Compound File). xlrd's public API (open_workbook / Sheet.cell) only exposes each formula cell's last-cached VALUE, not its formula text. This script (1) uses olefile to read the raw 'Workbook' BIFF stream, (2) walks it to find the FORMULA record (type 0x0006) for each pollutant's Sub-Index cell and extracts its raw rgce token bytes, then (3) calls xlrd.formula.decompile_formula — xlrd's own internal (undocumented but public-importable) RPN-token decompiler — to render the token stream as a readable formula string. This is xlrd's real formula engine, not a hand-rolled parser.",
+    "dependencies": "xlrd==1.2.0 (xlrd>=2.0 dropped .xls support entirely), olefile",
+    "verification_of_raw_bytes": "Beyond decompile_formula's output, the O3 formula's two occurrences of the constant 539 were independently re-verified by scanning the raw rgce bytes for PtgInt (0x1e) tokens directly and unpacking them as little-endian u16 — both are genuine 2-byte integer literals in the byte stream (at offsets 248 and 288 within that formula's token stream), not a decompiler rendering artifact.",
+    "cells_decoded": "Sheet1, column D (Sub-Index), rows 7/9/11/13/15/17/19 (0-indexed) = PM10/PM2.5/SO2/NO2/CO/O3/NH3 — the same 7 pollutants as ingest/app/aqi.py and the v1 manifest's worked-example cross-check.",
+    "reproduced": "Ran twice across this delivery (once to explore, once for the final artifact) — identical decoded formula text both times."
+  },
+  "decoded_formulas_verbatim": {
+    "note": "Exactly as returned by xlrd.formula.decompile_formula — see formula_extraction/decoded_formulas.json for the machine-readable version alongside each cell's raw rgce hex.",
+    "PM10": "IF(ISTEXT(C8),0.0,IF(C8<=50.0,C8,IF(AND(C8>50.0,C8<=100.0),C8,IF(AND(C8>100.0,C8<=250.0),100.0+(C8-100.0)*100.0/150.0,IF(AND(C8>250.0,C8<=350.0),200.0+C8-250.0,IF(AND(C8>350.0,C8<=430.0),300.0+(C8-350.0)*100.0/80.0,IF(C8>430.0,400.0+(C8-430.0)*100.0/80.0)))))))",
+    "PM2.5": "IF(ISTEXT(C10),0.0,IF(C10<=30.0,C10*50.0/30.0,IF(AND(C10>30.0,C10<=60.0),50.0+(C10-30.0)*50.0/30.0,IF(AND(C10>60.0,C10<=90.0),100.0+(C10-60.0)*100.0/30.0,IF(AND(C10>90.0,C10<=120.0),200.0+(C10-90.0)*100.0/30.0,IF(AND(C10>120.0,C10<=250.0),300.0+(C10-120.0)*100.0/130.0,IF(C10>250.0,400.0+(C10-250.0)*100.0/130.0)))))))",
+    "SO2": "IF(ISTEXT(C12),0.0,IF(C12<=40.0,C12*50.0/40.0,IF(AND(C12>40.0,C12<=80.0),50.0+(C12-40.0)*50.0/40.0,IF(AND(C12>80.0,C12<=380.0),100.0+(C12-80.0)*100.0/300.0,IF(AND(C12>380.0,C12<=800.0),200.0+(C12-380.0)*100.0/420.0,IF(AND(C12>800.0,C12<=1600.0),300.0+(C12-800.0)*100.0/800.0,IF(C12>1600.0,400.0+(C12-1600.0)*100.0/800.0)))))))",
+    "NO2": "IF(ISTEXT(C14),0.0,IF(C14<=40.0,C14*50.0/40.0,IF(AND(C14>40.0,C14<=80.0),50.0+(C14-40.0)*50.0/40.0,IF(AND(C14>80.0,C14<=180.0),100.0+(C14-80.0)*100.0/100.0,IF(AND(C14>180.0,C14<=280.0),200.0+(C14-180.0)*100.0/100.0,IF(AND(C14>280.0,C14<=400.0),300.0+(C14-280.0)*100.0/120.0,IF(C14>400.0,400.0+(C14-400.0)*100.0/120.0)))))))",
+    "CO": "IF(ISTEXT(C16),0.0,IF(C16<=1.0,C16*50.0/1.0,IF(AND(C16>1.0,C16<=2.0),50.0+(C16-1.0)*50.0/1.0,IF(AND(C16>2.0,C16<=10.0),100.0+(C16-2.0)*100.0/8.0,IF(AND(C16>10.0,C16<=17.0),200.0+(C16-10.0)*100.0/7.0,IF(AND(C16>17.0,C16<=34.0),300.0+(C16-17.0)*100.0/17.0,IF(C16>34.0,400.0+(C16-34.0)*100.0/17.0)))))))",
+    "O3": "IF(ISTEXT(C18),0.0,IF(C18<=50.0,C18*50.0/50.0,IF(AND(C18>50.0,C18<=100.0),50.0+(C18-50.0)*50.0/50.0,IF(AND(C18>100.0,C18<=168.0),100.0+(C18-100.0)*100.0/68.0,IF(AND(C18>168.0,C18<=208.0),200.0+(C18-168.0)*100.0/40.0,IF(AND(C18>208.0,C18<=748.0),300.0+(C18-208.0)*100.0/539.0,IF(C18>748.0,400.0+(C18-400.0)*100.0/539.0)))))))",
+    "NH3": "IF(ISTEXT(C20),0.0,IF(C20<=200.0,C20*50.0/200.0,IF(AND(C20>200.0,C20<=400.0),50.0+(C20-200.0)*50.0/200.0,IF(AND(C20>400.0,C20<=800.0),100.0+(C20-400.0)*100.0/400.0,IF(AND(C20>800.0,C20<=1200.0),200.0+(C20-800.0)*100.0/400.0,IF(AND(C20>1200.0,C20<=1800.0),300.0+(C20-1200.0)*100.0/600.0,IF(C20>1800.0,400.0+(C20-1800.0)*100.0/600.0)))))))"
+  },
+  "structural_finding": {
+    "summary": "Every pollutant except O3 decodes to the SAME shape: five finite tiers (identical numbers to the CPCB 2014 Good..Very-Poor bands, and identical to ingest/app/aqi.py's tiers 1-5), followed by an UNCONDITIONAL final IF(C > tier5_ceiling, ...) branch that extends TIER 5's OWN slope indefinitely. There is no sixth, distinct 'Severe' tier with its own ceiling and slope anywhere in the workbook — repo_current's breakpoint tables all have an extra (tier5_ceiling, X, 400, 500) tuple that the real formula does not contain. Whether that extra tuple's SLOPE happens to match tier 5's real slope (by the tier ceiling X being chosen consistently) determines whether repo_current's severe-band OUTPUT happens to be right or wrong even though its TABLE SHAPE is wrong either way.",
+    "verified_with": "Exact rational (fractions.Fraction) arithmetic, not floating point, to compare repo_current's assumed tier-6 slope against each pollutant's real decoded tail slope."
+  },
+  "contamination_audit": {
+    "PM10": {
+      "status": "CONTAMINATED",
+      "repo_current_assumed_tier6": "(430,600,400,500), slope=10/17≈0.588",
+      "real_decoded_tail": "extends tier 5's own slope (300,400 over 350-430) = 5/4=1.25 from C=430, unbounded",
+      "real_aqi_500_crossing": "C=510 ug/m3 (not 600)",
+      "spot_checks_verified_exact": "510->500, 511->501, 600->613, 601->614, 756->808, 785->844, 1400->1613 — all confirmed with exact fraction arithmetic and covered by tests/test_cap_vs_uncapped.py"
+    },
+    "PM2.5": {
+      "status": "not contaminated",
+      "repo_current_assumed_tier6": "(250,380,400,500), slope=10/13≈0.769",
+      "real_decoded_tail": "extends tier 5's own slope (120-250 -> 300-400) = 10/13≈0.769 from C=250, unbounded",
+      "real_aqi_500_crossing": "C=380 ug/m3 — SAME as repo_current's assumed ceiling",
+      "note": "repo_current's table shape is still wrong (there is no real 6th tier), but its OUTPUT for concentrations <=500's worth of AQI happens to be correct because the ceiling chosen (380) and the real tail slope agree exactly."
+    },
+    "SO2": {
+      "status": "CONTAMINATED",
+      "repo_current_assumed_tier6": "(1600,2100,400,500), slope=1/5=0.2",
+      "real_decoded_tail": "extends tier 5's own slope (800-1600 -> 300-400) = 1/8=0.125 from C=1600, unbounded",
+      "real_aqi_500_crossing": "C=2400 ug/m3 (not 2100)"
+    },
+    "NO2": {
+      "status": "CONTAMINATED",
+      "repo_current_assumed_tier6": "(400,800,400,500), slope=1/4=0.25",
+      "real_decoded_tail": "extends tier 5's own slope (280-400 -> 300-400) = 5/6≈0.833 from C=400, unbounded",
+      "real_aqi_500_crossing": "C=520 ug/m3 (not 800)"
+    },
+    "CO": {
+      "status": "CONTAMINATED",
+      "repo_current_assumed_tier6": "(34,48,400,500) mg/m3, slope=50/7≈7.14",
+      "real_decoded_tail": "extends tier 5's own slope (17-34 -> 300-400) = 100/17≈5.88 from C=34, unbounded",
+      "real_aqi_500_crossing": "C=51 mg/m3 (not 48)",
+      "still_flagged_unresolved_regardless": "Per the harness brief, every CO fixture still carries the unconditional 'unresolved: CO unit semantics' warning — the contamination fix does not resolve the separate question of whether real-world sources reliably declare mg/m3 vs ug/m3."
+    },
+    "NH3": {
+      "status": "not contaminated",
+      "repo_current_assumed_tier6": "(1800,2400,400,500), slope=1/6≈0.167",
+      "real_decoded_tail": "extends tier 5's own slope (1200-1800 -> 300-400) = 1/6≈0.167 from C=1800, unbounded",
+      "real_aqi_500_crossing": "C=2400 ug/m3 — SAME as repo_current's assumed ceiling",
+      "note": "Same situation as PM2.5: wrong table shape, coincidentally-correct output at exactly the 500 crossing."
+    },
+    "O3": {
+      "status": "SPECIAL CASE — genuinely discontinuous, not a simple tier-6 contamination",
+      "see": "o3_discontinuity below"
+    }
+  },
+  "o3_discontinuity": {
+    "status": "workbook formula artifact under investigation — NOT confirmed CPCB policy or intentional design",
+    "summary": "O3's real tier 5 is (208,748,300,400) — same numbers ingest/app/aqi.py uses — but its own divisor is the literal integer 539, not 748-208=540 (a 1-unit-short off-by-one, confirmed as a genuine byte-level constant, not a decoding artifact). Its tail term for C>748 is 400.0+(C-400.0)*100.0/539.0 — note the anchor is 400, NOT 748 (the tier boundary) and NOT 208. A correctly-continuous formula would anchor on 748 (i.e. 400+(C-748)*100/539). Because it anchors on 400 instead, the formula JUMPS upward by roughly 64 AQI points at C=748: the tier-5 branch gives ~400.19 at C=748 itself, and the very next value above 748 evaluates to ~464.56.",
+    "exact_values": {
+      "at_748_via_tier5": "300 + (748-208)*100/539 = 215700/539 ≈ 400.1855",
+      "just_above_748_via_tail": "400 + (748-400)*100/539 = 250400/539 ≈ 464.5641",
+      "jump_size": "≈64.38 AQI points, discontinuous"
+    },
+    "interpretation": "A plausible hypothesis is an authoring typo in the original 2014/2015 spreadsheet (748 mistyped as 400, and/or 540 mistyped as 539), but this is unconfirmed and this manifest does not assert it as fact. This harness's job is to transcribe the workbook faithfully, not silently fix or explain away what it decoded.",
+    "how_this_harness_handles_it": "profiles/cpcb_workbook_formula_exact.py's _o3_sub_index_uncapped implements the decoded formula EXACTLY, divisor and anchor included, with no correction applied. Every O3 evaluation above 748 carries an unconditional 'unresolved: workbook formula artifact under investigation...' warning (see tests/test_o3_discontinuity.py), on top of the pre-existing 'O3 averaging behaviour above 208' warning the harness brief specifically asked to keep unresolved."
+  },
+  "rounding": {
+    "method": "round-half-up (math.floor(raw + 0.5)), applied once per pollutant to the raw sub-index",
+    "confidence": "Corroborated by both the worked example (NH3=34 -> raw 8.5 -> rounds to 9, not Python's banker's-rounding 8) and, now, by the decoded formula text itself not specifying any rounding at all inside the sub-index cell formula — the workbook's Sub-Index column (D) is unrounded (matches the raw 56.666... and 8.5 values extracted in v1's worked-example check); rounding is presumably applied at cell-display-format level (a formatting concern, not a formula concern) or by whatever consumes the sheet's output. This harness applies round-half-up explicitly since that is what ingest/app/aqi.py's own prior verification against this same file established and what the raw half-integer example confirms."
+  },
+  "cap_policy": {
+    "repo_current": "Hard clamp to 500 for any concentration above the top breakpoint tier (ingest/app/aqi.py:102, `return 500`) — confirmed by direct code read.",
+    "cpcb_workbook_formula_exact": "CONFIRMED uncapped — directly from the decoded formula text. Every pollutant's IF-chain ends in an unconditional `IF(C > tier5_ceiling, formula)` with no further condition and no reference to 500 anywhere in any of the 7 formulas. There is no cap logic in this workbook to have missed."
+  },
+  "display_policy_above_500": {
+    "position": "Still deliberately unresolved. This harness does not assume what CPCB's public dashboards (e.g. airquality.cpcb.gov.in, app.cpcbccr.com) would actually show for a reading whose mathematical sub-index exceeds 500 — this workbook is a calculator, not those dashboards, and nothing here speaks to their display behaviour. See models.ProfileResult.display_value / category_label, both None whenever rounded_sub_index > 500."
+  },
+  "known_unresolved_methodological_decisions": [
+    "CO unit semantics: whether every real-world CPCB station payload reliably and consistently declares mg/m3 vs ug/m3 for CO has not been checked against live data — flagged unresolved on every CO fixture regardless of computed result.",
+    "O3 averaging behaviour above 208 ug/m3: flagged unresolved on every O3 fixture above that concentration, per the harness brief — not independently researched in this pass.",
+    "O3's formula discontinuity at 748 ug/m3 is preserved exactly as decoded (see o3_discontinuity above), not corrected — flagged unresolved on every O3 fixture above 748.",
+    "The reference point/divisor typo behind the O3 discontinuity (400 vs 748, 539 vs 540) is presumed to be an authoring error in the original spreadsheet but this has not been confirmed with CPCB — it is transcribed, not corrected.",
+    "CPCB's public display policy for AQI readings above 500 is unresolved and NOT assumed anywhere in this harness.",
+    "Pb (lead) is unsupported by both repo_current (ingest/app/aqi.py has no Pb breakpoint table) and by this specific workbook (no Pb row or formula in its Sheet1) — no fixtures were added for it, and no breakpoint values are asserted for it.",
+    "fixtures/future_cpcb_observations.py is empty by design; DATA_GOV_API_KEY-backed evidence collection (real timestamp-matched severe PM10 readings, real CO unit verification) is out of scope for this delivery.",
+    "This decoding covers Sheet1's Sub-Index column formulas only. The sheet's overall-AQI cell (G10, decoded separately during exploration but not included as a harness artifact) and the 'check' column (E) were not transcribed — they are not needed for a single-pollutant sub-index comparison, which is what this harness computes."
+  ]
+}
