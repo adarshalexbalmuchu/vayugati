@@ -262,12 +262,20 @@ def run_calibration(days: int = 30, verbose: bool = True) -> dict:
             print(f"{r['sigma']:>10.0f}  {r['rho']:>13.4f}  {r['p_value']:>10.4f}  {sig:>6}{marker}")
 
         print(f"\nOptimal sigma: {optimal_sigma} km  (rho={max_rho:.4f}, p={best_pval:.4f}, n={n})")
+        # Critical rho for two-tailed Spearman at p=0.05 with n observations.
+        # Approximated via the t-distribution: t_crit = scipy.stats.t.ppf(0.975, df=n-2)
+        # rho_crit = t_crit / sqrt(t_crit^2 + n - 2).  At n=44, rho_crit ≈ 0.30.
+        from scipy.stats import t as t_dist
+        t_crit = t_dist.ppf(0.975, df=max(n - 2, 1))
+        rho_crit = round(t_crit / math.sqrt(t_crit ** 2 + n - 2), 2)
+
         if significant:
             print(f"Correlation is statistically significant (p < {P_THRESHOLD})")
         else:
             print(
                 f"Correlation is NOT statistically significant (p={best_pval:.4f} >= {P_THRESHOLD}).\n"
-                f"With {n} station(s), need n >= 5 and |rho| > ~0.9 for 95% confidence.\n"
+                f"With n={n}, the 95% significance threshold is |rho| > ~{rho_crit}.\n"
+                f"Observed |rho| = {abs(max_rho):.3f} — below that bar.\n"
                 "Result shown for reference; default 10 km unchanged unless --force-apply."
             )
 
