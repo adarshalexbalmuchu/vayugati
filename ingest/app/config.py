@@ -19,6 +19,11 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 # require_env() below — a deployment without this key has no AQ data.
 DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY", "")
 
+# NASA FIRMS MAP_KEY — free, register at firms.modaps.eosdis.nasa.gov/api/area/.
+# Used by isrm_firms.py for active-fire hotspot data over Delhi/NCR.
+# Optional: when absent the fire signal is skipped; other kernel sources still run.
+FIRMS_MAP_KEY = os.getenv("FIRMS_MAP_KEY", "")
+
 # Delhi Open Transit Data (OTD) real-time GTFS-realtime feed key — server-
 # side only, never logged. Same audit-only status as DATA_GOV_API_KEY above
 # (see scripts/audit_delhi_otd.py): not read by any production ingest path,
