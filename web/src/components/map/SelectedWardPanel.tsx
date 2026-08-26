@@ -207,7 +207,7 @@ export default function SelectedWardPanel({
             )}
             {vayuTraceAttribution.regional_fraction_prior != null && (
               <p className="text-[10px] text-slate-400 mt-0.5">
-                ~{Math.round(vayuTraceAttribution.regional_fraction_prior * 100)}% of city PM₂.₅ is regional/upwind transport (IITK 2016) — not captured above
+                ~{Math.round(vayuTraceAttribution.regional_fraction_prior * 100)}% estimated regional/upwind transport (non-fire base + current fire activity) — not captured above
               </p>
             )}
             {vayuTraceAttribution.regional_fire_index != null &&

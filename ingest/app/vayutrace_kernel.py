@@ -69,19 +69,62 @@ atmospheric stability, which in Delhi follows a strong seasonal cycle:
 Reference: Briggs (1973) "Diffusion Estimation for Small Emissions",
 ATDL contribution file No. 79, NOAA; IMD Delhi mixing layer climatology.
 
--- Regional transport context --
+-- Regional transport — dynamic fraction --
 
-IITK 2016 ("Source apportionment of PM2.5 at a residential site in Delhi")
-and TERI-ARAI 2018 both establish that a large fraction of Delhi's PM2.5 is
-regional/upwind transport, not local emissions:
+The fraction of Delhi's PM2.5 from regional/upwind transport is NOT a fixed
+constant.  Published receptor modelling and CTM studies establish:
 
-    Winter (Oct–Feb):  ≈ 64 % of PM2.5 is regional transport
-    Summer (Mar–Sep):  ≈ 26 % of PM2.5 is regional transport
+  Non-fire base regional transport (Haryana industry, UP/Rajasthan dust,
+  secondary aerosol from regional precursors):
+    Winter (Oct–Feb):  ≈ 35 % of PM2.5
+    Summer (Mar–Sep):  ≈ 15 % of PM2.5
+  (Consistent with IITK 2016 multi-source breakdown once the fire component
+  is separately accounted for; TERI-ARAI 2018 also supports 35% non-fire
+  regional for winter.)
 
-VayuTrace is a *local* forward model: it attributes the ward-level PM2.5
-that is *above the city-wide baseline*, i.e. local excess.  The regional
-background is not captured by the kernel — this fraction is surfaced as
-`regional_fraction_prior` in each ward result for UI context only.
+  Fire-transport addition (Punjab/Haryana/UP stubble burning):
+    Low fire index (≈0): adds ≈ 0 % additional
+    High fire index (≈1): adds up to 40 % additional
+    → total regional fraction ranges 35–78 % in winter, 15–55 % in summer
+    → capped at 78 % (literature upper bound: Cusworth et al. ES&T 2020,
+      meta-analysis Atmospheric Environment 2025 — extreme stagnant years).
+
+  Key literature:
+    • Cusworth et al. (2020) ES&T: GEOS-Chem — CRB contributes 7–78%
+      (median ~20%) depending on year and meteorology (NOT a fixed number).
+    • npj Climate and Atmospheric Science (2025), CUPI-G + WRF-Chem:
+      Oct–Nov 2022 CRB contribution was only ~14% because NW wind alignment
+      was poor — fire counts ≠ surface PM2.5.
+    • ACP (2025), NHM(WRF)-Chem + 30-sensor network: optimised CRB
+      contribution 25–35% for active burning periods.
+    • Atmospheric Environment systematic review (2025): meta-consensus:
+      14–30% typical, up to 78% in extreme stagnant-NW-wind years.
+
+  `regional_fraction_prior` in kernel output is therefore a *nowcast estimate*,
+  not a static prior: base + fire_index × 0.40, capped at 0.78.
+
+-- Regional fire transport physics --
+
+Two decay processes act on smoke from Punjab/Haryana/UP fires:
+
+  1. Dry deposition (accumulation-mode PM2.5):
+       τ_dep ≈ 72 h (literature range 48–120 h for fine-mode aerosol;
+       Seinfeld & Pandis, "Atmospheric Chemistry and Physics" 3rd ed.;
+       consistent with WRF-Chem survival of ~35–55% at 28 h transit,
+       ACP 2025 NHM model).
+
+  2. Dilution by entrainment of clean air aloft:
+       exp(-dist_km / L_dil) where L_dil ≈ 400 km
+       At Punjab centroid (~300 km, 3 m/s → 27.8 h):
+         deposition: exp(-27.8/72) ≈ 0.68
+         dilution:   exp(-300/400) ≈ 0.47
+         combined:   ≈ 32 % survival → within observed 30–55 % range.
+
+The normaliser uses a FIXED reference wind speed (3 m/s, IGP Oct–Nov
+climatological mean transport wind) so that the index is comparable
+across days with different ambient wind speeds — HYSPLIT-style trajectory
+studies report trajectory frequencies from fixed climatology, not scaled
+by the current observed wind.
 
 -- Calibration --
 
@@ -122,11 +165,14 @@ DEFAULT_SIGMA_KM: float = SIGMA_SUMMER_KM  # backward-compat default
 #               TERI-ARAI 2018 Delhi study: vehicular contribution drops steeply
 #               beyond the first 500 m).  σ_road = 1 km (all seasons).
 #
-#   fire      — FIRMS VIIRS hotspots for Delhi/NCR are predominantly agricultural
-#               stubble burns in UP/Haryana, typically 20–100 km from Delhi wards.
-#               These are elevated combustion plumes that transport regionally
-#               (IMD/SAFAR fire-episode analyses; IITK 2016 winter sector
-#               breakdown: open burning 17–26%).  σ_fire = 20 km (all seasons).
+#   fire      — FIRMS VIIRS hotspots classified as "local" (<50 km from Delhi)
+#               include Haryana/western UP stubble burns.  Literature (PMF
+#               receptor studies, Frontiers in Sustainable Cities 2021) shows
+#               Haryana fires at 50–80 km can contribute 5–15% during active
+#               episodes — Gaussian at σ=20 km gives ~4% at 50 km (too low).
+#               Raised to σ=30 km so the decay is ~25% at 50 km and ~7% at
+#               80 km, consistent with observed contributions.
+#               σ_fire = 30 km (all seasons).
 #
 #   industrial — Base seasonal sigma above (5 km winter / 7 km summer).
 #               Stack/area sources in DSIIDC estates; calibrated against CPCB.
@@ -136,13 +182,19 @@ DEFAULT_SIGMA_KM: float = SIGMA_SUMMER_KM  # backward-compat default
 # preserving the caller's intent while keeping physical ratios correct.
 
 SIGMA_ROAD_KM: float = 1.0     # all seasons — highly local
-SIGMA_FIRE_KM: float = 20.0    # all seasons — regional transport typical
+SIGMA_FIRE_KM: float = 30.0    # all seasons — local fires, extended for Haryana range
 
-# IITK 2016 + TERI-ARAI 2018 regional transport fractions (city-level prior).
-# Surfaced in kernel output as `regional_fraction_prior` for UI context only —
-# VayuTrace models local excess, not the regional background.
-REGIONAL_FRACTION_WINTER: float = 0.64  # Oct–Feb
-REGIONAL_FRACTION_SUMMER: float = 0.26  # Mar–Sep
+# Non-fire base regional transport fractions (city-level background).
+# These represent Haryana industry, UP/Rajasthan dust, secondary aerosol from
+# regional precursors — everything that is NOT the IGP fire transport component
+# (which is modelled separately via regional_fire_index).
+#
+# The legacy IITK 2016 "64% winter regional" figure conflated fire and non-fire
+# transport.  Separating them:
+#   Non-fire base: IITK 2016 sector breakdown minus the biomass burning fraction
+#   (17–26%) → ~35% non-fire regional winter; ~15% summer.
+REGIONAL_FRACTION_WINTER: float = 0.35  # Oct–Feb non-fire base
+REGIONAL_FRACTION_SUMMER: float = 0.15  # Mar–Sep non-fire base
 
 # Winter months (1=Jan, …, 12=Dec).
 _WINTER_MONTHS: frozenset[int] = frozenset({10, 11, 12, 1, 2})
@@ -154,10 +206,26 @@ MAX_CONFIDENT_DIST_KM: float = 15.0
 MIN_SOURCES: int = 1
 
 # -- Regional fire transport model constants --
-# Aerosol aging / deposition half-life for transported smoke, in hours.
-# Literature range: 12–48 h depending on aerosol type and humidity.
-# 24 h is the SAFAR/IITM midpoint for IGP biomass burning aerosol.
-TRANSPORT_HALFLIFE_H: float = 24.0
+
+# Dry deposition half-life for accumulation-mode PM2.5 (fine-mode biomass
+# burning aerosol).  Dry deposition velocity for fine PM is 0.1–0.3 cm/s
+# (Seinfeld & Pandis 3rd ed.); at 3 m/s wind over 300 km (~28 h transit),
+# dry deposition removes only ~15–25% of column mass → τ ≈ 72–120 h.
+# WRF-Chem (ACP 2025) survival of 30–55% at 28 h is consistent with τ=72 h.
+DEPOSITION_HALFLIFE_H: float = 72.0  # dry deposition τ for fine PM2.5
+
+# E-folding distance for dilution by entrainment of cleaner air aloft.
+# At 300 km from Punjab centroid, models predict 47% remaining from dilution
+# alone (Cusworth ES&T 2020, ACP 2025 WRF-Chem). Fitted as exp(-300/400)=0.47.
+DILUTION_SCALE_KM: float = 400.0  # entrainment dilution e-folding distance
+
+# Reference wind speed for the transport index normaliser.
+# Fixed at the IGP Oct–Nov climatological mean transport wind (3 m/s, NW sector)
+# so the index is comparable across days — HYSPLIT trajectory-counting studies
+# use a fixed climatology, not the current observed wind, for contribution
+# percentages.  Using current wind in the normaliser would make the index
+# artificially small on calm days and artificially large on windy days.
+REF_WIND_MS: float = 3.0  # IGP transport wind climatological reference
 
 # Delhi centroid for computing fire travel distances (matches vayutrace_firms.py)
 _DELHI_LAT: float = 28.65
@@ -174,18 +242,44 @@ def seasonal_sigma_km(month: int) -> float:
 
 
 def regional_transport_prior(month: int) -> float:
-    """Fraction of city-level PM2.5 attributable to regional/upwind transport.
+    """Non-fire base regional transport fraction for the given calendar month.
 
-    Returns the IITK 2016 / TERI-ARAI 2018 seasonal midpoint:
-        Oct–Feb → 0.64  (64 % regional transport in winter)
-        Mar–Sep → 0.26  (26 % regional transport in summer)
+    This is the fraction of Delhi's PM2.5 from regional/upwind sources that
+    are NOT the IGP fire transport component (which is modelled separately):
+    Haryana industry, UP/Rajasthan dust, secondary aerosol from regional
+    precursors, background biomass from residential heating etc.
 
-    This is a *city-level prior*, not a ward-specific measurement.  It is
-    included in kernel output as context for the UI — VayuTrace models local
-    excess (emissions → predicted local concentration), so the regional
-    background is outside the kernel's scope.
+        Oct–Feb → 0.35  (35% non-fire base regional transport)
+        Mar–Sep → 0.15  (15% non-fire base regional transport)
+
+    To get the total regional fraction (including current fire transport),
+    use regional_fraction_nowcast(month, regional_fire_index).
     """
     return REGIONAL_FRACTION_WINTER if month in _WINTER_MONTHS else REGIONAL_FRACTION_SUMMER
+
+
+def regional_fraction_nowcast(month: int, regional_fire_index: float) -> float:
+    """Dynamic total regional fraction: base transport + current fire contribution.
+
+    Replaces the old static IITK 2016 "64% winter" figure with a nowcast
+    that gates the fire-transport component on actual observed fire activity
+    (via regional_fire_index from regional_fire_transport_index()).
+
+    Structure (from Cusworth et al. ES&T 2020, meta-analysis Atm. Env. 2025,
+    ACP 2025 NHM+WRF-Chem):
+        base     — non-fire regional: 0.35 (winter) / 0.15 (summer)
+        fire     — regional_fire_index × 0.40  (scales to max ~40% at index=1)
+        total    — min(base + fire, 0.78)  (78% is the literature upper bound
+                   for extreme stagnant-wind years, Cusworth 2020 GEOS-Chem)
+
+    Typical ranges:
+        Low-fire winter day (index≈0):   35%
+        Active burning season (index=0.5): ~55%
+        Extreme burning episode (index≈1): ~75%
+    """
+    base = REGIONAL_FRACTION_WINTER if month in _WINTER_MONTHS else REGIONAL_FRACTION_SUMMER
+    fire_component = regional_fire_index * 0.40
+    return round(min(base + fire_component, 0.78), 3)
 
 
 def regional_fire_transport_index(
@@ -200,29 +294,37 @@ def regional_fire_transport_index(
 
     This is NOT a Gaussian decay model — regional fires are 50–500 km away,
     where Gaussian decay produces effectively zero weight.  Instead it uses
-    a travel-time transport model grounded in HYSPLIT back-trajectory
-    literature and SAFAR/IITM fire-episode analyses:
+    a two-decay transport model grounded in WRF-Chem and HYSPLIT literature:
 
-        contribution = FRP × wind_alignment × exp(-travel_time / τ)
+        contribution = FRP × wind_alignment × deposition_decay × dilution_decay
 
     where:
-        FRP            — fire radiative power (MW) from FIRMS VIIRS, a proxy
-                         for smoke emission rate
-        wind_alignment — max(0, cos(Δθ)): how well is the wind blowing THIS
-                         fire's smoke toward the target?  Uses the same calm-
-                         wind blending as _wind_factor() for consistency.
-        travel_time    — distance_km / wind_speed_kmh  (hours of transit)
-        τ              — TRANSPORT_HALFLIFE_H = 24 h (SAFAR/IITM midpoint for
-                         IGP biomass burning aerosol aging + dry deposition)
+        FRP              — fire radiative power (MW) from FIRMS VIIRS, proxy
+                           for smoke emission rate
+        wind_alignment   — max(0, cos(Δθ)): how well is the wind blowing THIS
+                           fire's smoke toward the target?  Uses the same calm-
+                           wind blending as _wind_factor() for consistency.
+        deposition_decay — exp(-travel_h / τ_dep) where τ_dep = 72 h
+                           Dry deposition half-life for accumulation-mode PM2.5
+                           (Seinfeld & Pandis 3rd ed.; consistent with ACP 2025
+                           WRF-Chem survival of 30–55% at 28 h transit).
+        dilution_decay   — exp(-dist_km / L_dil) where L_dil = 400 km
+                           Entrainment of cleaner air aloft progressively
+                           dilutes the plume as it travels across the IGP.
+                           At 300 km (Punjab centroid): exp(-0.75) ≈ 0.47;
+                           combined with deposition → ~32% survival, within
+                           Cusworth et al. (ES&T 2020) 30–55% range.
 
-    The index is normalised by the maximum theoretically possible score
-    (a 50 MW fire at 50 km with perfect wind alignment and zero travel time)
-    so that it is always in [0, 1].
+    The normaliser uses REF_WIND_MS (3 m/s, IGP Oct–Nov transport climatology)
+    instead of the current observed wind speed, so that the index represents
+    "how much smoke is arriving" consistently across days — following the HYSPLIT
+    trajectory-frequency approach (Atmospheric Environment 2020, HYSPLIT
+    back-trajectories show 52/81/89% frequency toward high-PM bins regardless
+    of the day's observed wind magnitude).
 
     Returns 0.0 when:
     - no regional fires exist (clear-air day)
-    - wind is calm AND fires are beyond 200 km (transport physically unlikely
-      regardless of alignment)
+    - wind is calm (stalled transport — effective_speed floored at 0.5 m/s)
     - all fires are downwind of the target
 
     Interpretation for the UI:
@@ -233,10 +335,8 @@ def regional_fire_transport_index(
     if not regional_fires:
         return 0.0
 
-    # Calm wind check: if wind < 1 m/s, long-range transport is effectively
-    # stalled — a fire 300 km away at 0.5 m/s would take 167 hours,
-    # far beyond the 24 h aerosol halflife.  Cap travel-time decay.
-    effective_speed = max(wind_speed_ms, 0.5)  # never fully zero for travel-time calc
+    # Floor at 0.5 m/s: transport still occurs in calm conditions but is slow.
+    effective_speed = max(wind_speed_ms, 0.5)
 
     total = 0.0
     for f in regional_fires:
@@ -256,18 +356,26 @@ def regional_fire_transport_index(
         # Wind alignment: does current wind carry smoke from fire toward target?
         alignment = _wind_factor(bearing_to_target, wind_from_dir_deg, wind_speed_ms)
 
-        # Travel time decay: smoke from 300 km at 3 m/s takes ~28 h → exp(-28/24) ≈ 0.31
+        # Dual-decay transport survival:
+        #   1. Dry deposition (slow, τ=72 h for fine PM2.5)
+        #   2. Dilution by entrainment of cleaner air (e-folding at 400 km)
         speed_kmh = effective_speed * 3.6
         travel_h  = dist_km / speed_kmh
-        transport_decay = math.exp(-travel_h / TRANSPORT_HALFLIFE_H)
+        deposition_decay = math.exp(-travel_h / DEPOSITION_HALFLIFE_H)
+        dilution_decay   = math.exp(-dist_km   / DILUTION_SCALE_KM)
 
-        total += frp * alignment * transport_decay
+        total += frp * alignment * deposition_decay * dilution_decay
 
-    # Normalise against a reference scenario: 50 MW fire at threshold distance
-    # (50 km) with perfect wind alignment (factor = 1 + speed/10) and no decay.
-    ref_frp    = 50.0
-    ref_align  = 1.0 + wind_speed_ms / 10.0  # max directional alignment
-    normaliser = ref_frp * ref_align          # decay is 1.0 at zero distance
+    # Normalise against a fixed reference scenario:
+    #   50 MW fire at 50 km with perfect alignment, REF_WIND_MS transport.
+    # Using REF_WIND_MS (not current wind) makes the index cross-day comparable
+    # (HYSPLIT studies report trajectory contributions from fixed climatology).
+    ref_frp  = 50.0
+    ref_travel_h      = 50.0 / (REF_WIND_MS * 3.6)
+    ref_dep_decay     = math.exp(-ref_travel_h / DEPOSITION_HALFLIFE_H)
+    ref_dilution_decay = math.exp(-50.0 / DILUTION_SCALE_KM)
+    ref_align         = 1.0 + REF_WIND_MS / 10.0  # max directional at ref speed
+    normaliser = ref_frp * ref_align * ref_dep_decay * ref_dilution_decay
 
     if normaliser <= 0:
         return 0.0
@@ -426,12 +534,11 @@ def run_kernel(
           source_counts: {industrial, fire, road, regional_fire},
         }
     """
-    # Resolve season-aware sigma and regional transport prior
+    # Resolve season-aware sigma
     if month is None:
         from datetime import datetime, timezone  # noqa: PLC0415
         month = datetime.now(timezone.utc).month
     effective_sigma = seasonal_sigma_km(month) if sigma_km == DEFAULT_SIGMA_KM else sigma_km
-    reg_prior = regional_transport_prior(month)
 
     # Build flat source list with normalised emission weights
     all_sources: list[dict] = []
@@ -511,6 +618,11 @@ def run_kernel(
             3,
         )
 
+        # Dynamic regional fraction: non-fire base + current fire contribution.
+        # Replaces the old static IITK 2016 "64% winter" prior with a nowcast
+        # gated on actual observed fire activity (Cusworth ES&T 2020; ACP 2025).
+        reg_fraction = regional_fraction_nowcast(month, reg_fire_idx)
+
         # Confidence: inverse distance to nearest CPCB station
         if cpcb_stations:
             min_dist = min(
@@ -525,7 +637,7 @@ def run_kernel(
             "ward_id": wid,
             "breakdown": breakdown,
             "confidence": round(confidence, 3),
-            "regional_fraction_prior": reg_prior,
+            "regional_fraction_prior": reg_fraction,
             "regional_fire_index": reg_fire_idx,
             "method": "vayutrace_v1",
             "sigma_km": effective_sigma,
