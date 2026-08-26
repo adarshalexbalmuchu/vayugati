@@ -396,6 +396,7 @@ export type Database = {
           direction: string | null
           id: number
           method: string | null
+          regional_fraction_prior: number | null
           ts: string
           ward_id: number
         }
@@ -405,6 +406,7 @@ export type Database = {
           direction?: string | null
           id?: number
           method?: string | null
+          regional_fraction_prior?: number | null
           ts?: string
           ward_id: number
         }
@@ -414,6 +416,7 @@ export type Database = {
           direction?: string | null
           id?: number
           method?: string | null
+          regional_fraction_prior?: number | null
           ts?: string
           ward_id?: number
         }

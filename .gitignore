@@ -22,3 +22,4 @@ supabase/.branches/
 .idea/
 .vscode/
 tsconfig.tsbuildinfo
+ingest/data/

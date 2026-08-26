@@ -700,16 +700,24 @@ export async function fetchAttribution(wardId: number): Promise<Attribution | nu
 }
 
 export interface VayuTraceAttribution {
-  /** {industrial, road, fire, unknown} — fractions summing to 1 */
+  /** {industrial, road, fire, unknown} — fractions summing to 1, local excess only */
   breakdown: { industrial: number; road: number; fire: number; unknown: number } | null
   confidence: number | null
+  /**
+   * IITK 2016 / TERI-ARAI 2018 city-level seasonal prior: fraction of Delhi's
+   * total PM2.5 attributable to regional/upwind transport.
+   * ~0.64 in winter (Oct–Feb), ~0.26 in summer (Mar–Sep).
+   * The VayuTrace breakdown above covers only the local excess; this field gives
+   * context on how large the unattributed regional background is.
+   */
+  regional_fraction_prior: number | null
   ts: string
 }
 
 export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTraceAttribution | null> {
   const { data } = await supabase
     .from('attributions')
-    .select('breakdown, confidence, ts')
+    .select('breakdown, confidence, regional_fraction_prior, ts')
     .eq('ward_id', wardId)
     .eq('method', 'vayutrace_v1')
     .order('ts', { ascending: false })
@@ -719,6 +727,7 @@ export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTra
   return {
     breakdown: (data.breakdown ?? null) as VayuTraceAttribution['breakdown'],
     confidence: data.confidence ?? null,
+    regional_fraction_prior: data.regional_fraction_prior ?? null,
     ts: data.ts,
   }
 }

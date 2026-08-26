@@ -92,13 +92,18 @@ create index on forecasts (ward_id, horizon_ts);
 
 -- ---------- attributions (per ward, time-specific, directional) ----------
 create table attributions (
-  id           bigserial primary key,
-  ward_id      int not null references wards(id) on delete cascade,
-  ts           timestamptz not null default now(),
-  breakdown    jsonb,                          -- {"construction":0.45,"traffic":0.30,...}
-  direction    text,                           -- e.g. 'NW' where the current load comes from
-  confidence   double precision,
-  method       text
+  id                      bigserial primary key,
+  ward_id                 int not null references wards(id) on delete cascade,
+  ts                      timestamptz not null default now(),
+  breakdown               jsonb,                          -- {"construction":0.45,"traffic":0.30,...}
+  direction               text,                           -- e.g. 'NW' where the current load comes from
+  confidence              double precision,
+  method                  text,
+  -- IITK 2016 / TERI-ARAI 2018 seasonal city-level prior for regional/upwind
+  -- transport fraction (0.64 Oct–Feb, 0.26 Mar–Sep). NULL for non-vayutrace rows.
+  regional_fraction_prior double precision
+    check (regional_fraction_prior is null or
+           (regional_fraction_prior >= 0 and regional_fraction_prior <= 1))
 );
 create index on attributions (ward_id, ts desc);
 

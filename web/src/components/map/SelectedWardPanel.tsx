@@ -202,7 +202,12 @@ export default function SelectedWardPanel({
             })}
             {vayuTraceAttribution.confidence != null && (
               <p className="text-[10px] text-slate-400">
-                Confidence {Math.round(vayuTraceAttribution.confidence * 100)}% · forward model estimate, not a measurement
+                Confidence {Math.round(vayuTraceAttribution.confidence * 100)}% · local excess only · forward model, not a measurement
+              </p>
+            )}
+            {vayuTraceAttribution.regional_fraction_prior != null && (
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                ~{Math.round(vayuTraceAttribution.regional_fraction_prior * 100)}% of city PM₂.₅ is regional/upwind transport (IITK 2016) — not captured above
               </p>
             )}
           </div>

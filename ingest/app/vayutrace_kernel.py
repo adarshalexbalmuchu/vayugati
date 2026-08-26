@@ -20,7 +20,7 @@ Where:
                       osm_roads / FIRMS brightness
     wind_factor     — cos(Δθ) component: how aligned is the wind with the
                       source-to-ward bearing?  Amplified by wind speed.
-    distance_decay  — Gaussian exp(-d²/2σ²), σ calibrated in km.
+    distance_decay  — Gaussian exp(-d²/2σ²), σ selected per season (see below).
 
 The raw contributions are normalised to sum to 1 across sources, then
 grouped by source type ("industrial", "road", "fire") to give a per-ward
@@ -31,17 +31,43 @@ A confidence signal is also produced per ward:
     clipped to [0, 1].
 High near a CPCB station; lower for wards with no nearby station.
 
+-- Season-aware σ (Pasquill-Gifford grounding) --
+
+σ controls how far each source "reaches".  The optimal value depends on
+atmospheric stability, which in Delhi follows a strong seasonal cycle:
+
+  Oct–Feb (winter):  surface inversions 100–400 m, mixing layer height low,
+                     Pasquill-Gifford class E-F (stable).  Plumes stay tight.
+                     Briggs 1973 urban σ_y ≈ 246 m at 5 km under class E-F.
+                     Kernel σ = SIGMA_WINTER_KM = 5 km.
+
+  Mar–Sep (summer):  convective mixing, P-G class D (neutral to unstable).
+                     Wind-stratified Spearman calibration (n=4,340 paired
+                     reading+weather rows, 44 Delhi CPCB stations, 30 days)
+                     peaks at σ = 7 km (ρ=0.20, p≈0, two-tailed).
+                     Kernel σ = SIGMA_SUMMER_KM = 7 km.
+
+Reference: Briggs (1973) "Diffusion Estimation for Small Emissions",
+ATDL contribution file No. 79, NOAA; IMD Delhi mixing layer climatology.
+
+-- Regional transport context --
+
+IITK 2016 ("Source apportionment of PM2.5 at a residential site in Delhi")
+and TERI-ARAI 2018 both establish that a large fraction of Delhi's PM2.5 is
+regional/upwind transport, not local emissions:
+
+    Winter (Oct–Feb):  ≈ 64 % of PM2.5 is regional transport
+    Summer (Mar–Sep):  ≈ 26 % of PM2.5 is regional transport
+
+VayuTrace is a *local* forward model: it attributes the ward-level PM2.5
+that is *above the city-wide baseline*, i.e. local excess.  The regional
+background is not captured by the kernel — this fraction is surfaced as
+`regional_fraction_prior` in each ward result for UI context only.
+
 -- Calibration --
 
-σ (the Gaussian decay length) is the key tuning parameter.  Calibrated to
-7 km by wind-stratified Spearman regression: for each of 4,340 paired
-(PM2.5 reading, weather row) observations across 44 Delhi CPCB stations,
-we computed the wind-weighted industrial proximity score at the actual
-wind direction/speed and correlated it against the station's local PM2.5
-excess (reading minus hourly city median).  ρ peaks at σ=7 km (ρ=0.20,
-p≈0, two-tailed), then falls on both sides — a clear, data-driven optimum.
 Re-run ingest/scripts/calibrate_vayutrace_sigma.py --wind --days 30 after
-accumulating more data to check whether this estimate shifts.
+accumulating more data to check whether the summer σ estimate shifts.
 
 The IIT Kanpur / TERI-ARAI sector priors in vayutrace_sector_priors.py are the
 sanity-check target: after averaging across all wards the kernel output
@@ -60,18 +86,52 @@ log = logging.getLogger("ingest.vayutrace_kernel")
 
 # -- Tuning parameters (override via run_kernel kwargs for experimentation) ---
 
-# Gaussian decay half-length in km.  Sources closer than σ km dominate;
-# beyond 2σ the contribution drops to ~14%.
-# Calibrated value: 7 km (Spearman rho=0.20, p≈0, n=4340 paired
-# reading+weather observations, wind-stratified against 44 Delhi CPCB
-# stations, 30 days of data — see ingest/scripts/calibrate_vayutrace_sigma.py).
-DEFAULT_SIGMA_KM: float = 7
+# Season-aware Gaussian decay lengths (km).
+# Winter (Oct–Feb): P-G class E-F stable, surface inversions → tight plumes.
+# Summer (Mar–Sep): P-G class D neutral, calibrated by wind-stratified Spearman
+#   regression (ρ=0.20, p≈0, n=4340 reading+weather pairs, 44 Delhi CPCB stations).
+SIGMA_WINTER_KM: float = 5.0   # Oct–Feb
+SIGMA_SUMMER_KM: float = 7.0   # Mar–Sep (Spearman-calibrated)
+DEFAULT_SIGMA_KM: float = SIGMA_SUMMER_KM  # backward-compat default
+
+# IITK 2016 + TERI-ARAI 2018 regional transport fractions (city-level prior).
+# Surfaced in kernel output as `regional_fraction_prior` for UI context only —
+# VayuTrace models local excess, not the regional background.
+REGIONAL_FRACTION_WINTER: float = 0.64  # Oct–Feb
+REGIONAL_FRACTION_SUMMER: float = 0.26  # Mar–Sep
+
+# Winter months (1=Jan, …, 12=Dec).
+_WINTER_MONTHS: frozenset[int] = frozenset({10, 11, 12, 1, 2})
 
 # A ward with its nearest CPCB station ≤ this distance gets full confidence.
 MAX_CONFIDENT_DIST_KM: float = 15.0
 
 # Minimum number of emission sources to attempt attribution.
 MIN_SOURCES: int = 1
+
+
+def seasonal_sigma_km(month: int) -> float:
+    """Return the appropriate Gaussian decay length for the given calendar month.
+
+    Oct–Feb → 5 km (P-G E-F stable, winter inversion regime).
+    Mar–Sep → 7 km (P-G D neutral, Spearman-calibrated on 30 days of data).
+    """
+    return SIGMA_WINTER_KM if month in _WINTER_MONTHS else SIGMA_SUMMER_KM
+
+
+def regional_transport_prior(month: int) -> float:
+    """Fraction of city-level PM2.5 attributable to regional/upwind transport.
+
+    Returns the IITK 2016 / TERI-ARAI 2018 seasonal midpoint:
+        Oct–Feb → 0.64  (64 % regional transport in winter)
+        Mar–Sep → 0.26  (26 % regional transport in summer)
+
+    This is a *city-level prior*, not a ward-specific measurement.  It is
+    included in kernel output as context for the UI — VayuTrace models local
+    excess (emissions → predicted local concentration), so the regional
+    background is outside the kernel's scope.
+    """
+    return REGIONAL_FRACTION_WINTER if month in _WINTER_MONTHS else REGIONAL_FRACTION_SUMMER
 
 
 # -- Geometry helpers ─────────────────────────────────────────────────────────
@@ -154,6 +214,7 @@ def run_kernel(
     road_sources: list[dict],
     cpcb_stations: list[dict] | None = None,
     sigma_km: float = DEFAULT_SIGMA_KM,
+    month: int | None = None,
 ) -> list[dict]:
     """Compute estimated source contributions for every ward.
 
@@ -164,23 +225,34 @@ def run_kernel(
         fire_sources    — from vayutrace_firms.fetch_delhi_fires()
         road_sources    — from vayutrace_osm_roads.load_delhi_roads()
         cpcb_stations   — [{id, ward_id, lat, lng}, ...] for confidence signal
-        sigma_km        — Gaussian decay length (km)
+        sigma_km        — Gaussian decay length (km); if None and month is
+                          provided, seasonal_sigma_km(month) is used instead.
+        month           — calendar month (1–12) for season-aware σ and
+                          regional transport prior; defaults to current UTC month.
 
     Returns list of dicts, one per ward:
         {
           ward_id: int,
           breakdown: {
-              "industrial": float,   # 0–1, fraction of estimated PM load
+              "industrial": float,   # 0–1, fraction of estimated local PM load
               "road":       float,
               "fire":       float,
               "unknown":    float,   # residual; 0 when sources cover 100%
           },
           confidence: float,   # 0–1; higher near CPCB stations
+          regional_fraction_prior: float,  # IITK 2016 city-level regional %
           method: "vayutrace_v1",
           sigma_km: float,
           source_counts: {industrial, fire, road},
         }
     """
+    # Resolve season-aware sigma and regional transport prior
+    if month is None:
+        from datetime import datetime, timezone  # noqa: PLC0415
+        month = datetime.now(timezone.utc).month
+    effective_sigma = seasonal_sigma_km(month) if sigma_km == DEFAULT_SIGMA_KM else sigma_km
+    reg_prior = regional_transport_prior(month)
+
     # Build flat source list with normalised emission weights
     all_sources: list[dict] = []
     for s in industrial_sources:
@@ -223,7 +295,7 @@ def run_kernel(
             dist = _haversine_km(wlat, wlng, s["lat"], s["lng"])
             bearing = _bearing_deg(s["lat"], s["lng"], wlat, wlng)
             wf = _wind_factor(bearing, wind_dir, wind_speed)
-            dd = _distance_decay(dist, sigma_km)
+            dd = _distance_decay(dist, effective_sigma)
             score = s["_ew"] * wf * dd
             stype = s["source_type"]
             if stype in acc:
@@ -254,8 +326,9 @@ def run_kernel(
             "ward_id": wid,
             "breakdown": breakdown,
             "confidence": round(confidence, 3),
+            "regional_fraction_prior": reg_prior,
             "method": "vayutrace_v1",
-            "sigma_km": sigma_km,
+            "sigma_km": effective_sigma,
             "source_counts": {
                 "industrial": len(industrial_sources),
                 "fire":       len(fire_sources),
@@ -274,6 +347,7 @@ def estimate_city(
     *,
     sigma_km: float = DEFAULT_SIGMA_KM,
     firms_date: Any = None,
+    month: int | None = None,
 ) -> list[dict]:
     """High-level convenience wrapper: loads all source inventories and runs
     the kernel.  Returns the same list as run_kernel().
@@ -281,18 +355,27 @@ def estimate_city(
     This is the function vayutrace_attribution.py (or main.py) should call.
     Each sub-import is guarded so a missing .pbf or absent FIRMS key
     degrades gracefully rather than failing the whole intel cycle.
+
+    Args:
+        month — calendar month (1–12); if omitted, current UTC month is used.
+                Drives season-aware sigma selection and regional transport prior.
     """
     from .vayutrace_industrial_zones import zones_as_dicts  # noqa: PLC0415
     from .vayutrace_firms import fetch_delhi_fires           # noqa: PLC0415
     from .vayutrace_osm_roads import load_delhi_roads        # noqa: PLC0415
+
+    if month is None:
+        from datetime import datetime, timezone  # noqa: PLC0415
+        month = datetime.now(timezone.utc).month
 
     industrial = zones_as_dicts()
     fires = fetch_delhi_fires(day=firms_date)
     roads = load_delhi_roads()
 
     log.info(
-        "vayutrace_kernel estimate_city: %d industrial zones, %d fire hotspots, %d road segments",
-        len(industrial), len(fires), len(roads),
+        "vayutrace_kernel estimate_city: month=%d sigma=%s km, "
+        "%d industrial zones, %d fire hotspots, %d road segments",
+        month, seasonal_sigma_km(month), len(industrial), len(fires), len(roads),
     )
 
     return run_kernel(
@@ -302,4 +385,5 @@ def estimate_city(
         fire_sources=fires,
         road_sources=roads,
         sigma_km=sigma_km,
+        month=month,
     )

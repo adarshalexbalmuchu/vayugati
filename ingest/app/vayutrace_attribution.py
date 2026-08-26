@@ -17,7 +17,7 @@ import logging
 from datetime import datetime, timezone
 
 from . import db
-from .vayutrace_kernel import DEFAULT_SIGMA_KM, estimate_city
+from .vayutrace_kernel import DEFAULT_SIGMA_KM, estimate_city, seasonal_sigma_km
 
 log = logging.getLogger("ingest.vayutrace_attribution")
 
@@ -30,11 +30,15 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
     Returns a summary dict matching the shape of other run_tracked() callers:
         {started_at, finished_at, wards_attributed, wards_skipped, sigma_km}
     """
+    now = datetime.now(timezone.utc)
+    month = now.month
+    effective_sigma = seasonal_sigma_km(month) if sigma_km == DEFAULT_SIGMA_KM else sigma_km
     summary: dict = {
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": now.isoformat(),
         "wards_attributed": 0,
         "wards_skipped": 0,
-        "sigma_km": sigma_km,
+        "sigma_km": effective_sigma,
+        "month": month,
     }
 
     wards = db.get_wards_with_city()
@@ -53,6 +57,7 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
         wards=wards,
         weather_by_ward=weather_by_ward,
         sigma_km=sigma_km,
+        month=month,
     )
 
     if not results:
@@ -74,8 +79,9 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
                     "breakdown":  r["breakdown"],
                     "confidence": r["confidence"],
                     "method":     _METHOD,
-                    # extra metadata stored in breakdown JSONB (Postgres accepts it)
-                    # — kept flat so the existing attributions query still works.
+                    # regional_fraction_prior: IITK 2016 city-level context,
+                    # stored in the attributions row for the UI to surface.
+                    "regional_fraction_prior": r.get("regional_fraction_prior"),
                 },
             )
             summary["wards_attributed"] += 1
