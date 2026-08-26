@@ -31,6 +31,24 @@ A confidence signal is also produced per ward:
     clipped to [0, 1].
 High near a CPCB station; lower for wards with no nearby station.
 
+-- Calm-wind isotropic fallback --
+
+Below 1 m/s, wind direction is meteorologically unreliable and dispersion
+is effectively isotropic (EPA AERMOD Guide §4.2; WMO Technical Note 285).
+The directional cos(Δθ) factor is meaningless under surface inversions —
+a condition that is common in Delhi Nov–Feb when the very same P-G E-F
+stable regime that tightens σ also decouples the boundary layer.
+
+VayuTrace blends linearly:
+  v ≤ 1 m/s → fully isotropic (factor = 1/π, the expected value of
+              max(0, cos) over all bearings — magnitude-preserving)
+  1–2 m/s  → linear blend between isotropic and directional
+  v ≥ 2 m/s → fully directional, as before
+
+This prevents the kernel from falsely attributing all pollution to
+sources that happen to align with the (unreliable) reported wind
+direction during stagnant-air episodes.
+
 -- Season-aware σ (Pasquill-Gifford grounding) --
 
 σ controls how far each source "reaches".  The optimal value depends on
@@ -157,6 +175,18 @@ def _bearing_deg(from_lat: float, from_lng: float, to_lat: float, to_lng: float)
 
 # -- Wind factor ──────────────────────────────────────────────────────────────
 
+# EPA AERMOD / WMO TN-285: below ~1 m/s wind direction is meteorologically
+# unreliable and dispersion is effectively isotropic.  We blend linearly from
+# the directional model at CALM_BLEND_HI_MS to fully isotropic at or below
+# CALM_BLEND_LO_MS.  The isotropic value (CALM_ISOTROPIC_FACTOR) equals the
+# expected value of max(0, cos(Δθ)) averaged over all bearings, which is 1/π
+# — approximately 0.318.  Using exactly 1/π keeps the contribution magnitude
+# consistent with the directional case at equal wind speed.
+CALM_BLEND_LO_MS: float = 1.0   # fully isotropic below this
+CALM_BLEND_HI_MS: float = 2.0   # fully directional above this
+CALM_ISOTROPIC_FACTOR: float = 1.0 / math.pi  # ≈ 0.318
+
+
 def _wind_factor(
     source_to_ward_bearing: float,
     wind_from_dir_deg: float,
@@ -171,17 +201,40 @@ def _wind_factor(
     The wind BLOWS TOWARD bearing = (wind_from_dir_deg + 180) % 360.
     A source upwind of the ward (wind blowing source→ward) has a high factor.
 
-    factor = max(0, cos(Δθ)) × (1 + wind_speed_ms / 10)
+    Directional model (wind_speed ≥ CALM_BLEND_HI_MS = 2 m/s):
+        factor = max(0, cos(Δθ)) × (1 + wind_speed_ms / 10)
     Clamped to ≥ 0 (downwind sources get zero boost, not negative).
     The (1 + v/10) term amplifies transport at higher wind speeds — at 10 m/s
     the wind-aligned contribution is doubled relative to calm conditions.
+
+    Calm wind model (wind_speed ≤ CALM_BLEND_LO_MS = 1 m/s):
+        Under surface inversions (common Nov–Feb in Delhi) and stagnant air,
+        wind direction is meteorologically unreliable (EPA AERMOD Guide §4.2;
+        WMO Technical Note 285).  Dispersion is isotropic — every source
+        contributes equally regardless of bearing.  Factor = 1/π ≈ 0.318,
+        equal to E[max(0, cos(Δθ))] averaged over all bearings, keeping
+        magnitude consistent.
+
+    Blend zone (1–2 m/s): linear interpolation between the two.
     """
+    speed_factor = 1.0 + wind_speed_ms / 10.0
+
+    if wind_speed_ms <= CALM_BLEND_LO_MS:
+        return CALM_ISOTROPIC_FACTOR * speed_factor
+
     wind_toward_bearing = (wind_from_dir_deg + 180.0) % 360.0
     delta = abs(source_to_ward_bearing - wind_toward_bearing)
     if delta > 180:
         delta = 360 - delta
-    alignment = max(0.0, math.cos(math.radians(delta)))
-    return alignment * (1.0 + wind_speed_ms / 10.0)
+    directional = max(0.0, math.cos(math.radians(delta)))
+
+    if wind_speed_ms >= CALM_BLEND_HI_MS:
+        return directional * speed_factor
+
+    # Linear blend: t=0 → isotropic, t=1 → directional
+    t = (wind_speed_ms - CALM_BLEND_LO_MS) / (CALM_BLEND_HI_MS - CALM_BLEND_LO_MS)
+    alignment = CALM_ISOTROPIC_FACTOR * (1.0 - t) + directional * t
+    return alignment * speed_factor
 
 
 # -- Distance decay ───────────────────────────────────────────────────────────
