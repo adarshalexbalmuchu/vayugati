@@ -103,7 +103,12 @@ create table attributions (
   -- transport fraction (0.64 Oct–Feb, 0.26 Mar–Sep). NULL for non-vayutrace rows.
   regional_fraction_prior double precision
     check (regional_fraction_prior is null or
-           (regional_fraction_prior >= 0 and regional_fraction_prior <= 1))
+           (regional_fraction_prior >= 0 and regional_fraction_prior <= 1)),
+  -- 0–1 index of current IGP fire transport load (Punjab/Haryana/UP stubble
+  -- burning transported toward this ward by wind). Travel-time decay model.
+  regional_fire_index double precision
+    check (regional_fire_index is null or
+           (regional_fire_index >= 0 and regional_fire_index <= 1))
 );
 create index on attributions (ward_id, ts desc);
 

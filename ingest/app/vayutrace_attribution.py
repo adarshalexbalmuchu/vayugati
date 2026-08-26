@@ -79,9 +79,8 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
                     "breakdown":  r["breakdown"],
                     "confidence": r["confidence"],
                     "method":     _METHOD,
-                    # regional_fraction_prior: IITK 2016 city-level context,
-                    # stored in the attributions row for the UI to surface.
                     "regional_fraction_prior": r.get("regional_fraction_prior"),
+                    "regional_fire_index":     r.get("regional_fire_index"),
                 },
             )
             summary["wards_attributed"] += 1

@@ -210,6 +210,22 @@ export default function SelectedWardPanel({
                 ~{Math.round(vayuTraceAttribution.regional_fraction_prior * 100)}% of city PM₂.₅ is regional/upwind transport (IITK 2016) — not captured above
               </p>
             )}
+            {vayuTraceAttribution.regional_fire_index != null &&
+              vayuTraceAttribution.regional_fire_index > 0.05 && (
+              <div className="mt-1 flex items-center gap-1.5 rounded-md bg-orange-50 px-2 py-1">
+                <span className="text-[10px] text-orange-700 font-medium">
+                  {vayuTraceAttribution.regional_fire_index >= 0.4
+                    ? '🔥 Active burning episode'
+                    : '⚠ Regional fire transport'}
+                </span>
+                <span className="text-[10px] text-orange-500 tabular-nums">
+                  {Math.round(vayuTraceAttribution.regional_fire_index * 100)}% index
+                </span>
+                <span className="text-[10px] text-orange-400">
+                  — Punjab/Haryana/UP smoke detected upwind
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <p className="mt-1 text-xs text-slate-400">No source-mix estimate yet for this ward.</p>

@@ -153,6 +153,16 @@ MAX_CONFIDENT_DIST_KM: float = 15.0
 # Minimum number of emission sources to attempt attribution.
 MIN_SOURCES: int = 1
 
+# -- Regional fire transport model constants --
+# Aerosol aging / deposition half-life for transported smoke, in hours.
+# Literature range: 12–48 h depending on aerosol type and humidity.
+# 24 h is the SAFAR/IITM midpoint for IGP biomass burning aerosol.
+TRANSPORT_HALFLIFE_H: float = 24.0
+
+# Delhi centroid for computing fire travel distances (matches vayutrace_firms.py)
+_DELHI_LAT: float = 28.65
+_DELHI_LNG: float = 77.22
+
 
 def seasonal_sigma_km(month: int) -> float:
     """Return the appropriate Gaussian decay length for the given calendar month.
@@ -176,6 +186,92 @@ def regional_transport_prior(month: int) -> float:
     background is outside the kernel's scope.
     """
     return REGIONAL_FRACTION_WINTER if month in _WINTER_MONTHS else REGIONAL_FRACTION_SUMMER
+
+
+def regional_fire_transport_index(
+    regional_fires: list[dict],
+    wind_from_dir_deg: float,
+    wind_speed_ms: float,
+    target_lat: float = _DELHI_LAT,
+    target_lng: float = _DELHI_LNG,
+) -> float:
+    """Estimate how much regional fire smoke is currently being transported
+    toward *target* (default: Delhi centroid) from the IGP airshed.
+
+    This is NOT a Gaussian decay model — regional fires are 50–500 km away,
+    where Gaussian decay produces effectively zero weight.  Instead it uses
+    a travel-time transport model grounded in HYSPLIT back-trajectory
+    literature and SAFAR/IITM fire-episode analyses:
+
+        contribution = FRP × wind_alignment × exp(-travel_time / τ)
+
+    where:
+        FRP            — fire radiative power (MW) from FIRMS VIIRS, a proxy
+                         for smoke emission rate
+        wind_alignment — max(0, cos(Δθ)): how well is the wind blowing THIS
+                         fire's smoke toward the target?  Uses the same calm-
+                         wind blending as _wind_factor() for consistency.
+        travel_time    — distance_km / wind_speed_kmh  (hours of transit)
+        τ              — TRANSPORT_HALFLIFE_H = 24 h (SAFAR/IITM midpoint for
+                         IGP biomass burning aerosol aging + dry deposition)
+
+    The index is normalised by the maximum theoretically possible score
+    (a 50 MW fire at 50 km with perfect wind alignment and zero travel time)
+    so that it is always in [0, 1].
+
+    Returns 0.0 when:
+    - no regional fires exist (clear-air day)
+    - wind is calm AND fires are beyond 200 km (transport physically unlikely
+      regardless of alignment)
+    - all fires are downwind of the target
+
+    Interpretation for the UI:
+        0.00–0.10  → negligible regional fire transport
+        0.10–0.40  → moderate (some contribution, typical shoulder-season)
+        0.40–1.00  → strong (active Punjab/Haryana burning episode)
+    """
+    if not regional_fires:
+        return 0.0
+
+    # Calm wind check: if wind < 1 m/s, long-range transport is effectively
+    # stalled — a fire 300 km away at 0.5 m/s would take 167 hours,
+    # far beyond the 24 h aerosol halflife.  Cap travel-time decay.
+    effective_speed = max(wind_speed_ms, 0.5)  # never fully zero for travel-time calc
+
+    total = 0.0
+    for f in regional_fires:
+        frp = float(f.get("frp") or max(0, float(f.get("brightness", 300)) - 270))
+        if frp <= 0:
+            continue
+        flat = float(f.get("lat") or f.get("latitude", 0))
+        flng = float(f.get("lng") or f.get("longitude", 0))
+
+        dist_km = _haversine_km(flat, flng, target_lat, target_lng)
+        if dist_km < 1:
+            continue
+
+        # Bearing FROM fire TO target (the direction smoke must travel)
+        bearing_to_target = _bearing_deg(flat, flng, target_lat, target_lng)
+
+        # Wind alignment: does current wind carry smoke from fire toward target?
+        alignment = _wind_factor(bearing_to_target, wind_from_dir_deg, wind_speed_ms)
+
+        # Travel time decay: smoke from 300 km at 3 m/s takes ~28 h → exp(-28/24) ≈ 0.31
+        speed_kmh = effective_speed * 3.6
+        travel_h  = dist_km / speed_kmh
+        transport_decay = math.exp(-travel_h / TRANSPORT_HALFLIFE_H)
+
+        total += frp * alignment * transport_decay
+
+    # Normalise against a reference scenario: 50 MW fire at threshold distance
+    # (50 km) with perfect wind alignment (factor = 1 + speed/10) and no decay.
+    ref_frp    = 50.0
+    ref_align  = 1.0 + wind_speed_ms / 10.0  # max directional alignment
+    normaliser = ref_frp * ref_align          # decay is 1.0 at zero distance
+
+    if normaliser <= 0:
+        return 0.0
+    return float(np.clip(total / normaliser, 0.0, 1.0))
 
 
 # -- Geometry helpers ─────────────────────────────────────────────────────────
@@ -294,20 +390,24 @@ def run_kernel(
     cpcb_stations: list[dict] | None = None,
     sigma_km: float = DEFAULT_SIGMA_KM,
     month: int | None = None,
+    regional_fire_sources: list[dict] | None = None,
 ) -> list[dict]:
     """Compute estimated source contributions for every ward.
 
     Args:
-        wards           — [{id, lat, lng, ...}, ...]  (DB ward rows)
-        weather         — {ward_id: {wind_dir, wind_speed, ...}} current met
-        industrial_sources — from vayutrace_industrial_zones.zones_as_dicts()
-        fire_sources    — from vayutrace_firms.fetch_delhi_fires()
-        road_sources    — from vayutrace_osm_roads.load_delhi_roads()
-        cpcb_stations   — [{id, ward_id, lat, lng}, ...] for confidence signal
-        sigma_km        — Gaussian decay length (km); if None and month is
-                          provided, seasonal_sigma_km(month) is used instead.
-        month           — calendar month (1–12) for season-aware σ and
-                          regional transport prior; defaults to current UTC month.
+        wards                — [{id, lat, lng, ...}, ...]  (DB ward rows)
+        weather              — {ward_id: {wind_dir, wind_speed, ...}} current met
+        industrial_sources   — from vayutrace_industrial_zones.zones_as_dicts()
+        fire_sources         — local fires (< 50 km) from vayutrace_firms
+        road_sources         — from vayutrace_osm_roads.load_delhi_roads()
+        cpcb_stations        — [{id, ward_id, lat, lng}, ...] for confidence
+        sigma_km             — Gaussian decay length (km); if == DEFAULT_SIGMA_KM,
+                               seasonal_sigma_km(month) is used instead.
+        month                — calendar month (1–12); defaults to current UTC month.
+        regional_fire_sources — fires ≥ 50 km from Delhi (Punjab/Haryana/UP);
+                               modelled with travel-time transport, not Gaussian.
+                               From vayutrace_firms.fetch_igp_fires() filtered
+                               to fire_class='regional'.
 
     Returns list of dicts, one per ward:
         {
@@ -315,14 +415,15 @@ def run_kernel(
           breakdown: {
               "industrial": float,   # 0–1, fraction of estimated local PM load
               "road":       float,
-              "fire":       float,
-              "unknown":    float,   # residual; 0 when sources cover 100%
+              "fire":       float,   # local fires only
+              "unknown":    float,   # always 0 — forward model
           },
-          confidence: float,   # 0–1; higher near CPCB stations
-          regional_fraction_prior: float,  # IITK 2016 city-level regional %
+          confidence: float,              # 0–1; higher near CPCB stations
+          regional_fraction_prior: float, # IITK 2016 city-level background %
+          regional_fire_index: float,     # 0–1; current IGP fire transport load
           method: "vayutrace_v1",
           sigma_km: float,
-          source_counts: {industrial, fire, road},
+          source_counts: {industrial, fire, road, regional_fire},
         }
     """
     # Resolve season-aware sigma and regional transport prior
@@ -398,6 +499,18 @@ def run_kernel(
         breakdown = {k: round(v / total, 4) for k, v in contributions.items()}
         breakdown["unknown"] = 0.0  # forward model has no residual by design
 
+        # Regional fire transport index for this ward's wind conditions
+        reg_fire_idx = round(
+            regional_fire_transport_index(
+                regional_fire_sources or [],
+                wind_dir,
+                wind_speed,
+                target_lat=wlat,
+                target_lng=wlng,
+            ),
+            3,
+        )
+
         # Confidence: inverse distance to nearest CPCB station
         if cpcb_stations:
             min_dist = min(
@@ -413,12 +526,14 @@ def run_kernel(
             "breakdown": breakdown,
             "confidence": round(confidence, 3),
             "regional_fraction_prior": reg_prior,
+            "regional_fire_index": reg_fire_idx,
             "method": "vayutrace_v1",
             "sigma_km": effective_sigma,
             "source_counts": {
                 "industrial": len(industrial_sources),
                 "fire":       len(fire_sources),
-                "road":       len(road_sources),
+                "road":          len(road_sources),
+                "regional_fire": len(regional_fire_sources or []),
             },
         })
 
@@ -446,30 +561,38 @@ def estimate_city(
         month — calendar month (1–12); if omitted, current UTC month is used.
                 Drives season-aware sigma selection and regional transport prior.
     """
-    from .vayutrace_industrial_zones import zones_as_dicts  # noqa: PLC0415
-    from .vayutrace_firms import fetch_delhi_fires           # noqa: PLC0415
-    from .vayutrace_osm_roads import load_delhi_roads        # noqa: PLC0415
+    from .vayutrace_industrial_zones import zones_as_dicts          # noqa: PLC0415
+    from .vayutrace_firms import fetch_igp_fires                    # noqa: PLC0415
+    from .vayutrace_osm_roads import load_delhi_roads               # noqa: PLC0415
 
     if month is None:
         from datetime import datetime, timezone  # noqa: PLC0415
         month = datetime.now(timezone.utc).month
 
     industrial = zones_as_dicts()
-    fires = fetch_delhi_fires(day=firms_date)
-    roads = load_delhi_roads()
+    roads      = load_delhi_roads()
+
+    # Fetch the full IGP airshed (Punjab, Haryana, UP, Rajasthan) and split
+    # into local fires (< 50 km, Gaussian kernel) and regional fires (≥ 50 km,
+    # travel-time transport index).
+    igp_fires      = fetch_igp_fires(day=firms_date)
+    local_fires    = [f for f in igp_fires if f.get("fire_class") == "local"]
+    regional_fires = [f for f in igp_fires if f.get("fire_class") == "regional"]
 
     log.info(
         "vayutrace_kernel estimate_city: month=%d sigma=%s km, "
-        "%d industrial zones, %d fire hotspots, %d road segments",
-        month, seasonal_sigma_km(month), len(industrial), len(fires), len(roads),
+        "%d industrial, %d local fires, %d regional IGP fires, %d road segments",
+        month, seasonal_sigma_km(month),
+        len(industrial), len(local_fires), len(regional_fires), len(roads),
     )
 
     return run_kernel(
         wards=wards,
         weather=weather_by_ward,
         industrial_sources=industrial,
-        fire_sources=fires,
+        fire_sources=local_fires,
         road_sources=roads,
         sigma_km=sigma_km,
         month=month,
+        regional_fire_sources=regional_fires,
     )

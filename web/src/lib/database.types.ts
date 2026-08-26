@@ -397,6 +397,7 @@ export type Database = {
           id: number
           method: string | null
           regional_fraction_prior: number | null
+          regional_fire_index: number | null
           ts: string
           ward_id: number
         }
@@ -407,6 +408,7 @@ export type Database = {
           id?: number
           method?: string | null
           regional_fraction_prior?: number | null
+          regional_fire_index?: number | null
           ts?: string
           ward_id: number
         }
@@ -417,6 +419,7 @@ export type Database = {
           id?: number
           method?: string | null
           regional_fraction_prior?: number | null
+          regional_fire_index?: number | null
           ts?: string
           ward_id?: number
         }
