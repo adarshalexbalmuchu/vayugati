@@ -33,8 +33,9 @@ from app.isrm_kernel import (
 
 class TestIndustrialZones:
     def test_count(self):
-        assert len(INDUSTRIAL_ZONES) == 16, (
-            "Expected exactly 16 MSME-listed industrial zones"
+        # 29 planned + 4 flatted factory + 27 non-conforming = 60
+        assert len(INDUSTRIAL_ZONES) == 60, (
+            f"Expected 60 zones (29 planned + 4 FFC + 27 non-conforming), got {len(INDUSTRIAL_ZONES)}"
         )
 
     def test_all_in_delhi_bbox(self):
@@ -66,7 +67,13 @@ class TestIndustrialZones:
             assert d["source_type"] == "industrial"
 
     def test_all_zones_returns_full_list(self):
-        assert len(all_zones()) == 16
+        assert len(all_zones()) == 60
+
+    def test_category_counts(self):
+        from app.isrm_industrial_zones import zones_by_category
+        assert len(zones_by_category("planned")) == 29
+        assert len(zones_by_category("flatted_factory")) == 4
+        assert len(zones_by_category("non_conforming")) == 27
 
 
 # ── Sector priors ─────────────────────────────────────────────────────────────
