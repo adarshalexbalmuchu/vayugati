@@ -303,31 +303,69 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
-def _max_8h_rolling_avg(values: list[float], window_readings: int = 8) -> float:
-    """Maximum of all possible 8-hour rolling averages from a time-ordered series.
-    CPCB's National AQI methodology uses this window for O3 and CO instead of
-    a 24h simple average — the highest 8h mean is what drives the sub-index.
-    window_readings: number of readings that span 8 hours (8 for hourly, 32 for 15-min)."""
-    n = len(values)
+def _max_8h_rolling_avg(hourly_means: list[float]) -> float:
+    """Maximum of all 8-hour rolling averages from a time-ordered list of
+    HOURLY MEANS (one value per clock-hour). CPCB uses this window for O3
+    and CO instead of a 24h simple average.
+
+    Callers must pass hourly-aggregated values — NOT raw readings — so that
+    each clock-hour has equal weight regardless of intra-hour reporting frequency.
+    Returns 0.0 when the list is empty; the minimum-hours check in the caller
+    prevents this from feeding into AQI when coverage is insufficient."""
+    n = len(hourly_means)
     if n == 0:
         return 0.0
-    window = min(window_readings, n)
+    window = min(8, n)
     best = 0.0
     for i in range(n - window + 1):
-        avg = sum(values[i : i + window]) / window
+        avg = sum(hourly_means[i : i + window]) / window
         if avg > best:
             best = avg
     return best
 
 
+# CPCB National AQI 2014 Technical Document, Appendix I (Data Availability Criteria):
+# "A valid 24h AQI requires data for at least 75% of the averaging period."
+# 75% × 24h = 16 clock-hours; 75% × 8h window = 6 clock-hours (O3/CO).
+# Below these thresholds CPCB marks the AQI as "Insufficient Data" — we
+# return nothing for that pollutant so it doesn't inflate the max sub-index.
+_MIN_HOURS_24H: int = 16
+_MIN_HOURS_8H: int = 6
+
+import logging as _log_module
+_db_log = _log_module.getLogger("ingest.db")
+
+
 def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
     """Per-station concentrations for AQI recomputation, matching CPCB's exact
-    averaging methodology:
-      PM2.5 / PM10 / NO2 / SO2 / NH3 → 24-hour simple average
-      O3 / CO                         → maximum 8-hour rolling average
+    averaging methodology AND minimum data-availability requirements:
 
-    CO is normalised to mg/m³ (CPCB stores mg/m³, OpenAQ µg/m³ tagged by
-    ingest_source) so the caller can pass it directly as co_mg to compute_aqi()."""
+      PM2.5 / PM10 / NO2 / SO2 / NH3:
+        24h simple average of hourly means, minimum 16 distinct clock-hours.
+      O3 / CO:
+        Maximum 8h rolling average of hourly means, minimum 6 distinct clock-hours.
+
+    WHY HOURLY AGGREGATION MATTERS
+    ──────────────────────────────
+    The ingest cycle runs every 15 min, so a station that reports once per hour
+    generates 4 identical readings in our DB for that hour. Without aggregation,
+    each reading gets equal weight and hours with 4 reads dominate hours with 1.
+    More critically, DPCC stations frequently go offline 11 PM–7 AM (maintenance/
+    power), so the DB holds only the high-PM2.5 daytime readings. Averaging raw
+    readings gives a daytime-biased "24h average" that is 30–80 AQI units higher
+    than CPCB's true 24h figure — which includes overnight clean-air periods.
+    Aggregating to one value per clock-hour before averaging assigns equal weight
+    to every hour of the day, matching CPCB's calculation.
+
+    WHY THE MINIMUM-HOURS CHECK MATTERS
+    ─────────────────────────────────────
+    CPCB requires 75% data availability (16/24 hours) before computing AQI.
+    A station with only 4–6 hours of peak-morning readings yields a "24h average"
+    that is the average of the worst hours of the day — not a meaningful 24h value.
+    Below the minimum, the pollutant is excluded from AQI so its sub-index is
+    absent rather than artificially inflated by sparse coverage.
+
+    CO is normalised to mg/m³ before windowing (CPCB stores mg/m³; OpenAQ µg/m³)."""
     if not station_ids:
         return {}
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
@@ -340,45 +378,64 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
         .execute()
     ).data or []
 
-    # Group time-ordered rows per station for rolling-window computation
     by_station: dict[int, list[dict]] = {}
     for row in rows:
         by_station.setdefault(row["station_id"], []).append(row)
 
     result: dict[int, dict] = {}
     for sid, readings in by_station.items():
-        avg: dict[str, float] = {}
-
-        # Detect reading interval so the 8h rolling window covers 8 real hours.
-        # Hourly data → window_8h=8 readings; 15-min data → window_8h=32 readings.
-        window_8h = 8
-        if len(readings) >= 2:
-            t0 = datetime.fromisoformat(readings[0]["ts"].replace("Z", "+00:00"))
-            t1 = datetime.fromisoformat(readings[1]["ts"].replace("Z", "+00:00"))
-            interval_min = abs((t1 - t0).total_seconds() / 60)
-            if interval_min >= 1:
-                window_8h = max(1, round(480 / interval_min))
-
-        # 24h simple average — PM2.5 / PM10 / NO2 / SO2 / NH3
-        for col in ("pm25", "pm10", "no2", "so2", "nh3"):
-            vals = [r[col] for r in readings if r.get(col) is not None]
-            if vals:
-                avg[col] = sum(vals) / len(vals)
-
-        # 8h rolling maximum — O3 (CPCB: highest 8h running average in the day)
-        o3_vals = [r["o3"] for r in readings if r.get("o3") is not None]
-        if o3_vals:
-            avg["o3"] = _max_8h_rolling_avg(o3_vals, window_8h)
-
-        # 8h rolling maximum — CO (normalised to mg/m³ before windowing)
-        co_vals: list[float] = []
+        # ── Step 1: aggregate to one value per clock-hour per pollutant ──────
+        # hr_key = ts[:13] e.g. "2026-08-26T14" — unique per UTC hour.
+        hourly_buckets: dict[str, dict[str, list[float]]] = {}
         for r in readings:
+            hr_key = (r.get("ts") or "")[:13]
+            if not hr_key:
+                continue
+            bucket = hourly_buckets.setdefault(hr_key, {})
+            for col in ("pm25", "pm10", "no2", "so2", "nh3", "o3"):
+                v = r.get(col)
+                if v is not None:
+                    bucket.setdefault(col, []).append(float(v))
             co = r.get("co")
             if co is not None:
                 source = r.get("ingest_source") or "openaq"
-                co_vals.append(co if source == "cpcb" else co / 1000.0)
-        if co_vals:
-            avg["co"] = _max_8h_rolling_avg(co_vals, window_8h)
+                co_mg = float(co) if source == "cpcb" else float(co) / 1000.0
+                bucket.setdefault("co", []).append(co_mg)
+
+        # ── Step 2: mean within each clock-hour (one float per hour) ─────────
+        # sorted() ensures the hourly_means list is time-ordered (required by
+        # the 8h rolling window computation).
+        hourly_means: dict[str, list[float]] = {}
+        for hr_key in sorted(hourly_buckets):
+            for col, vals in hourly_buckets[hr_key].items():
+                if vals:
+                    hourly_means.setdefault(col, []).append(sum(vals) / len(vals))
+
+        # ── Step 3: 24h simple average with minimum-hours check ───────────────
+        # Pollutants with fewer than _MIN_HOURS_24H are returned as absent (not
+        # None) so compute_aqi() ignores them rather than treating 0 as a real
+        # reading. Logs a debug line so low-coverage stations are diagnosable.
+        avg: dict[str, float] = {}
+        for col in ("pm25", "pm10", "no2", "so2", "nh3"):
+            hrs = hourly_means.get(col, [])
+            if len(hrs) >= _MIN_HOURS_24H:
+                avg[col] = sum(hrs) / len(hrs)
+            elif hrs:
+                _db_log.debug(
+                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 24h AQI",
+                    sid, col, len(hrs), _MIN_HOURS_24H,
+                )
+
+        # ── Step 4: max 8h rolling average (O3, CO) on hourly means ──────────
+        for col in ("o3", "co"):
+            hrs = hourly_means.get(col, [])
+            if len(hrs) >= _MIN_HOURS_8H:
+                avg[col] = _max_8h_rolling_avg(hrs)
+            elif hrs:
+                _db_log.debug(
+                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 8h AQI",
+                    sid, col, len(hrs), _MIN_HOURS_8H,
+                )
 
         result[sid] = avg
     return result

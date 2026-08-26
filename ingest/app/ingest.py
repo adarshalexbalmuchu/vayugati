@@ -30,6 +30,23 @@ def get_last_cpcb_fetch() -> tuple[dict, dict] | None:
 # the IST convention that CPCB's live feed uses.
 _IST = timezone(timedelta(hours=5, minutes=30))
 
+# Upper plausibility limits for pollutant concentrations. Any value above
+# these is treated as a sensor malfunction or CPCB feed error and dropped
+# rather than stored — otherwise one faulty reading inflates the 24h average.
+# Limits are intentionally generous (roughly 2–3× the highest CPCB breakpoint)
+# to preserve genuine extreme events (Diwali PM2.5 to ~999 µg/m³, dust-storm
+# PM10) while filtering obvious instrument failures (PM2.5 = 5000 µg/m³).
+# Source: CPCB National AQI 2014 breakpoints; SAFAR/IMD CAAQMS QC guidelines.
+_CONC_MAX_UGM3: dict[str, float] = {
+    "pm25": 999.9,    # µg/m³  (AQI-500 entry = 380; 999 observed on extreme Diwali nights)
+    "pm10": 1999.9,   # µg/m³  (AQI-500 entry = 600; 2000 during severe dust storms)
+    "no2":  1999.9,   # µg/m³
+    "so2":  4999.9,   # µg/m³
+    "o3":   1999.9,   # µg/m³
+    "nh3":  4999.9,   # µg/m³
+}
+_CO_MAX_MG: float = 99.9  # mg/m³  (AQI-500 entry = 48 mg/m³)
+
 
 def _15min_floor_utc(ts_iso: str) -> str:
     dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -148,6 +165,28 @@ def _ingest_from_cpcb(
             co_mg = co_val if co_raw.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
             row["co"] = co_mg  # always store as mg/m³ so 24h-avg recompute is unit-consistent
 
+        # ── Concentration range validation ────────────────────────────────────
+        # Drop physically impossible values (instrument malfunction / CPCB feed
+        # error) before storing or computing AQI. Even one extreme outlier in
+        # the 24h rolling average can inflate AQI by hundreds of units.
+        # The check happens AFTER CO unit conversion so co is already in mg/m³.
+        for _col, _limit in _CONC_MAX_UGM3.items():
+            _v = row.get(_col)
+            if _v is not None and _v > _limit:
+                log.warning(
+                    "CPCB out-of-range %s=%.1f µg/m³ at %r %s — dropped (limit %.1f)",
+                    _col, _v, cpcb_name, ts_hour, _limit,
+                )
+                row.pop(_col)
+        _co_v = row.get("co")
+        if _co_v is not None and _co_v > _CO_MAX_MG:
+            log.warning(
+                "CPCB out-of-range co=%.2f mg/m³ at %r %s — dropped (limit %.1f)",
+                _co_v, cpcb_name, ts_hour, _CO_MAX_MG,
+            )
+            row.pop("co")
+        co_mg = row.get("co")   # refresh after possible drop
+
         # Snapshot AQI (current hour only) — stored initially, overwritten below
         # by the 24h-average AQI which matches CPCB's official methodology.
         computed_aqi = aqi.compute_aqi(
@@ -180,14 +219,28 @@ def _ingest_from_cpcb(
 
 
 def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
-    """Recompute AQI for just-written rows using the 24h rolling average of
-    concentrations, then patch the reading with the corrected value.
+    """Recompute AQI for just-written rows using the time-weighted 24h average
+    of concentrations, then patch the reading with the corrected value.
 
-    CPCB's AQI breakpoints (PM2.5: 0–30 Good, 30–60 Satisfactory, etc.) are
-    calibrated for 24h averages, not the hourly snapshot the data.gov.in API
-    delivers as avg_value. Using hourly values produces AQI 1.5–3× higher than
-    CPCB's website for the same station on the same day. This step brings our
-    displayed AQI in line with the official figure."""
+    WHY THIS IS NECESSARY
+    ─────────────────────
+    CPCB's AQI breakpoints are calibrated for 24h time-averaged concentrations.
+    The data.gov.in API's avg_value is a short-period snapshot (15 min–1 h),
+    NOT a 24h average. Computing AQI from the snapshot produces values 1.5–3×
+    higher than the CPCB portal's figure for the same station and time.
+
+    WHAT get_24h_avg_concentrations() NOW DOES (corrected methodology)
+    ───────────────────────────────────────────────────────────────────
+    1. Groups all stored readings into one mean per UTC clock-hour (prevents
+       daytime-heavy reporting bias — DPCC stations often go offline 11 PM–7 AM,
+       and without hourly aggregation, daytime readings dominate the average).
+    2. Computes the 24h simple average across the clock-hour means (equal weight
+       per hour of the day, matching CPCB's methodology).
+    3. Applies the CPCB minimum data-availability rule: 16+ distinct hours for
+       PM2.5/PM10/NO2/SO2/NH3; 6+ for O3/CO. Below these thresholds the pollutant
+       is excluded from AQI (marked as absent, not 0) — same behaviour as CPCB's
+       portal which shows "Insufficient Data" rather than an inflated AQI.
+    Source: CPCB National AQI 2014 Technical Document, Appendix I."""
     if not station_ts:
         return 0
     avgs = db.get_24h_avg_concentrations(list(station_ts.keys()))
@@ -231,6 +284,22 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
         col = openaq.PARAMS.get(param or "")
         if col is None or m["value"] is None or m["value"] < 0:
             continue
+        # OpenAQ range validation — same limits as the CPCB path.
+        # CO from OpenAQ is in µg/m³; convert limit to µg/m³ for comparison.
+        if col in _CONC_MAX_UGM3 and m["value"] > _CONC_MAX_UGM3[col]:
+            log.warning(
+                "OpenAQ out-of-range %s=%.1f µg/m³ for station_id=%s — dropped",
+                col, m["value"], station_id,
+            )
+            continue
+        if col == "co":
+            co_ug = m["value"]
+            if aqi.co_ug_to_mg(co_ug) > _CO_MAX_MG:
+                log.warning(
+                    "OpenAQ out-of-range co=%.1f µg/m³ (%.2f mg/m³) for station_id=%s — dropped",
+                    co_ug, aqi.co_ug_to_mg(co_ug), station_id,
+                )
+                continue
         ts = _hour_floor_utc(m["ts_utc"])
         by_hour.setdefault(ts, {})[col] = m["value"]
 
