@@ -1,0 +1,88 @@
+"""ISRM-style source-attribution runner — integrates with the intel cycle.
+
+Deliberately thin, matching the style of attribution.py and source_attribution.py:
+all the modelling logic lives in isrm_kernel.py; this module's only job is to
+load the inputs, call the kernel, and write the results to the DB.
+
+Outputs are ESTIMATED/MODELLED source contributions (forward model: emissions →
+predicted concentration), not detected or measured ones.  See isrm_kernel.py's
+module docstring for the full method description.
+
+Run order in main.py's run_intel():
+  forecast → attribution (wind-rose) → anomaly_detection → source_attribution →
+  isrm_attribution (NEW — runs last, reads fresh readings/weather, no dependents)
+"""
+
+import logging
+from datetime import datetime, timezone
+
+from . import db
+from .isrm_kernel import DEFAULT_SIGMA_KM, estimate_city
+
+log = logging.getLogger("ingest.isrm_attribution")
+
+_METHOD = "isrm_kernel_v1"
+
+
+def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
+    """Run the ISRM dispersion kernel for all Delhi wards and persist results.
+
+    Returns a summary dict matching the shape of other run_tracked() callers:
+        {started_at, finished_at, wards_attributed, wards_skipped, sigma_km}
+    """
+    summary: dict = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "wards_attributed": 0,
+        "wards_skipped": 0,
+        "sigma_km": sigma_km,
+    }
+
+    wards = db.get_wards_with_city()
+    if not wards:
+        log.warning("isrm_attribution: no wards found — skipping")
+        summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+        return summary
+
+    weather_by_ward = db.get_latest_weather_by_ward()
+    if not weather_by_ward:
+        log.warning("isrm_attribution: no weather data found — kernel will use calm-wind defaults")
+
+    stations = db.get_stations_with_coords()
+
+    results = estimate_city(
+        wards=wards,
+        weather_by_ward=weather_by_ward,
+        sigma_km=sigma_km,
+    )
+
+    if not results:
+        log.warning("isrm_attribution: kernel returned no results (no source inventory?)")
+        summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+        return summary
+
+    ts_now = datetime.now(timezone.utc).isoformat()
+
+    for r in results:
+        ward_id = r["ward_id"]
+        try:
+            db.replace_attribution_by_method(
+                ward_id,
+                _METHOD,
+                {
+                    "ward_id":    ward_id,
+                    "ts":         ts_now,
+                    "breakdown":  r["breakdown"],
+                    "confidence": r["confidence"],
+                    "method":     _METHOD,
+                    # extra metadata stored in breakdown JSONB (Postgres accepts it)
+                    # — kept flat so the existing attributions query still works.
+                },
+            )
+            summary["wards_attributed"] += 1
+        except Exception:
+            log.exception("isrm_attribution: failed to save ward_id=%s", ward_id)
+            summary["wards_skipped"] += 1
+
+    summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+    log.info("isrm_attribution done: %s", summary)
+    return summary

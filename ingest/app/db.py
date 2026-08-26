@@ -439,6 +439,63 @@ def replace_attribution(ward_id: int, row: dict) -> None:
     _with_retry(lambda: client().table("attributions").insert(row).execute())
 
 
+def replace_attribution_by_method(ward_id: int, method: str, row: dict) -> None:
+    """Keep one current attribution per (ward_id, method) pair.
+
+    Unlike replace_attribution() which deletes ALL attributions for a ward,
+    this only replaces rows with the given method — so wind-rose (pollution_rose_v1)
+    and ISRM kernel (isrm_kernel_v1) results coexist in the same table without
+    overwriting each other.
+    """
+    _with_retry(
+        lambda: client()
+        .table("attributions")
+        .delete()
+        .eq("ward_id", ward_id)
+        .eq("method", method)
+        .execute()
+    )
+    _with_retry(lambda: client().table("attributions").insert(row).execute())
+
+
+def get_stations_with_coords() -> list[dict]:
+    """[{id, ward_id, lat, lng}, ...] for stations that have coordinates.
+
+    Used by the ISRM kernel's confidence signal (distance to nearest monitoring
+    station). Stations without lat/lng are excluded — the kernel falls back to
+    0.5 confidence for wards with no nearby station on record."""
+    rows = (
+        client()
+        .table("stations")
+        .select("id, ward_id, lat, lng")
+        .not_.is_("lat", "null")
+        .not_.is_("lng", "null")
+        .execute()
+        .data
+    )
+    return rows
+
+
+def get_latest_weather_by_ward() -> dict[int, dict]:
+    """Most recent weather row per ward — {ward_id: {wind_dir, wind_speed, ...}}.
+
+    Used by the ISRM kernel which needs current met conditions, not the full
+    30-day history that the wind-rose attribution uses."""
+    rows = _fetch_all(
+        lambda: client()
+        .table("weather")
+        .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity")
+        .order("ts", desc=True)
+        .limit(500)  # more than enough wards; latest-per-ward extracted in Python
+    )
+    latest: dict[int, dict] = {}
+    for r in rows:
+        wid = r["ward_id"]
+        if wid not in latest:
+            latest[wid] = r
+    return latest
+
+
 # ── notifications (Phase 9) ──────────────────────────────────────────────────
 
 def get_pending_notifications(max_retries: int) -> list[dict]:

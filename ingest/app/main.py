@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import anomaly_detection, attribution
+from . import anomaly_detection, attribution, isrm_attribution
 from . import classify as classify_mod
 from . import (
     config,
@@ -143,11 +143,17 @@ def run_intel() -> dict:
         except Exception:
             logging.getLogger("ingest").exception("attribution (wind-rose) failed")
             attribution_result = None
+        try:
+            isrm_result = isrm_attribution.run()
+        except Exception:
+            logging.getLogger("ingest").exception("isrm_attribution (dispersion kernel) failed")
+            isrm_result = None
         _last_intel = {
             "forecast": forecast_result,
             "attribution": attribution_result,
             "anomaly_detection": run_tracked("anomaly_detection", anomaly_detection.run),
             "source_attribution": run_tracked("attribution", source_attribution.run),
+            "isrm_attribution": isrm_result,
         }
         return _last_intel
     finally:
