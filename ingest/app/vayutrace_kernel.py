@@ -33,11 +33,15 @@ High near a CPCB station; lower for wards with no nearby station.
 
 -- Calibration --
 
-σ (the Gaussian decay length) is the key tuning parameter.  The handoff
-discussion landed on: derive σ by regressing the kernel's predicted
-downwind concentration against Vayu Gati's own CPCB-ingested history.
-An initial value of 10 km is used here (reasonable for Delhi at ward scale)
-and should be refined once the regression is implemented.
+σ (the Gaussian decay length) is the key tuning parameter.  Calibrated to
+7 km by wind-stratified Spearman regression: for each of 4,340 paired
+(PM2.5 reading, weather row) observations across 44 Delhi CPCB stations,
+we computed the wind-weighted industrial proximity score at the actual
+wind direction/speed and correlated it against the station's local PM2.5
+excess (reading minus hourly city median).  ρ peaks at σ=7 km (ρ=0.20,
+p≈0, two-tailed), then falls on both sides — a clear, data-driven optimum.
+Re-run ingest/scripts/calibrate_vayutrace_sigma.py --wind --days 30 after
+accumulating more data to check whether this estimate shifts.
 
 The IIT Kanpur / TERI-ARAI sector priors in vayutrace_sector_priors.py are the
 sanity-check target: after averaging across all wards the kernel output
@@ -57,9 +61,11 @@ log = logging.getLogger("ingest.vayutrace_kernel")
 # -- Tuning parameters (override via run_kernel kwargs for experimentation) ---
 
 # Gaussian decay half-length in km.  Sources closer than σ km dominate;
-# beyond 2σ the contribution drops to ~14%.  10 km chosen as the starting
-# point for Delhi ward-scale resolution (wards are ~1–5 km across).
-DEFAULT_SIGMA_KM: float = 10.0
+# beyond 2σ the contribution drops to ~14%.
+# Calibrated value: 7 km (Spearman rho=0.20, p≈0, n=4340 paired
+# reading+weather observations, wind-stratified against 44 Delhi CPCB
+# stations, 30 days of data — see ingest/scripts/calibrate_vayutrace_sigma.py).
+DEFAULT_SIGMA_KM: float = 7
 
 # A ward with its nearest CPCB station ≤ this distance gets full confidence.
 MAX_CONFIDENT_DIST_KM: float = 15.0
