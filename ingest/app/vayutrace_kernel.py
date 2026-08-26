@@ -20,7 +20,8 @@ Where:
                       osm_roads / FIRMS brightness
     wind_factor     — cos(Δθ) component: how aligned is the wind with the
                       source-to-ward bearing?  Amplified by wind speed.
-    distance_decay  — Gaussian exp(-d²/2σ²), σ selected per season (see below).
+    distance_decay  — Gaussian exp(-d²/2σ²), σ selected per source type and
+                      season (see below).
 
 The raw contributions are normalised to sum to 1 across sources, then
 grouped by source type ("industrial", "road", "fire") to give a per-ward
@@ -104,13 +105,38 @@ log = logging.getLogger("ingest.vayutrace_kernel")
 
 # -- Tuning parameters (override via run_kernel kwargs for experimentation) ---
 
-# Season-aware Gaussian decay lengths (km).
+# Season-aware Gaussian decay lengths (km) — industrial / base sigma.
 # Winter (Oct–Feb): P-G class E-F stable, surface inversions → tight plumes.
 # Summer (Mar–Sep): P-G class D neutral, calibrated by wind-stratified Spearman
 #   regression (ρ=0.20, p≈0, n=4340 reading+weather pairs, 44 Delhi CPCB stations).
 SIGMA_WINTER_KM: float = 5.0   # Oct–Feb
 SIGMA_SUMMER_KM: float = 7.0   # Mar–Sep (Spearman-calibrated)
 DEFAULT_SIGMA_KM: float = SIGMA_SUMMER_KM  # backward-compat default
+
+# Per-source-type sigma overrides (km).
+#
+# Different source types have very different spatial scales:
+#
+#   road      — Vehicle emissions disperse within 200–500 m of the carriageway
+#               due to traffic turbulence (CERC ADMS-Urban documentation;
+#               TERI-ARAI 2018 Delhi study: vehicular contribution drops steeply
+#               beyond the first 500 m).  σ_road = 1 km (all seasons).
+#
+#   fire      — FIRMS VIIRS hotspots for Delhi/NCR are predominantly agricultural
+#               stubble burns in UP/Haryana, typically 20–100 km from Delhi wards.
+#               These are elevated combustion plumes that transport regionally
+#               (IMD/SAFAR fire-episode analyses; IITK 2016 winter sector
+#               breakdown: open burning 17–26%).  σ_fire = 20 km (all seasons).
+#
+#   industrial — Base seasonal sigma above (5 km winter / 7 km summer).
+#               Stack/area sources in DSIIDC estates; calibrated against CPCB.
+#
+# When sigma_km is passed explicitly (override for experiments), per-type
+# overrides are still applied as multipliers relative to the seasonal base,
+# preserving the caller's intent while keeping physical ratios correct.
+
+SIGMA_ROAD_KM: float = 1.0     # all seasons — highly local
+SIGMA_FIRE_KM: float = 20.0    # all seasons — regional transport typical
 
 # IITK 2016 + TERI-ARAI 2018 regional transport fractions (city-level prior).
 # Surfaced in kernel output as `regional_fraction_prior` for UI context only —
@@ -348,9 +374,16 @@ def run_kernel(
             dist = _haversine_km(wlat, wlng, s["lat"], s["lng"])
             bearing = _bearing_deg(s["lat"], s["lng"], wlat, wlng)
             wf = _wind_factor(bearing, wind_dir, wind_speed)
-            dd = _distance_decay(dist, effective_sigma)
-            score = s["_ew"] * wf * dd
             stype = s["source_type"]
+            # Per-type sigma: roads are hyperlocal, fires are regional.
+            if stype == "road":
+                sigma = SIGMA_ROAD_KM
+            elif stype == "fire":
+                sigma = SIGMA_FIRE_KM
+            else:
+                sigma = effective_sigma  # industrial — seasonal
+            dd = _distance_decay(dist, sigma)
+            score = s["_ew"] * wf * dd
             if stype in acc:
                 acc[stype].append(score)
             else:
