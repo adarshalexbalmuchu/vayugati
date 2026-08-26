@@ -39,7 +39,7 @@ downwind concentration against Vayu Gati's own CPCB-ingested history.
 An initial value of 10 km is used here (reasonable for Delhi at ward scale)
 and should be refined once the regression is implemented.
 
-The IIT Kanpur / TERI-ARAI sector priors in isrm_sector_priors.py are the
+The IIT Kanpur / TERI-ARAI sector priors in vayutrace_sector_priors.py are the
 sanity-check target: after averaging across all wards the kernel output
 should roughly match the city-level published sector percentages.
 """
@@ -52,7 +52,7 @@ from typing import Any
 
 import numpy as np
 
-log = logging.getLogger("ingest.isrm_kernel")
+log = logging.getLogger("ingest.vayutrace_kernel")
 
 # -- Tuning parameters (override via run_kernel kwargs for experimentation) ---
 
@@ -154,9 +154,9 @@ def run_kernel(
     Args:
         wards           — [{id, lat, lng, ...}, ...]  (DB ward rows)
         weather         — {ward_id: {wind_dir, wind_speed, ...}} current met
-        industrial_sources — from isrm_industrial_zones.zones_as_dicts()
-        fire_sources    — from isrm_firms.fetch_delhi_fires()
-        road_sources    — from isrm_osm_roads.load_delhi_roads()
+        industrial_sources — from vayutrace_industrial_zones.zones_as_dicts()
+        fire_sources    — from vayutrace_firms.fetch_delhi_fires()
+        road_sources    — from vayutrace_osm_roads.load_delhi_roads()
         cpcb_stations   — [{id, ward_id, lat, lng}, ...] for confidence signal
         sigma_km        — Gaussian decay length (km)
 
@@ -170,7 +170,7 @@ def run_kernel(
               "unknown":    float,   # residual; 0 when sources cover 100%
           },
           confidence: float,   # 0–1; higher near CPCB stations
-          method: "isrm_kernel_v1",
+          method: "vayutrace_v1",
           sigma_km: float,
           source_counts: {industrial, fire, road},
         }
@@ -188,7 +188,7 @@ def run_kernel(
                              "_ew": float(s.get("emission_weight", 1))})
 
     if len(all_sources) < MIN_SOURCES:
-        log.warning("isrm_kernel: fewer than %d sources — returning empty results", MIN_SOURCES)
+        log.warning("vayutrace_kernel: fewer than %d sources — returning empty results", MIN_SOURCES)
         return []
 
     # Pre-compute source coordinates as arrays for vectorised distance
@@ -248,7 +248,7 @@ def run_kernel(
             "ward_id": wid,
             "breakdown": breakdown,
             "confidence": round(confidence, 3),
-            "method": "isrm_kernel_v1",
+            "method": "vayutrace_v1",
             "sigma_km": sigma_km,
             "source_counts": {
                 "industrial": len(industrial_sources),
@@ -272,20 +272,20 @@ def estimate_city(
     """High-level convenience wrapper: loads all source inventories and runs
     the kernel.  Returns the same list as run_kernel().
 
-    This is the function isrm_attribution.py (or main.py) should call.
+    This is the function vayutrace_attribution.py (or main.py) should call.
     Each sub-import is guarded so a missing .pbf or absent FIRMS key
     degrades gracefully rather than failing the whole intel cycle.
     """
-    from .isrm_industrial_zones import zones_as_dicts  # noqa: PLC0415
-    from .isrm_firms import fetch_delhi_fires           # noqa: PLC0415
-    from .isrm_osm_roads import load_delhi_roads        # noqa: PLC0415
+    from .vayutrace_industrial_zones import zones_as_dicts  # noqa: PLC0415
+    from .vayutrace_firms import fetch_delhi_fires           # noqa: PLC0415
+    from .vayutrace_osm_roads import load_delhi_roads        # noqa: PLC0415
 
     industrial = zones_as_dicts()
     fires = fetch_delhi_fires(day=firms_date)
     roads = load_delhi_roads()
 
     log.info(
-        "isrm_kernel estimate_city: %d industrial zones, %d fire hotspots, %d road segments",
+        "vayutrace_kernel estimate_city: %d industrial zones, %d fire hotspots, %d road segments",
         len(industrial), len(fires), len(roads),
     )
 

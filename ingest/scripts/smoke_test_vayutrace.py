@@ -2,7 +2,7 @@
 without a database connection.
 
 Run after downloading the OSM extract:
-    python ingest/scripts/smoke_test_isrm.py
+    python ingest/scripts/smoke_test_vayutrace.py
 
 What it tests:
   1. Industrial zones load correctly (count, bbox)
@@ -18,11 +18,11 @@ import time
 # Make sure we can import from ingest/app
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.isrm_industrial_zones import all_zones
-from app.isrm_sector_priors import consensus_midpoints
-from app.isrm_firms import fetch_delhi_fires
-from app.isrm_osm_roads import load_delhi_roads
-from app.isrm_kernel import run_kernel
+from app.vayutrace_industrial_zones import all_zones
+from app.vayutrace_sector_priors import consensus_midpoints
+from app.vayutrace_firms import fetch_delhi_fires
+from app.vayutrace_osm_roads import load_delhi_roads
+from app.vayutrace_kernel import run_kernel
 
 SEP = "─" * 60
 

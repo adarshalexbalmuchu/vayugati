@@ -27,7 +27,7 @@ import {
   fetchAllWardsAqi,
   fetchAllWindByWard,
   fetchAttribution,
-  fetchISRMAttribution,
+  fetchVayuTraceAttribution,
   fetchHistoricalStationReadings,
   fetchLatestReadingsPreferred,
   fetchTransportActivity,
@@ -434,8 +434,8 @@ export default function MapPage() {
     [selectedWardId],
     { enabled: selectedWardId != null },
   )
-  const isrmAttributionState = useAsync(
-    () => (selectedWardId == null ? Promise.resolve(null) : fetchISRMAttribution(selectedWardId)),
+  const vayuTraceAttributionState = useAsync(
+    () => (selectedWardId == null ? Promise.resolve(null) : fetchVayuTraceAttribution(selectedWardId)),
     [selectedWardId],
     { enabled: selectedWardId != null },
   )
@@ -1183,8 +1183,8 @@ export default function MapPage() {
                       linkedDispatches={dispatchPage.rows.filter((d) => d.ward_name === selectedWard.name)}
                       attribution={attributionState.data}
                       attributionLoading={attributionState.loading}
-                      isrmAttribution={isrmAttributionState.data}
-                      isrmAttributionLoading={isrmAttributionState.loading}
+                      vayuTraceAttribution={vayuTraceAttributionState.data}
+                      vayuTraceAttributionLoading={vayuTraceAttributionState.loading}
                       latestForecastRun={latestForecastRunState.data}
                       latestForecastRunLoading={latestForecastRunState.loading}
                       onClose={() => setSelection(null)}

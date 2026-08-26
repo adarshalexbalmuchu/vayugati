@@ -686,7 +686,7 @@ export interface Attribution {
 export async function fetchAttribution(wardId: number): Promise<Attribution | null> {
   // Filter to the wind-rose method so this function always returns directional
   // data (direction, compass breakdown). The ISRM source-type breakdown is
-  // fetched separately via fetchISRMAttribution().
+  // fetched separately via fetchVayuTraceAttribution().
   const { data } = await supabase
     .from('attributions')
     .select('direction, breakdown, confidence, method, ts')
@@ -699,25 +699,25 @@ export async function fetchAttribution(wardId: number): Promise<Attribution | nu
   return { ...data, breakdown: (data.breakdown ?? null) as Record<string, number> | null }
 }
 
-export interface ISRMAttribution {
+export interface VayuTraceAttribution {
   /** {industrial, road, fire, unknown} — fractions summing to 1 */
   breakdown: { industrial: number; road: number; fire: number; unknown: number } | null
   confidence: number | null
   ts: string
 }
 
-export async function fetchISRMAttribution(wardId: number): Promise<ISRMAttribution | null> {
+export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTraceAttribution | null> {
   const { data } = await supabase
     .from('attributions')
     .select('breakdown, confidence, ts')
     .eq('ward_id', wardId)
-    .eq('method', 'isrm_kernel_v1')
+    .eq('method', 'vayutrace_v1')
     .order('ts', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (!data) return null
   return {
-    breakdown: (data.breakdown ?? null) as ISRMAttribution['breakdown'],
+    breakdown: (data.breakdown ?? null) as VayuTraceAttribution['breakdown'],
     confidence: data.confidence ?? null,
     ts: data.ts,
   }

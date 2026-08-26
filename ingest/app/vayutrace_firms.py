@@ -25,7 +25,7 @@ import httpx
 
 from . import config
 
-log = logging.getLogger("ingest.isrm_firms")
+log = logging.getLogger("ingest.vayutrace_firms")
 
 _BASE = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
 

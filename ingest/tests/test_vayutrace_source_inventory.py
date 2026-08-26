@@ -3,24 +3,24 @@
 These tests never hit the network, the database, or the filesystem —
 everything is tested against static/in-memory data.
 
-Run: pytest ingest/tests/test_isrm_source_inventory.py -v
+Run: pytest ingest/tests/test_vayutrace_source_inventory.py -v
 """
 
 import math
 import pytest
 
-from app.isrm_industrial_zones import (
+from app.vayutrace_industrial_zones import (
     DELHI_BBOX,
     INDUSTRIAL_ZONES,
     all_zones,
     zones_as_dicts,
 )
-from app.isrm_sector_priors import (
+from app.vayutrace_sector_priors import (
     IITK_WINTER,
     consensus_midpoints,
     get_priors,
 )
-from app.isrm_kernel import (
+from app.vayutrace_kernel import (
     _bearing_deg,
     _distance_decay,
     _haversine_km,
@@ -70,7 +70,7 @@ class TestIndustrialZones:
         assert len(all_zones()) == 60
 
     def test_category_counts(self):
-        from app.isrm_industrial_zones import zones_by_category
+        from app.vayutrace_industrial_zones import zones_by_category
         assert len(zones_by_category("planned")) == 29
         assert len(zones_by_category("flatted_factory")) == 4
         assert len(zones_by_category("non_conforming")) == 27
@@ -206,7 +206,7 @@ class TestRunKernel:
         assert r["ward_id"] == 1
         assert "breakdown" in r
         assert "confidence" in r
-        assert r["method"] == "isrm_kernel_v1"
+        assert r["method"] == "vayutrace_v1"
 
     def test_breakdown_sums_to_one(self):
         results = run_kernel(

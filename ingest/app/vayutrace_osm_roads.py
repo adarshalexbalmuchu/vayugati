@@ -37,7 +37,7 @@ import logging
 import os
 from pathlib import Path
 
-log = logging.getLogger("ingest.isrm_osm_roads")
+log = logging.getLogger("ingest.vayutrace_osm_roads")
 
 _DEFAULT_PBF = Path("/data/osm/northern-zone-latest.osm.pbf")
 _PBFPATH = Path(os.getenv("OSM_PBF_PATH", str(_DEFAULT_PBF)))

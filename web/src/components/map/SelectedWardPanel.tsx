@@ -1,6 +1,6 @@
 import { ChevronRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { Attribution, ISRMAttribution, WardForecastSummary, WardSummary } from '../../lib/data'
+import type { Attribution, VayuTraceAttribution, WardForecastSummary, WardSummary } from '../../lib/data'
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import { confidenceAtPeak, hotspotStatus, HOTSPOT_STATUS_LABEL, type TimeWindowHours } from '../../lib/overviewRules'
 import type { ActiveTaskDispatch, ForecastRunRow, Incident } from '../../lib/incidents'
@@ -22,8 +22,8 @@ export default function SelectedWardPanel({
   linkedDispatches,
   attribution,
   attributionLoading,
-  isrmAttribution,
-  isrmAttributionLoading,
+  vayuTraceAttribution,
+  vayuTraceAttributionLoading,
   latestForecastRun,
   latestForecastRunLoading,
   onClose,
@@ -35,8 +35,8 @@ export default function SelectedWardPanel({
   linkedDispatches: ActiveTaskDispatch[]
   attribution: Attribution | null | undefined
   attributionLoading: boolean
-  isrmAttribution: ISRMAttribution | null | undefined
-  isrmAttributionLoading: boolean
+  vayuTraceAttribution: VayuTraceAttribution | null | undefined
+  vayuTraceAttributionLoading: boolean
   /** PM2.5's latest validation record for this ward - same table
    *  PredictedIncidentPanel.tsx reads, just surfaced here too so "is this
    *  forecast ML-validated or a conservative baseline fallback" is visible
@@ -176,9 +176,9 @@ export default function SelectedWardPanel({
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
           Estimated source mix
         </p>
-        {isrmAttributionLoading ? (
+        {vayuTraceAttributionLoading ? (
           <Skeleton className="mt-1 h-12 w-full" />
-        ) : isrmAttribution?.breakdown ? (
+        ) : vayuTraceAttribution?.breakdown ? (
           <div className="mt-1 space-y-1.5">
             {(
               [
@@ -187,7 +187,7 @@ export default function SelectedWardPanel({
                 { key: 'fire'       as const, label: 'Fire / biomass', color: 'bg-red-400' },
               ] as const
             ).map(({ key, label, color }) => {
-              const pct = Math.round((isrmAttribution.breakdown![key] ?? 0) * 100)
+              const pct = Math.round((vayuTraceAttribution.breakdown![key] ?? 0) * 100)
               return (
                 <div key={key}>
                   <div className="flex items-center justify-between text-[11px]">
@@ -200,9 +200,9 @@ export default function SelectedWardPanel({
                 </div>
               )
             })}
-            {isrmAttribution.confidence != null && (
+            {vayuTraceAttribution.confidence != null && (
               <p className="text-[10px] text-slate-400">
-                Confidence {Math.round(isrmAttribution.confidence * 100)}% · forward model estimate, not a measurement
+                Confidence {Math.round(vayuTraceAttribution.confidence * 100)}% · forward model estimate, not a measurement
               </p>
             )}
           </div>
