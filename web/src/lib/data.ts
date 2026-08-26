@@ -684,17 +684,43 @@ export interface Attribution {
 }
 
 export async function fetchAttribution(wardId: number): Promise<Attribution | null> {
+  // Filter to the wind-rose method so this function always returns directional
+  // data (direction, compass breakdown). The ISRM source-type breakdown is
+  // fetched separately via fetchISRMAttribution().
   const { data } = await supabase
     .from('attributions')
     .select('direction, breakdown, confidence, method, ts')
     .eq('ward_id', wardId)
+    .eq('method', 'pollution_rose_v1')
     .order('ts', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (!data) return null
-  // `breakdown` is jsonb, so the generated type is `Json`. Narrow it here (the
-  // ingest service writes {source: share}) rather than widening Attribution.
   return { ...data, breakdown: (data.breakdown ?? null) as Record<string, number> | null }
+}
+
+export interface ISRMAttribution {
+  /** {industrial, road, fire, unknown} — fractions summing to 1 */
+  breakdown: { industrial: number; road: number; fire: number; unknown: number } | null
+  confidence: number | null
+  ts: string
+}
+
+export async function fetchISRMAttribution(wardId: number): Promise<ISRMAttribution | null> {
+  const { data } = await supabase
+    .from('attributions')
+    .select('breakdown, confidence, ts')
+    .eq('ward_id', wardId)
+    .eq('method', 'isrm_kernel_v1')
+    .order('ts', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!data) return null
+  return {
+    breakdown: (data.breakdown ?? null) as ISRMAttribution['breakdown'],
+    confidence: data.confidence ?? null,
+    ts: data.ts,
+  }
 }
 
 // ── Gati metric (Phase 4): signal-to-action time ─────────────────────────────

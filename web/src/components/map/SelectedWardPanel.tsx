@@ -1,6 +1,6 @@
 import { ChevronRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { Attribution, WardForecastSummary, WardSummary } from '../../lib/data'
+import type { Attribution, ISRMAttribution, WardForecastSummary, WardSummary } from '../../lib/data'
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import { confidenceAtPeak, hotspotStatus, HOTSPOT_STATUS_LABEL, type TimeWindowHours } from '../../lib/overviewRules'
 import type { ActiveTaskDispatch, ForecastRunRow, Incident } from '../../lib/incidents'
@@ -22,6 +22,8 @@ export default function SelectedWardPanel({
   linkedDispatches,
   attribution,
   attributionLoading,
+  isrmAttribution,
+  isrmAttributionLoading,
   latestForecastRun,
   latestForecastRunLoading,
   onClose,
@@ -33,6 +35,8 @@ export default function SelectedWardPanel({
   linkedDispatches: ActiveTaskDispatch[]
   attribution: Attribution | null | undefined
   attributionLoading: boolean
+  isrmAttribution: ISRMAttribution | null | undefined
+  isrmAttributionLoading: boolean
   /** PM2.5's latest validation record for this ward - same table
    *  PredictedIncidentPanel.tsx reads, just surfaced here too so "is this
    *  forecast ML-validated or a conservative baseline fallback" is visible
@@ -165,6 +169,45 @@ export default function SelectedWardPanel({
           </p>
         ) : (
           <p className="mt-1 text-xs text-slate-400">No wind-attribution data available for this ward.</p>
+        )}
+      </div>
+
+      <div className="mt-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          Estimated source mix
+        </p>
+        {isrmAttributionLoading ? (
+          <Skeleton className="mt-1 h-12 w-full" />
+        ) : isrmAttribution?.breakdown ? (
+          <div className="mt-1 space-y-1.5">
+            {(
+              [
+                { key: 'industrial' as const, label: 'Industrial', color: 'bg-orange-400' },
+                { key: 'road'       as const, label: 'Road traffic', color: 'bg-blue-400' },
+                { key: 'fire'       as const, label: 'Fire / biomass', color: 'bg-red-400' },
+              ] as const
+            ).map(({ key, label, color }) => {
+              const pct = Math.round((isrmAttribution.breakdown![key] ?? 0) * 100)
+              return (
+                <div key={key}>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-600">{label}</span>
+                    <span className="tabular-nums font-semibold text-slate-800">{pct}%</span>
+                  </div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+            {isrmAttribution.confidence != null && (
+              <p className="text-[10px] text-slate-400">
+                Confidence {Math.round(isrmAttribution.confidence * 100)}% · forward model estimate, not a measurement
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">No source-mix estimate yet for this ward.</p>
         )}
       </div>
 
