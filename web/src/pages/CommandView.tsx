@@ -162,7 +162,13 @@ export default function CommandView() {
               : (worstWard?.aqi ?? worstPreferred?.openaqAqi ?? null)
             const worstTrend = worstWard
               ? hotspotStatus(
-                  { hoursToSevere: worstForecast?.hoursToSevere ?? null, peakExcess: worstWindowed?.excess ?? null, aqi: worstDisplayAqi, readingAgeMinutes: worstReadingAge },
+                  {
+                    hoursToSevere: worstForecast?.hoursToSevere ?? null,
+                    hoursToVeryPoor: worstForecast?.hoursToVeryPoor ?? null,
+                    peakExcess: worstWindowed?.excess ?? null,
+                    aqi: worstDisplayAqi,
+                    readingAgeMinutes: worstReadingAge,
+                  },
                   windowHours,
                 )
               : null

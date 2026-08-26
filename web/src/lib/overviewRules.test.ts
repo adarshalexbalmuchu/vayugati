@@ -49,6 +49,7 @@ function forecast(overrides: Partial<WardForecastSummary> = {}): WardForecastSum
     peakExcess: null,
     peakTs: null,
     hoursToSevere: null,
+    hoursToVeryPoor: null,
     ...overrides,
   }
 }
@@ -145,8 +146,24 @@ describe('hotspotStatus', () => {
     expect(hotspotStatus({ hoursToSevere: 12, peakExcess: null, aqi: null }, 36)).toBe('severe')
   })
 
-  it('is watch when not severe but peakExcess is positive', () => {
+  it('is watch when hoursToVeryPoor is within the window (GRAP Stage III / PM2.5 ≥ 120)', () => {
+    expect(hotspotStatus({ hoursToSevere: null, hoursToVeryPoor: 20, peakExcess: null, aqi: 150 }, 36)).toBe('watch')
+  })
+
+  it('is watch when hoursToVeryPoor crosses exactly at the window boundary', () => {
+    expect(hotspotStatus({ hoursToSevere: null, hoursToVeryPoor: 36, peakExcess: null, aqi: 150 }, 36)).toBe('watch')
+  })
+
+  it('is not watch when hoursToVeryPoor is outside the window', () => {
+    expect(hotspotStatus({ hoursToSevere: null, hoursToVeryPoor: 40, peakExcess: null, aqi: 80 }, 36)).toBe('stable')
+  })
+
+  it('is watch when not severe but peakExcess is positive (fallback for wards without a threshold crossing)', () => {
     expect(hotspotStatus({ hoursToSevere: 50, peakExcess: 15, aqi: null }, 36)).toBe('watch')
+  })
+
+  it('severe still wins over hoursToVeryPoor', () => {
+    expect(hotspotStatus({ hoursToSevere: 10, hoursToVeryPoor: 5, peakExcess: null, aqi: 200 }, 36)).toBe('severe')
   })
 
   it('is stable when no severe/excess signal but a current aqi exists', () => {
@@ -164,6 +181,12 @@ describe('hotspotStatus', () => {
     ).toBe('stale')
   })
 
+  it('stale wins over hoursToVeryPoor (stale reading makes the watch signal unreliable)', () => {
+    expect(
+      hotspotStatus({ hoursToSevere: null, hoursToVeryPoor: 20, peakExcess: null, aqi: 177, readingAgeMinutes: HOTSPOT_READING_STALE_MINUTES + 1 }, 36),
+    ).toBe('stale')
+  })
+
   it('is not stale exactly at the threshold, only past it', () => {
     expect(
       hotspotStatus({ hoursToSevere: null, peakExcess: 15, aqi: 177, readingAgeMinutes: HOTSPOT_READING_STALE_MINUTES }, 36),
@@ -174,7 +197,7 @@ describe('hotspotStatus', () => {
     expect(hotspotStatus({ hoursToSevere: 12, peakExcess: 15, aqi: 177, readingAgeMinutes: 3000 }, 36)).toBe('severe')
   })
 
-  it('omitting readingAgeMinutes entirely behaves exactly as before (existing Map caller safety)', () => {
+  it('omitting readingAgeMinutes and hoursToVeryPoor behaves exactly as before (existing Map caller safety)', () => {
     expect(hotspotStatus({ hoursToSevere: 50, peakExcess: 15, aqi: 177 }, 36)).toBe('watch')
   })
 })

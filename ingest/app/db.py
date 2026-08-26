@@ -267,12 +267,15 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
 
 
 def get_weather_history(hours: int = 24 * 30) -> list[dict]:
-    """[{ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation}]."""
+    """[{ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation,
+         boundary_layer_height, ventilation_coefficient}].
+    boundary_layer_height / ventilation_coefficient are NULL for rows written
+    before migration 20260826200000 — forecast.py handles NaN gracefully."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     return _fetch_all(
         lambda: client()
         .table("weather")
-        .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation")
+        .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation, boundary_layer_height, ventilation_coefficient")
         .gte("ts", cutoff)
         .order("ts")
     )

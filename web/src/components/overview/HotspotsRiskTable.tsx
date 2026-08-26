@@ -615,6 +615,7 @@ export default function HotspotsRiskTable({
                   const status = hotspotStatus(
                     {
                       hoursToSevere: forecast?.hoursToSevere ?? null,
+                      hoursToVeryPoor: forecast?.hoursToVeryPoor ?? null,
                       peakExcess: windowed.excess,
                       aqi: ward.aqi,
                       readingAgeMinutes: ageMinutes(displayTs),

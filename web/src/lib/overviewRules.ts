@@ -90,27 +90,43 @@ export const HOTSPOT_STATUS_LABEL: Record<HotspotStatus, string> = {
  *  not a caveat next to an otherwise-normal-looking status. */
 export const HOTSPOT_READING_STALE_MINUTES = 180
 
-/** Severe (crossing within the selected window) -> Stale (current reading
- *  older than the threshold - checked before watch/stable, since a rising-
- *  looking trend built on a stale reading is misleading, not informative) ->
- *  Watch (rising local excess, not yet crossing) -> Stable (a current
- *  reading exists) -> No data. A UI-only categorization built entirely from
- *  fields the page already has - not a new detection signal.
+/** Severe (AQI Severe entry — PM2.5 ≥ 250 µg/m³ — crossing within the
+ *  selected window) -> Stale (current reading older than the threshold -
+ *  checked before watch/stable, since a rising-looking trend built on a stale
+ *  reading is misleading, not informative) -> Watch (forecast to cross AQI
+ *  Very Poor / PM2.5 ≥ 120 µg/m³ / GRAP Stage III within the window, OR
+ *  rising local excess ≥ 10 µg/m³) -> Stable (a current reading exists) ->
+ *  No data. A UI-only categorization built entirely from fields the page
+ *  already has - not a new detection signal.
  *
- *  `readingAgeMinutes` is optional and defaults to "unknown/not stale" when
- *  omitted, so every existing caller that doesn't pass it (Map's
- *  SelectedWardPanel) keeps its exact prior behaviour - this is a strictly
- *  additive change for callers that opt in. Severe is checked first and
- *  deliberately NOT demoted by staleness: it reflects the forecast pipeline
- *  crossing a threshold, not the live reading's own freshness. */
+ *  `readingAgeMinutes` and `hoursToVeryPoor` are optional and default to
+ *  "unknown/not applicable" when omitted, preserving existing caller behaviour.
+ *  Severe is checked first and deliberately NOT demoted by staleness: it
+ *  reflects the forecast pipeline crossing a threshold, not the live reading.
+ *
+ *  Literature basis for the Very Poor threshold:
+ *    CPCB 2014: PM2.5 = 120 µg/m³ is the entry to AQI 300 (Very Poor).
+ *    GRAP 2023: Stage III restrictions trigger at sustained AQI ≥ 300.
+ *    IOP ERL 2025: +9% excess daily mortality in the AQI 300–400 band.
+ *  Using hoursToVeryPoor for 'watch' surfaces the GRAP action threshold
+ *  earlier than the more severe (250 µg/m³) crossing would. */
 export function hotspotStatus(
-  row: { hoursToSevere: number | null; peakExcess: number | null; aqi: number | null; readingAgeMinutes?: number | null },
+  row: {
+    hoursToSevere: number | null
+    hoursToVeryPoor?: number | null
+    peakExcess: number | null
+    aqi: number | null
+    readingAgeMinutes?: number | null
+  },
   windowHours: TimeWindowHours,
 ): HotspotStatus {
   if (row.hoursToSevere != null && row.hoursToSevere <= windowHours) return 'severe'
   if (row.aqi != null && row.readingAgeMinutes != null && row.readingAgeMinutes > HOTSPOT_READING_STALE_MINUTES) {
     return 'stale'
   }
+  // hoursToVeryPoor (PM2.5 ≥ 120 µg/m³, GRAP Stage III) reaching within the
+  // window is a stronger 'watch' signal than local excess alone.
+  if (row.hoursToVeryPoor != null && row.hoursToVeryPoor <= windowHours) return 'watch'
   // Require a meaningful local excess to call it "Trending up" — +2 µg/m³ is
   // indistinguishable from model noise on a 40 µg/m³ city baseline.
   if (row.peakExcess != null && row.peakExcess >= 10) return 'watch'
@@ -143,7 +159,13 @@ export function wardsNeedingReview(
     const windowed = peakWithinWindow(forecast, windowHours)
     const readingAgeMinutes = w.ts ? (Date.now() - new Date(w.ts).getTime()) / 60_000 : null
     const status = hotspotStatus(
-      { hoursToSevere: forecast?.hoursToSevere ?? null, peakExcess: windowed.excess, aqi: w.aqi, readingAgeMinutes },
+      {
+        hoursToSevere: forecast?.hoursToSevere ?? null,
+        hoursToVeryPoor: forecast?.hoursToVeryPoor ?? null,
+        peakExcess: windowed.excess,
+        aqi: w.aqi,
+        readingAgeMinutes,
+      },
       windowHours,
     )
     if (status === 'severe' || status === 'watch') result.push({ wardId: w.id, wardName: w.name })

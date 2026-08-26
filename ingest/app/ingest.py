@@ -345,6 +345,12 @@ def run() -> dict:
             locations = [(ward["lat"], ward["lng"]) for _, ward in geo_wards]
             weather_results = open_meteo.get_current_batch(locations)
             for (name, ward), w in zip(geo_wards, weather_results):
+                # PBLH from Open-Meteo (separate API, degrades gracefully to None).
+                # Literature: PBLH is the #1-5 PM2.5 predictor in IGP ML studies
+                # (AMT 2019, JGR Atmospheres 2021, Aerosol Sci Tech 2025).
+                pblh = open_meteo.get_current_pblh(ward["lat"], ward["lng"])
+                wind_speed_ms = (w["wind_speed"] or 0.0) / 3.6  # km/h → m/s for VC
+                vc = round(pblh * wind_speed_ms, 1) if pblh is not None else None
                 db.upsert_weather(
                     {
                         "ward_id": ward["id"],
@@ -355,6 +361,8 @@ def run() -> dict:
                         "wind_dir": w["wind_dir"],
                         "precipitation": w["precipitation"],
                         "pressure": w["pressure"],
+                        "boundary_layer_height": pblh,
+                        "ventilation_coefficient": vc,
                     }
                 )
                 summary["weather_upserted"] += 1

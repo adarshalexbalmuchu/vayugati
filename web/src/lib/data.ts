@@ -619,15 +619,30 @@ export interface WardForecastSummary {
   peakPred: number | null
   peakExcess: number | null
   peakTs: string | null
-  /** Hours until this pollutant's own forecast first crosses its severity
-   *  threshold - only ever computed for PM2.5, the one pollutant with an
-   *  established threshold in this codebase (SEVERE_THRESHOLD_PM25). Always
-   *  null for PM10/NO2 - never a fabricated severity claim for a pollutant
-   *  with no stated threshold here. */
+  /** Hours until the forecast first crosses the CPCB AQI "Severe" entry
+   *  (PM2.5 = 250 µg/m³ → AQI 400). Only computed for PM2.5; always null
+   *  for PM10/NO2 - never a fabricated severity claim for a pollutant with
+   *  no stated threshold here. */
   hoursToSevere: number | null
+  /** Hours until the forecast first crosses the AQI "Very Poor" entry
+   *  (PM2.5 = 120 µg/m³ → AQI 300). This is the operationally meaningful
+   *  action threshold:
+   *    • GRAP (CAQM) Stage III construction/generator bans trigger at AQI 300.
+   *    • AQHI epidemiology study (IOP ERL 2025): +9% excess daily mortality
+   *      in the AQI 300–400 range — steepest health inflection point.
+   *    • Cusworth et al. (ES&T 2020) uses 120 µg/m³ as the "episode" threshold.
+   *  Distinct from hoursToSevere so callers can choose the appropriate level
+   *  for their purpose (advisory vs. enforcement). Only computed for PM2.5. */
+  hoursToVeryPoor: number | null
 }
 
-const SEVERE_THRESHOLD_PM25 = 400
+/** PM2.5 concentration (µg/m³) at the CPCB AQI "Severe" band entry (AQI 400).
+ *  Source: CPCB National AQI 2014 breakpoints, unchanged as of Aug 2026. */
+const SEVERE_THRESHOLD_PM25 = 250
+
+/** PM2.5 concentration (µg/m³) at the CPCB AQI "Very Poor" band entry (AQI 300).
+ *  This is the GRAP Stage III / AQHI-defined primary action threshold. */
+const VERY_POOR_THRESHOLD_PM25 = 120
 
 /** Real forecast.py output for whichever of the 3 forecast-covered
  *  pollutants is requested (pm25/pm10/no2 - see forecast.py's
@@ -649,7 +664,7 @@ export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): 
     const wardId = row.ward_id as number
     let entry = byWard.get(wardId)
     if (!entry) {
-      entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null }
+      entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null, hoursToVeryPoor: null }
       byWard.set(wardId, entry)
     }
     entry.points.push(row as ForecastPoint)
@@ -665,8 +680,14 @@ export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): 
         entry.peakExcess = p.local_excess
         entry.peakTs = p.horizon_ts
       }
-      if (pollutant === 'pm25' && entry.hoursToSevere == null && predicted != null && predicted >= SEVERE_THRESHOLD_PM25) {
-        entry.hoursToSevere = Math.round((new Date(p.horizon_ts).getTime() - now) / 3_600_000)
+      if (pollutant === 'pm25' && predicted != null) {
+        const hoursOut = Math.round((new Date(p.horizon_ts).getTime() - now) / 3_600_000)
+        if (entry.hoursToVeryPoor == null && predicted >= VERY_POOR_THRESHOLD_PM25) {
+          entry.hoursToVeryPoor = hoursOut
+        }
+        if (entry.hoursToSevere == null && predicted >= SEVERE_THRESHOLD_PM25) {
+          entry.hoursToSevere = hoursOut
+        }
       }
     }
   }

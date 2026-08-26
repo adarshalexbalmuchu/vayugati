@@ -201,7 +201,12 @@ export function resolveWardReading(
   const horizonHours: TimeWindowHours = timeMode === '24h' ? 24 : 48
   const point = nearestForecastPoint(forecast, horizonHours)
   const status = hotspotStatus(
-    { hoursToSevere: forecast?.hoursToSevere ?? null, peakExcess: point?.local_excess ?? null, aqi: null },
+    {
+      hoursToSevere: forecast?.hoursToSevere ?? null,
+      hoursToVeryPoor: forecast?.hoursToVeryPoor ?? null,
+      peakExcess: point?.local_excess ?? null,
+      aqi: null,
+    },
     horizonHours,
   )
   const isProxy = pollutant === 'aqi'

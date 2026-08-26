@@ -49,7 +49,12 @@ export default function SelectedWardPanel({
   const confidence = confidenceAtPeak(forecast)
   const windowHours: TimeWindowHours = 36
   const status = hotspotStatus(
-    { hoursToSevere: forecast?.hoursToSevere ?? null, peakExcess: forecast?.peakExcess ?? null, aqi: ward.aqi },
+    {
+      hoursToSevere: forecast?.hoursToSevere ?? null,
+      hoursToVeryPoor: forecast?.hoursToVeryPoor ?? null,
+      peakExcess: forecast?.peakExcess ?? null,
+      aqi: ward.aqi,
+    },
     windowHours,
   )
   return (
