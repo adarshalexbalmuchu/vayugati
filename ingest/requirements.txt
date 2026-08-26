@@ -20,5 +20,10 @@ gtfs-realtime-bindings>=2
 # Error tracking — optional. Initialised in main.py when SENTRY_DSN is set.
 sentry-sdk[fastapi]>=2
 
+# OSM road network parsing — isrm_osm_roads.py (ISRM dispersion kernel source layer).
+# Official OSM Foundation Python bindings; pre-built wheels for Python 3.11 Linux.
+# No geopandas/GDAL dependency chain — ships its own libosmium.
+osmium>=3.7
+
 # dev / tests only
 pytest>=8

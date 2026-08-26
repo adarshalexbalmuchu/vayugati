@@ -18,6 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
+# Persistent mount point for the Geofabrik OSM .pbf extract used by
+# isrm_osm_roads.py.  In production (Render/Railway/Fly), mount a
+# persistent disk at /data/osm so the ~600 MB file survives container
+# restarts.  The directory is created here so the service starts cleanly
+# even when no disk is mounted yet — isrm_osm_roads.py returns [] until
+# the file is present, without raising.
+RUN mkdir -p /data/osm
+
 # host platforms inject $PORT; default to 8000 for local `docker run`
 ENV PORT=8000
 EXPOSE 8000
