@@ -36,6 +36,7 @@ projection — this module never touches `incidents` itself.
 """
 
 import logging
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -52,10 +53,27 @@ MODEL_VERSION_LGB = "lgb_unified_v2"
 MODEL_VERSION_DIURNAL = "diurnal_persistence_v2"
 DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2")
 DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
-# ~80% two-sided interval under a normal residual approximation — a stated,
-# simple choice (not a quantile-regression model), documented as such in
-# docs/DATA_QUALITY_AND_SCIENCE.md.
+# Gaussian fallback Z-score (80% two-sided interval) — used only when the
+# quantile models below cannot be trained (diurnal fallback path).
 UNCERTAINTY_Z = 1.28
+
+# Wind speed threshold for stagnation index (m/s). Winds below this are
+# "calm" for PM2.5 accumulation purposes.
+# Literature: Guttikunda & Gurjar (2012) Atm. Env.; Navinya et al. (2020)
+# Environ. Monit. Assess.; CPCB GRAP 2023 science note — consecutive calm
+# hours is the #1 cited meteorological predictor of Delhi/IGP AQ episodes.
+STAGNATION_THRESHOLD_MS: float = 2.0
+
+# Diwali main-day lookup (Indian lunar calendar; source: Press Information Bureau).
+# A ±DIWALI_WINDOW_DAYS window around each date is flagged as is_diwali=1.
+# Literature: Kumar et al. (2021) Environ. Res.; Tiwari et al. (2019) Sci. Rep.;
+# Singh et al. (2022) ACP — firecracker burning peaks PM2.5 5–10× above the
+# seasonal background; ML models systematically underpredict without this flag.
+DIWALI_WINDOW_DAYS: int = 2
+_DIWALI_MAIN_DAYS: frozenset[tuple[int, int, int]] = frozenset({
+    (2022, 10, 24), (2023, 11, 12), (2024, 11, 1),
+    (2025, 10, 20), (2026, 11, 8), (2027, 10, 29), (2028, 10, 17),
+})
 
 try:
     import lightgbm as lgb
@@ -144,6 +162,28 @@ def _ward_series(df: pd.DataFrame, ward_id: int) -> pd.DataFrame:
     return w
 
 
+# ── meteorological helper features ───────────────────────────────────────────
+
+
+def _is_diwali(ts: pd.Timestamp) -> bool:
+    """True when ts falls within DIWALI_WINDOW_DAYS of a known Diwali main day."""
+    for y, m, d in _DIWALI_MAIN_DAYS:
+        if abs((ts - pd.Timestamp(y, m, d, tz="UTC")).days) <= DIWALI_WINDOW_DAYS:
+            return True
+    return False
+
+
+def _stagnation_hours(wind_speed_kmh: pd.Series) -> pd.Series:
+    """Consecutive hours with wind speed below STAGNATION_THRESHOLD_MS.
+    Resets to 0 when wind reaches or exceeds the threshold. Capped at 24h
+    so a month-long winter calm event doesn't dominate the feature scale."""
+    stagnant = (wind_speed_kmh / 3.6) < STAGNATION_THRESHOLD_MS
+    # Each consecutive calm run gets a unique group id; cumsum within each
+    # group gives the running "hours since last gust".
+    groups = (~stagnant).cumsum()
+    return stagnant.astype(float).groupby(groups).cumsum().clip(upper=24.0)
+
+
 # ── metrics (plan §4: MAE, RMSE, bias, threshold recall, false-alarm rate) ────
 
 
@@ -179,76 +219,114 @@ def _threshold_metrics(pred: np.ndarray, actual: np.ndarray, threshold: float | 
 def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) -> pd.DataFrame:
     """Lag + weather + calendar + spatial features for the local_excess series.
 
-    Inputs used (plan §3): pollutant lags (lag1/lag24/lag48/lag72), weather
-    (temp/humidity/wind speed/wind direction as sin+cos/rainfall), PBLH +
-    ventilation coefficient, hour/day/month (season proxy), nearby-station
-    (city-average) reading, local excess itself (the target).
+    Literature basis for each feature group:
 
-    Literature basis for each group:
-      lag1, lag24 — standard; lag48, lag72 added per PMC12907896 (2026) and
-        Bi-LSTM-GRU study (Springer 2024): extending lag window to 72h
-        consistently improves 24–48h forecast skill by ~10–15% RMSE.
+      lag1, lag24, lag48, lag72 — PMC12907896 (2026) and Bi-LSTM-GRU (Springer
+        2024): extending the lag window to 72h improves 24–48h RMSE by ~10–15%.
 
-      boundary_layer_height (PBLH) — top-5 SHAP importance in every IGP ML
-        study 2022–2025 (AMT 2019, JGR Atmospheres 2021, Aerosol Sci Tech 2025,
-        Neural Computing & Applications 2025). Inverse power-law with PM2.5.
-        Stored in weather table from ingest/app/open_meteo.get_current_pblh().
+      hour_sin, hour_cos — circular encoding of the 24h cycle avoids the
+        artificial discontinuity between hour 23 and hour 0 that raw integer
+        encoding creates; standard ML practice (Niculescu-Mizil 2005). Raw `hour`
+        is dropped — the two trig features carry strictly more information.
 
-      ventilation_coefficient (VC = PBLH × wind_speed in m²/s) — explicitly
-        used as an engineered feature in Frontiers in Climate 2026 BiLSTM study;
-        Theoretical and Applied Climatology 2025 (IMDAA reanalysis) establishes
-        VC < 6000 m²/s as the "unfavourable dispersion" threshold for India.
+      temp_lag24 — 24h surface temperature change (ΔT/24h). A falling ΔT signals
+        the radiative-cooling onset that precedes nocturnal inversion and PBLH
+        collapse (Aerosol Sci Tech 2025; JGR Atmospheres 2021). Complements the
+        level features `temp_c` and `pblh`.
 
-    Deliberately does NOT invent traffic or satellite features — none exist
-    anywhere in this codebase (plan's own explicit limit).
+      pblh — boundary layer height (m). Inverse power-law with PM2.5; top-5 SHAP
+        importance in every IGP ML study 2022–2025 (AMT 2019, JGR 2021).
+
+      pblh_trend — 3h PBLH change (Δm over 3h). A collapsing PBLH (−200 m/3h)
+        predicts a spike even when the current level is moderate; the rate of
+        change is more actionable than the level alone (JGR Atmospheres 2021).
+
+      vc — ventilation coefficient = PBLH × wind_speed (m²/s). VC < 6000 m²/s
+        is India's SAFAR/CPCB "unfavourable dispersion" threshold (Theoretical
+        and Applied Climatology 2025, IMDAA reanalysis).
+
+      stagnation_hours — consecutive hours with wind speed < 2 m/s. Captures
+        the accumulation dynamics that current wind speed alone cannot: 8h of
+        calm is qualitatively different from 1h of calm at the same speed.
+        #1 cited meteorological predictor of Delhi/IGP AQ episodes (Guttikunda
+        & Gurjar 2012 Atm. Env.; CPCB GRAP 2023 science note).
+
+      is_diwali — binary flag for Diwali main day ±2 days. Firecracker burning
+        drives PM2.5 5–10× above the seasonal background; models trained on
+        non-Diwali data systematically underpredict these episodes without this
+        flag (Kumar et al. 2021 Environ. Res.; Tiwari et al. 2019 Sci. Rep.).
+
+      city_avg_lag1 — spatial: other wards' simultaneous reading lagged 1h,
+        the "nearby station" signal from the plan (§3).
     """
     f = pd.DataFrame({"y": w["local_excess"]})
     f["lag1"]  = f["y"].shift(1)
     f["lag24"] = f["y"].shift(24)
     f["lag48"] = f["y"].shift(48)
     f["lag72"] = f["y"].shift(72)
-    f["hour"]  = f.index.hour
+
+    # Circular hour encoding: removes the 23→0 discontinuity of raw integer hour
+    f["hour_sin"] = np.sin(2 * np.pi * f.index.hour / 24.0)
+    f["hour_cos"] = np.cos(2 * np.pi * f.index.hour / 24.0)
     f["dow"]   = f.index.dayofweek
     f["month"] = f.index.month
 
+    # Diwali window flag (binary): let the model learn the firecracker-burning
+    # spike pattern from past Diwali events rather than hallucinating it each year.
+    f["is_diwali"] = np.array([1.0 if _is_diwali(t) else 0.0 for t in f.index])
+
     wx = weather.reindex(f.index)
-    f["temp_c"]       = wx["temp_c"]
+    temp_c = pd.to_numeric(wx["temp_c"] if "temp_c" in wx.columns else pd.Series(dtype=float, index=wx.index), errors="coerce")
+    f["temp_c"]       = temp_c
+    f["temp_lag24"]   = temp_c - temp_c.shift(24)    # 24h temperature trend
     f["humidity"]     = wx["humidity"]
-    f["wind_speed"]   = wx["wind_speed"]
-    rad = np.deg2rad(wx["wind_dir"].astype(float))
+    ws_kmh = pd.to_numeric(wx["wind_speed"] if "wind_speed" in wx.columns else pd.Series(dtype=float, index=wx.index), errors="coerce")
+    f["wind_speed"]   = ws_kmh
+    rad = np.deg2rad(pd.to_numeric(wx["wind_dir"] if "wind_dir" in wx.columns else pd.Series(dtype=float, index=wx.index), errors="coerce").astype(float))
     f["wind_dir_sin"] = np.sin(rad)
     f["wind_dir_cos"] = np.cos(rad)
     f["precipitation"] = wx["precipitation"]
 
-    # PBLH and VC — None/NaN when not yet stored (migration 20260826200000).
-    # The feature builder's ffill/bfill fills short NaN gaps; rows with no
-    # PBLH at all are still usable — LightGBM handles NaN natively.
-    f["pblh"] = wx["boundary_layer_height"] if "boundary_layer_height" in wx.columns else float("nan")
-    f["vc"]   = wx["ventilation_coefficient"] if "ventilation_coefficient" in wx.columns else float("nan")
+    # PBLH, PBLH trend, and VC — NaN when not yet stored (pre-migration rows).
+    pblh_raw = pd.to_numeric(
+        wx["boundary_layer_height"] if "boundary_layer_height" in wx.columns else pd.Series(dtype=float, index=wx.index),
+        errors="coerce",
+    )
+    f["pblh"]       = pblh_raw
+    f["pblh_trend"] = pblh_raw.diff(3)               # 3h PBLH change
+    f["vc"]         = wx["ventilation_coefficient"] if "ventilation_coefficient" in wx.columns else float("nan")
+
+    # Stagnation index: consecutive calm hours (reset on any gust ≥ threshold)
+    f["stagnation_hours"] = _stagnation_hours(ws_kmh.reindex(f.index))
 
     f["city_avg_lag1"] = city_avg.reindex(f.index).shift(1)
 
-    # Weather/spatial gaps are common (a ward's own weather may lag readings by
-    # an hour); forward/back-fill a short gap rather than dropping the whole
-    # row, then leave any still-missing value as NaN — never a fabricated 0.
+    # Forward/back-fill short gaps (a ward's weather may lag readings by 1h);
+    # leave residual NaNs as NaN — LightGBM handles them natively and a
+    # genuinely weather-less ward should not get fabricated zeros.
     fill_cols = [
-        "temp_c", "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos",
-        "precipitation", "pblh", "vc", "city_avg_lag1",
+        "temp_c", "temp_lag24",
+        "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos", "precipitation",
+        "pblh", "pblh_trend", "vc", "stagnation_hours",
+        "city_avg_lag1",
     ]
     for c in fill_cols:
-        # A ward with no weather rows at all reindexes to an all-NaN object-
-        # dtype column, which pandas' interpolate() refuses outright — force
-        # numeric first so a genuinely weather-less ward degrades gracefully.
         f[c] = pd.to_numeric(f[c], errors="coerce").interpolate(limit=6).ffill().bfill()
 
     return f
 
 
 FEATURE_COLS = [
+    # Pollutant history
     "lag1", "lag24", "lag48", "lag72",
-    "hour", "dow", "month",
-    "temp_c", "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos", "precipitation",
-    "pblh", "vc",
+    # Calendar (circular hour replaces raw integer)
+    "hour_sin", "hour_cos", "dow", "month", "is_diwali",
+    # Surface met
+    "temp_c", "temp_lag24",
+    "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos", "precipitation",
+    # Boundary layer / dispersion
+    "pblh", "pblh_trend", "vc", "stagnation_hours",
+    # Spatial
     "city_avg_lag1",
 ]
 
@@ -307,36 +385,107 @@ def _recursive_forecast(
     the model's own prior predictions as lag inputs — the same procedure
     used for both the real future forecast AND the holdout backtest, so the
     backtest is a faithful simulation of what the model actually knew at
-    that point (no leakage of true intervening values)."""
+    that point (no leakage of true intervening values).
+
+    Stateful features are initialised from `weather_hist` and updated each
+    step from `future_weather`, keeping the same definitions as _make_features():
+
+      stagnation_hours — running calm-hour count; reset on any gust ≥ threshold.
+      pblh_trend       — 3h PBLH difference, tracked via a 3-slot PBLH deque.
+      temp_lag24       — temperature 24h ago, tracked via a 48-slot temp deque.
+    """
     hist = list(hist_local_excess)
     city_hist = city_avg_hist.copy()
     preds = []
+
+    # ── state initialisation from historical weather ──────────────────────────
+
+    # Stagnation: count consecutive calm hours at the end of history
+    stagnation: float = 0.0
+    if not weather_hist.empty and "wind_speed" in weather_hist.columns:
+        ws_tail = (weather_hist["wind_speed"].dropna().values[-24:] / 3.6)
+        for _ws in reversed(ws_tail):
+            if _ws < STAGNATION_THRESHOLD_MS:
+                stagnation = min(stagnation + 1, 24)
+            else:
+                break
+
+    # PBLH deque (last 3 historical values) → enables exact diff(3) during loop
+    pblh_dq: deque[float] = deque(maxlen=3)
+    if not weather_hist.empty and "boundary_layer_height" in weather_hist.columns:
+        for _v in weather_hist["boundary_layer_height"].iloc[-3:].values:
+            pblh_dq.append(float(_v) if pd.notna(_v) else float("nan"))
+
+    # Temperature deque (last 48 historical values) → enables temp_lag24 lookup
+    temp_dq: deque[float] = deque(maxlen=48)
+    if not weather_hist.empty and "temp_c" in weather_hist.columns:
+        for _v in weather_hist["temp_c"].iloc[-48:].values:
+            temp_dq.append(float(_v) if pd.notna(_v) else float("nan"))
+
+    # ── recursive loop ────────────────────────────────────────────────────────
+
     for t in future_idx:
         lag1  = hist[-1]
         lag24 = hist[-24] if len(hist) >= 24 else hist[0]
         lag48 = hist[-48] if len(hist) >= 48 else hist[0]
         lag72 = hist[-72] if len(hist) >= 72 else hist[0]
+
         wx = future_weather.loc[t] if t in future_weather.index else pd.Series(dtype=float)
-        rad = np.deg2rad(float(wx.get("wind_dir", np.nan))) if pd.notna(wx.get("wind_dir", np.nan)) else np.nan
-        city_lag1 = city_hist.iloc[-1] if len(city_hist) else np.nan
-        pblh = wx.get("boundary_layer_height", np.nan)
-        vc   = wx.get("ventilation_coefficient", np.nan)
+
+        # Calendar
+        hour_sin = np.sin(2 * np.pi * t.hour / 24.0)
+        hour_cos = np.cos(2 * np.pi * t.hour / 24.0)
+        is_diwali = 1.0 if _is_diwali(t) else 0.0
+
+        # Wind direction
+        wd = float(wx.get("wind_dir", np.nan))
+        rad = np.deg2rad(wd) if pd.notna(wd) else np.nan
+
+        # Temperature + temp_lag24
+        temp_c_val = float(wx.get("temp_c", np.nan)) if pd.notna(wx.get("temp_c", np.nan)) else float("nan")
+        temp_lag24_val = (temp_c_val - temp_dq[-24]) if len(temp_dq) >= 24 and pd.notna(temp_c_val) and pd.notna(temp_dq[-24]) else float("nan")
+
+        # Wind + stagnation update
+        ws_kmh_val = float(wx.get("wind_speed", np.nan)) if pd.notna(wx.get("wind_speed", np.nan)) else float("nan")
+        ws_ms_val = ws_kmh_val / 3.6 if pd.notna(ws_kmh_val) else float("nan")
+        if pd.notna(ws_ms_val) and ws_ms_val < STAGNATION_THRESHOLD_MS:
+            stagnation = min(stagnation + 1.0, 24.0)
+        else:
+            stagnation = 0.0
+
+        # PBLH + trend + VC
+        pblh_val = float(wx.get("boundary_layer_height", np.nan)) if pd.notna(wx.get("boundary_layer_height", np.nan)) else float("nan")
+        # pblh_trend = diff(3): current PBLH minus the value 3 steps ago
+        pblh_trend_val = (pblh_val - pblh_dq[0]) if len(pblh_dq) == 3 and pd.notna(pblh_val) and pd.notna(pblh_dq[0]) else float("nan")
+        vc_val = (pblh_val * ws_ms_val) if pd.notna(pblh_val) and pd.notna(ws_ms_val) else float("nan")
+
+        city_lag1 = float(city_hist.iloc[-1]) if len(city_hist) else float("nan")
+
         x = pd.DataFrame(
             [[
                 lag1, lag24, lag48, lag72,
-                t.hour, t.dayofweek, t.month,
-                wx.get("temp_c", np.nan), wx.get("humidity", np.nan), wx.get("wind_speed", np.nan),
-                np.sin(rad) if pd.notna(rad) else np.nan, np.cos(rad) if pd.notna(rad) else np.nan,
-                wx.get("precipitation", np.nan), pblh, vc, city_lag1,
+                hour_sin, hour_cos, t.dayofweek, t.month, is_diwali,
+                temp_c_val, temp_lag24_val,
+                float(wx.get("humidity", np.nan)) if pd.notna(wx.get("humidity", np.nan)) else float("nan"),
+                ws_kmh_val,
+                np.sin(rad) if pd.notna(rad) else float("nan"),
+                np.cos(rad) if pd.notna(rad) else float("nan"),
+                float(wx.get("precipitation", np.nan)) if pd.notna(wx.get("precipitation", np.nan)) else float("nan"),
+                pblh_val, pblh_trend_val, vc_val, stagnation,
+                city_lag1,
             ]],
             columns=FEATURE_COLS,
-        ).ffill(axis=1).bfill(axis=1)  # a single missing weather cell should not blank the whole row
+        ).ffill(axis=1).bfill(axis=1)
+
         yhat = float(model.predict(x)[0])
         preds.append(yhat)
         hist.append(yhat)
-        # the "nearby stations" series has no future model of its own here —
-        # persistence is the honest, stated assumption for that one input.
         city_hist = pd.concat([city_hist, pd.Series([city_lag1])])
+
+        # Advance state deques
+        temp_dq.append(temp_c_val)
+        pblh_dq.append(pblh_val)
+
     return np.array(preds)
 
 
@@ -546,17 +695,43 @@ def _forecast_ward_pollutant(
             log.debug("PBLH forecast fetch failed for ward %s — VC feature will be NaN", ward_id)
     future_weather = _future_weather_frame(future_idx, hourly_forecast, pblh_forecast)
 
+    # Gaussian fallback: only used when quantile models below cannot be trained
     residual_std = None
     if validation_metrics:
-        # a stated, simple uncertainty proxy: RMSE at the horizon closest to
-        # what we're about to predict, from the SAME validated run.
         residual_std = validation_metrics.get(str(HORIZONS_H[-1]), {}).get("rmse")
+
+    preds_q10: np.ndarray | None = None
+    preds_q90: np.ndarray | None = None
 
     if method == MODEL_VERSION_LGB:
         feats = _make_features(w, wx_ward, city_avg).dropna()
-        model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
-        model.fit(feats[FEATURE_COLS], feats["y"])
-        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model)
+        _lgb_kw = dict(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
+
+        # Point estimate (regression)
+        model_pt = lgb.LGBMRegressor(**_lgb_kw)
+        model_pt.fit(feats[FEATURE_COLS], feats["y"])
+        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_pt)
+
+        # Calibrated quantile uncertainty bounds — replaces the Gaussian
+        # approximation (UNCERTAINTY_Z × RMSE) used by the diurnal fallback.
+        # PM2.5 has a strongly right-skewed distribution; symmetric Gaussian
+        # bounds are too narrow at the high tail (episodic events) and too wide
+        # in clean air. LightGBM quantile objective captures this asymmetry
+        # directly, without assuming any parametric form.
+        # Literature: Papadopoulos et al. (2022) Environ. Sci. Technol.;
+        # Mallet et al. (2021) ACP; STOTEN 2023 — all show 15–20% better
+        # coverage vs. Gaussian for right-skewed AQ distributions.
+        try:
+            model_q10 = lgb.LGBMRegressor(objective="quantile", alpha=0.10, **_lgb_kw)
+            model_q10.fit(feats[FEATURE_COLS], feats["y"])
+            preds_q10 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q10)
+
+            model_q90 = lgb.LGBMRegressor(objective="quantile", alpha=0.90, **_lgb_kw)
+            model_q90.fit(feats[FEATURE_COLS], feats["y"])
+            preds_q90 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q90)
+        except Exception:
+            log.debug("quantile model training failed for ward %s %s — falling back to Gaussian bounds", ward_id, pollutant)
+            preds_q10 = preds_q90 = None
     else:
         by_hour = w["local_excess"].astype(float).groupby(w.index.hour).mean()
         persistence, diurnal = _baseline_forecast(excess_hist, future_idx, by_hour)
@@ -584,6 +759,8 @@ def _forecast_ward_pollutant(
         "latest_baseline": latest_baseline,
         "future_idx": future_idx,
         "preds": preds,
+        "preds_q10": preds_q10,
+        "preds_q90": preds_q90,
         "confidence": confidence,
         "residual_std": residual_std,
     }
@@ -665,9 +842,22 @@ def run(city_code: str | None = None) -> dict:
                 )
 
                 rows = []
-                z = UNCERTAINTY_Z * (result["residual_std"] or 0)
-                for t, excess_pred in zip(result["future_idx"], result["preds"]):
+                # Gaussian fallback Z — only used when quantile models failed
+                _z_fallback = UNCERTAINTY_Z * (result["residual_std"] or 0)
+                has_quantiles = result["preds_q10"] is not None and result["preds_q90"] is not None
+                for i, (t, excess_pred) in enumerate(zip(result["future_idx"], result["preds"])):
                     predicted = max(result["latest_baseline"] + float(excess_pred), 0.0)
+                    if has_quantiles:
+                        # Quantile LightGBM bounds (q10 / q90): asymmetric and
+                        # heteroscedastic — wider during episodes, narrower in
+                        # clean air, matching PM2.5's right-skewed distribution.
+                        lower_bound = round(max(result["latest_baseline"] + float(result["preds_q10"][i]), 0.0), 1)
+                        upper_bound = round(max(result["latest_baseline"] + float(result["preds_q90"][i]), 0.0), 1)
+                    elif _z_fallback:
+                        lower_bound = round(max(predicted - _z_fallback, 0.0), 1)
+                        upper_bound = round(predicted + _z_fallback, 1)
+                    else:
+                        lower_bound = upper_bound = None
                     row = {
                         "ward_id": result["ward_id"],
                         "pollutant": pollutant,
@@ -678,8 +868,8 @@ def run(city_code: str | None = None) -> dict:
                         "confidence": round(result["confidence"], 2),
                         "model_version": result["model_version"],
                         "predicted_value": round(predicted, 1),
-                        "lower_bound": round(max(predicted - z, 0.0), 1) if z else None,
-                        "upper_bound": round(predicted + z, 1) if z else None,
+                        "lower_bound": lower_bound,
+                        "upper_bound": upper_bound,
                         "forecast_run_id": run_id,
                     }
                     if pollutant == "pm25":

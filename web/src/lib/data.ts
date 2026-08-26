@@ -634,6 +634,14 @@ export interface WardForecastSummary {
    *  Distinct from hoursToSevere so callers can choose the appropriate level
    *  for their purpose (advisory vs. enforcement). Only computed for PM2.5. */
   hoursToVeryPoor: number | null
+  /** Hours until the forecast first crosses India's NAAQS 24h PM2.5 standard
+   *  (60 µg/m³ → AQI ~100, top of "Satisfactory"). NAAQS exceedance is the
+   *  primary metric used in Indian health-burden literature (GBD India 2019;
+   *  Chowdhury et al. 2019 Lancet Planet. Health; Navinya et al. 2020) because
+   *  it anchors to the country's own legal air quality standard — a ward
+   *  perpetually "Satisfactory" by CPCB AQI is still exceeding NAAQS if PM2.5
+   *  stays above 60 µg/m³. Only computed for PM2.5. */
+  hoursToNaaqs: number | null
 }
 
 /** PM2.5 concentration (µg/m³) at the CPCB AQI "Severe" band entry (AQI 400).
@@ -643,6 +651,20 @@ const SEVERE_THRESHOLD_PM25 = 250
 /** PM2.5 concentration (µg/m³) at the CPCB AQI "Very Poor" band entry (AQI 300).
  *  This is the GRAP Stage III / AQHI-defined primary action threshold. */
 const VERY_POOR_THRESHOLD_PM25 = 120
+
+/** India's NAAQS 24h PM2.5 standard (µg/m³). Exceeding this is the primary
+ *  metric used in Indian health-burden and policy literature:
+ *    • GBD India Collaborators (2019) Lancet: PM2.5 burden framed against NAAQS.
+ *    • Chowdhury et al. (2019) Lancet Planet. Health: 660,000 deaths/year above NAAQS.
+ *    • Navinya et al. (2020): exceedance days per year as the core KPI.
+ *  Corresponds to CPCB AQI ≈ 100 (top of "Satisfactory" band).
+ *  Source: CPCB NAAQS notification, updated 2012; unchanged as of Aug 2026. */
+const NAAQS_THRESHOLD_PM25 = 60
+
+/** WHO Air Quality Guidelines 2021 — 24h PM2.5 mean (µg/m³). Nearly every
+ *  Delhi ward exceeds this continuously. Surfacing the ratio (actual ÷ WHO AQG)
+ *  contextualises "Good" CPCB AQI readings for non-expert users. */
+export const WHO_AQG_PM25_24H = 15
 
 /** Real forecast.py output for whichever of the 3 forecast-covered
  *  pollutants is requested (pm25/pm10/no2 - see forecast.py's
@@ -664,7 +686,7 @@ export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): 
     const wardId = row.ward_id as number
     let entry = byWard.get(wardId)
     if (!entry) {
-      entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null, hoursToVeryPoor: null }
+      entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null, hoursToVeryPoor: null, hoursToNaaqs: null }
       byWard.set(wardId, entry)
     }
     entry.points.push(row as ForecastPoint)
@@ -682,6 +704,9 @@ export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): 
       }
       if (pollutant === 'pm25' && predicted != null) {
         const hoursOut = Math.round((new Date(p.horizon_ts).getTime() - now) / 3_600_000)
+        if (entry.hoursToNaaqs == null && predicted >= NAAQS_THRESHOLD_PM25) {
+          entry.hoursToNaaqs = hoursOut
+        }
         if (entry.hoursToVeryPoor == null && predicted >= VERY_POOR_THRESHOLD_PM25) {
           entry.hoursToVeryPoor = hoursOut
         }

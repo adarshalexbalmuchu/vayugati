@@ -50,6 +50,7 @@ function forecast(overrides: Partial<WardForecastSummary> = {}): WardForecastSum
     peakTs: null,
     hoursToSevere: null,
     hoursToVeryPoor: null,
+    hoursToNaaqs: null,
     ...overrides,
   }
 }
