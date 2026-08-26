@@ -42,3 +42,11 @@ services:
         sync: false # Optional — Delhi OTD real-time GTFS feed; transit context layer silently degrades when unset
       - key: SENTRY_DSN
         sync: false # Optional — Sentry DSN for error tracking; no-op when unset
+      - key: FIRMS_MAP_KEY
+        sync: false # Optional — NASA FIRMS active-fire API key; vayutrace fire signal skipped when unset
+      - key: OSM_PBF_PATH
+        value: /data/osm/northern-zone-latest.osm.pbf # path on the persistent disk below
+    disk:
+      name: vayugati-data
+      mountPath: /data
+      sizeGB: 2 # ~600 MB for the Geofabrik northern-zone .pbf; 2 GB leaves room for growth

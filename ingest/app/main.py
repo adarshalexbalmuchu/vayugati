@@ -252,6 +252,60 @@ def run_cpcb_reconcile() -> list[dict]:
         _cpcb_lock.release()
 
 
+def _maybe_download_pbf() -> None:
+    """Download the Geofabrik OSM .pbf to the persistent disk if it isn't there.
+
+    Intentionally blocks the bootstrap thread — run_intel() (and VayuTrace)
+    waits until this returns so the first production intel pass has full road
+    data rather than an empty fallback.  On a container *restart* with a
+    healthy persistent disk the file is already present and this returns in
+    milliseconds.  On a fresh first deploy it takes ~5 minutes for the
+    ~600 MB file; the service is already up (uvicorn yields before
+    _bootstrap() runs) so /health passes throughout.
+
+    A partial download (process killed mid-stream) leaves a .tmp sibling;
+    the next startup detects the absent .pbf and restarts from scratch.
+    """
+    import os
+    from pathlib import Path
+
+    pbf = Path(os.getenv("OSM_PBF_PATH", "/data/osm/northern-zone-latest.osm.pbf"))
+    log = logging.getLogger("ingest.pbf_bootstrap")
+
+    if pbf.exists():
+        log.info("OSM .pbf present at %s (%d MB) — skipping download", pbf, pbf.stat().st_size // 1_000_000)
+        return
+
+    pbf.parent.mkdir(parents=True, exist_ok=True)
+    tmp = pbf.with_suffix(".pbf.tmp")
+    url = "https://download.geofabrik.de/asia/india/northern-zone-latest.osm.pbf"
+    log.info("OSM .pbf not found — downloading from Geofabrik (%s)", url)
+
+    try:
+        import httpx
+
+        with httpx.stream("GET", url, follow_redirects=True, timeout=900) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0))
+            downloaded = 0
+            last_pct = 0
+            with open(tmp, "wb") as f:
+                for chunk in resp.iter_bytes(chunk_size=4 * 1024 * 1024):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = int(downloaded / total * 100)
+                        if pct >= last_pct + 10:
+                            log.info("OSM .pbf download: %d%% (%d MB)", pct, downloaded // 1_000_000)
+                            last_pct = pct
+        tmp.rename(pbf)
+        log.info("OSM .pbf ready: %s (%d MB)", pbf, pbf.stat().st_size // 1_000_000)
+    except Exception:
+        log.exception("OSM .pbf download failed — VayuTrace road signal unavailable this run")
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config.require_env()
@@ -287,12 +341,14 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_retention, "cron", hour=3, minute=0)
     scheduler.start()
 
-    # first pass immediately: ingest, then intel once readings land
+    # first pass immediately: ingest, then download the OSM .pbf if needed,
+    # then intel so the first VayuTrace run has road data.
     def _bootstrap():
         try:
             run_ingest()
         except Exception:
             logging.exception("bootstrap ingest failed")
+        _maybe_download_pbf()
         try:
             run_intel()
         except Exception:
