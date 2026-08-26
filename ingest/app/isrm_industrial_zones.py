@@ -49,26 +49,29 @@ class IndustrialZone:
 
 
 # 16 designated industrial areas per MSME/DSIIDC records.
-# Emission weight 3 = large/heavy industry (metal, chemicals, rubber);
-# 2 = mixed light/medium (plastics, garments, electroplating);
-# 1 = small-scale/craft.
+# Zone names and coordinates match the verified list in vayu_isrm/sources/industrial_zones.py
+# (built against the actual MSME/DSIIDC source documents during the Phase 1 sandbox build).
+#
+# Emission weight 3 = large/heavy industry (metal, chemicals, auto parts);
+# 2 = mixed light/medium (plastics, garments, printing, packaging);
+# 1 = small-scale/light (furniture, food processing, warehousing).
 INDUSTRIAL_ZONES: list[IndustrialZone] = [
-    IndustrialZone("Okhla Phase I",          28.5412, 77.2610, emission_weight=3),
-    IndustrialZone("Okhla Phase II",         28.5368, 77.2684, emission_weight=3),
-    IndustrialZone("Okhla Phase III",        28.5326, 77.2760, emission_weight=2),
-    IndustrialZone("Narela",                 28.8524, 77.0937, emission_weight=3),
-    IndustrialZone("Bawana",                 28.7950, 77.0373, emission_weight=3),
-    IndustrialZone("Mundka",                 28.6802, 76.9985, emission_weight=2),
-    IndustrialZone("Mayapuri",               28.6353, 77.1101, emission_weight=2),
-    IndustrialZone("Wazirpur",               28.6987, 77.1641, emission_weight=3),
-    IndustrialZone("Lawrence Road (Keshav Puram)", 28.7014, 77.1522, emission_weight=2),
-    IndustrialZone("Jhilmil",               28.6776, 77.3104, emission_weight=2),
-    IndustrialZone("Patparganj",             28.6230, 77.2950, emission_weight=2),
-    IndustrialZone("Shahdara",               28.6698, 77.2942, emission_weight=3),
-    IndustrialZone("GT Karnal Road (Badli)", 28.7413, 77.1489, emission_weight=2),
-    IndustrialZone("Badli",                  28.7356, 77.1644, emission_weight=2),
-    IndustrialZone("Sultanpur Majra",        28.6943, 77.0683, emission_weight=1),
-    IndustrialZone("Mangolpuri",             28.6956, 77.0855, emission_weight=2),
+    IndustrialZone("Wazirpur Industrial Area",              28.6975, 77.1645, emission_weight=3),
+    IndustrialZone("Mangolpuri Industrial Area",            28.6890, 77.0790, emission_weight=2),
+    IndustrialZone("Narela Industrial Area",                28.8540, 77.0910, emission_weight=2),
+    IndustrialZone("Bawana Industrial Area",                28.7995, 77.0335, emission_weight=3),
+    IndustrialZone("Okhla Industrial Area (Phase I-III)",  28.5355, 77.2755, emission_weight=2),
+    IndustrialZone("Mohan Cooperative Industrial Estate",  28.5285, 77.2865, emission_weight=2),
+    IndustrialZone("Patparganj Industrial Area",            28.6230, 77.2905, emission_weight=2),
+    IndustrialZone("Jhilmil Industrial Area",               28.6720, 77.3175, emission_weight=2),
+    IndustrialZone("Shahdara Industrial Area",              28.6710, 77.2890, emission_weight=2),
+    IndustrialZone("Naraina Industrial Area (Phase I-II)", 28.6335, 77.1385, emission_weight=2),
+    IndustrialZone("Mayapuri Industrial Area (Phase I-II)",28.6320, 77.1215, emission_weight=3),
+    IndustrialZone("Kirti Nagar Industrial Area",           28.6520, 77.1450, emission_weight=1),
+    IndustrialZone("Lawrence Road Industrial Area",         28.6870, 77.1520, emission_weight=1),
+    IndustrialZone("Anand Parbat Industrial Area",          28.6555, 77.1795, emission_weight=2),
+    IndustrialZone("Mundka Industrial Area",                28.6815, 77.0335, emission_weight=1),
+    IndustrialZone("Badli Industrial Area",                 28.7365, 77.1305, emission_weight=2),
 ]
 
 
