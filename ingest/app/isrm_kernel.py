@@ -205,8 +205,13 @@ def run_kernel(
         wind_dir = float(met.get("wind_dir") or met.get("wind_from_direction") or 180.0)
         wind_speed = float(met.get("wind_speed") or 0.0)
 
-        # Per-source contribution score
-        contributions: dict[str, float] = {"industrial": 0.0, "road": 0.0, "fire": 0.0}
+        # Per-source contribution score — accumulated per type then averaged.
+        # We store (sum_of_scores, count) per type and divide at the end so
+        # that a category with 200 k road segments does not crowd out 16
+        # industrial zones: each type contributes its *mean* spatial signal,
+        # not its raw sum.  This keeps the breakdown physically meaningful
+        # regardless of how unevenly the source inventories are sized.
+        acc: dict[str, list[float]] = {"industrial": [], "road": [], "fire": []}
 
         for s in all_sources:
             dist = _haversine_km(wlat, wlng, s["lat"], s["lng"])
@@ -215,10 +220,15 @@ def run_kernel(
             dd = _distance_decay(dist, sigma_km)
             score = s["_ew"] * wf * dd
             stype = s["source_type"]
-            if stype in contributions:
-                contributions[stype] += score
+            if stype in acc:
+                acc[stype].append(score)
             else:
-                contributions["industrial"] += score  # catch-all
+                acc["industrial"].append(score)  # catch-all
+
+        contributions = {
+            t: (sum(scores) / len(scores)) if scores else 0.0
+            for t, scores in acc.items()
+        }
 
         total = sum(contributions.values()) or 1.0
         breakdown = {k: round(v / total, 4) for k, v in contributions.items()}
