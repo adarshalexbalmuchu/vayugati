@@ -24,7 +24,12 @@ export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: n
   // a hard max-width and is allowed to wrap, which makes overflow
   // impossible rather than just less likely.
   const valueSize = Math.round(size * 0.2)
-  const labelSize = Math.max(7, Math.round(size * 0.072))
+  const baseLabelSize = Math.max(7, Math.round(size * 0.072))
+  // "Very Poor" (has a space to wrap at) reads fine at baseLabelSize.
+  // "Satisfactory" is one unbroken word longer than any other label, so at
+  // the same size it had no clean place to wrap and broke mid-word. Only it
+  // needs to shrink a notch to stay on one line.
+  const labelSize = level.label.length > 10 ? Math.max(6, baseLabelSize - 1) : baseLabelSize
   const labelMaxWidth = Math.round(size * 0.56)
 
   return (
