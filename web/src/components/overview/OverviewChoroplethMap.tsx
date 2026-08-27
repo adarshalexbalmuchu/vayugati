@@ -153,12 +153,12 @@ export default function OverviewChoroplethMap({
   useEffect(() => {
     if (!containerRef.current) return
 
-    // Same "Minimal Grey GIS" MapTiler style the dedicated Map page uses when
-    // a key is configured — noticeably crisper than the keyless raster
-    // fallback. Falls back to the keyless Esri tiles with no config needed.
+    // Same "Terrain" MapTiler style the dedicated Map page offers when a key
+    // is configured — noticeably crisper than the keyless raster fallback.
+    // Falls back to the keyless Esri tiles with no config needed.
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: isBasemapAvailable('minimal-grey') ? resolveStyleUrl('minimal-grey') : FALLBACK_STYLE,
+      style: isBasemapAvailable('terrain') ? resolveStyleUrl('terrain') : FALLBACK_STYLE,
       center: DELHI_CENTER,
       zoom: DELHI_ZOOM,
       attributionControl: false,
