@@ -70,6 +70,7 @@ _intel_lock = threading.Lock()
 _ops_lock = threading.Lock()
 _transit_lock = threading.Lock()
 _cpcb_lock = threading.Lock()
+_fire_lock = threading.Lock()
 _last_run: dict | None = None
 _last_intel: dict | None = None
 _last_ops: dict | None = None
@@ -207,6 +208,46 @@ def run_transit() -> dict:
         _transit_lock.release()
 
 
+def run_fire_counts() -> dict:
+    """Fetch yesterday's VIIRS NRT regional fire count from NASA FIRMS and
+    store it in fire_counts for use as a forecast lag feature.
+
+    Runs daily at 06:00 UTC (11:30 IST) — VIIRS NRT data has a ~3h latency,
+    so yesterday's full-day count is available and stable by then.
+
+    FIRMS_MAP_KEY must be set; when absent, returns immediately with zero
+    written. This is a supplementary signal: a missing key degrades the
+    forecast feature to NaN (LightGBM's default-split path) — it does NOT
+    block forecast, ingest, or any other job."""
+    from datetime import date, timedelta
+    from .vayutrace_firms import fetch_igp_fires
+
+    if not _fire_lock.acquire(blocking=False):
+        raise RuntimeError("fire counts already running")
+    try:
+        if not config.FIRMS_MAP_KEY:
+            logging.getLogger("ingest").info("FIRMS_MAP_KEY not set — fire count fetch skipped")
+            return {"skipped": True, "reason": "FIRMS_MAP_KEY not configured"}
+
+        yesterday = date.today() - timedelta(days=1)
+        fires = fetch_igp_fires(day=yesterday)
+        # Count only regional fires (distance > 50 km from Delhi centroid) —
+        # local fires within Delhi/NCR are handled by the VayuTrace kernel
+        # and would double-count emissions if also included here.
+        regional_count = sum(1 for f in fires if f.get("fire_class") == "regional")
+        db.upsert_fire_count(yesterday.isoformat(), "igp_regional", regional_count)
+        logging.getLogger("ingest").info(
+            "fire counts: %d regional VIIRS fires on %s (%d total in IGP bbox)",
+            regional_count, yesterday, len(fires),
+        )
+        return {"date": yesterday.isoformat(), "fire_count": regional_count}
+    except Exception:
+        logging.getLogger("ingest").exception("fire count fetch failed")
+        return {"error": "see logs"}
+    finally:
+        _fire_lock.release()
+
+
 def run_retention() -> dict:
     """Delete readings older than 90 days. Runs once daily at 03:00 UTC.
     At ~4 400 rows/day (46 stations × 15-min cadence), the table grows
@@ -339,6 +380,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_transit, "interval", minutes=5)
     # daily at 03:00 UTC: purge readings older than 90 days to bound table growth.
     scheduler.add_job(run_retention, "cron", hour=3, minute=0)
+    # daily at 06:00 UTC: fetch previous day's VIIRS NRT regional fire count.
+    # VIIRS NRT has ~3h latency; 06:00 UTC (11:30 IST) ensures yesterday's
+    # full-day count is stable and complete before ingestion.
+    scheduler.add_job(run_fire_counts, "cron", hour=6, minute=0)
     scheduler.start()
 
     # first pass immediately: ingest, then download the OSM .pbf if needed,
@@ -497,6 +542,15 @@ def latest_readings_endpoint():
     (every 10 minutes) - an empty list before the first refresh completes,
     never an error."""
     return _last_cpcb_reconcile if _last_cpcb_reconcile is not None else []
+
+
+@app.post("/fire-counts/run", dependencies=[Depends(_require_ingest_key)])
+def trigger_fire_counts():
+    """Fetch yesterday's VIIRS fire count now (manual trigger between daily runs)."""
+    try:
+        return run_fire_counts()
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @app.post("/intel", dependencies=[Depends(_require_ingest_key)])

@@ -448,6 +448,32 @@ def set_reading_aqi(station_id: int, ts: str, aqi_value: int) -> None:
     _with_retry(lambda: client().table("readings").update({"aqi": aqi_value}).eq("station_id", station_id).eq("ts", ts).execute())
 
 
+def upsert_fire_count(date_str: str, region: str, fire_count: int) -> None:
+    """Write (or update) the daily VIIRS regional fire count for one region.
+    Idempotent on (date, region) — safe to call daily even if the previous
+    day's fetch is retried. Used by main.run_fire_counts()."""
+    _with_retry(lambda: client().table("fire_counts").upsert(
+        {"date": date_str, "region": region, "fire_count": fire_count},
+        on_conflict="date,region",
+    ).execute())
+
+
+def get_fire_counts_history(days: int = 45, region: str = "igp_regional") -> list[dict]:
+    """[{date, fire_count}] for the last `days` calendar days for `region`.
+    45 days covers the 30-day training window plus a 15-day buffer. Ordered
+    oldest-first so callers can build a date-indexed Series directly."""
+    from datetime import timezone
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    return (_with_retry(lambda: client()
+        .table("fire_counts")
+        .select("date, fire_count")
+        .eq("region", region)
+        .gte("date", cutoff)
+        .order("date")
+        .execute()
+    ).data or [])
+
+
 def delete_old_readings(days: int = 90) -> int:
     """Delete readings older than `days` days. Returns the number deleted.
     Called by the daily retention job in main.py to keep the readings table

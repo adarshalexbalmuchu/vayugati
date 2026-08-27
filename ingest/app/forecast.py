@@ -49,7 +49,7 @@ log = logging.getLogger("ingest.forecast")
 HORIZONS_H = (6, 12, 24, 48)
 MAX_HORIZON_H = max(HORIZONS_H)
 MIN_TRAIN_ROWS = 24 * 10  # ~10 days of hourly data before we trust a learned model
-MODEL_VERSION_LGB = "lgb_unified_v3"
+MODEL_VERSION_LGB = "lgb_unified_v4"
 MODEL_VERSION_DIURNAL = "diurnal_persistence_v2"
 DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2")
 DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
@@ -149,6 +149,22 @@ def _city_avg_series(df: pd.DataFrame) -> pd.Series:
     return df.groupby("ts")["value"].mean()
 
 
+def _daily_fire_counts(fire_rows: list[dict]) -> pd.Series:
+    """Convert DB fire_counts rows to a UTC-midnight-indexed Series.
+
+    Returns a Series of fire_count values indexed by UTC-midnight timestamps
+    so _make_features() can look up fire counts by date with .get().
+    Empty Series when no data is available (FIRMS key not set, off-season).
+
+    Used by forecast.run() which calls db.get_fire_counts_history() once per
+    city and passes the result here — no per-ward fetch."""
+    if not fire_rows:
+        return pd.Series(dtype=float)
+    df = pd.DataFrame(fire_rows)
+    df["date"] = pd.to_datetime(df["date"], utc=True)
+    return df.set_index("date")["fire_count"].astype(float).sort_index()
+
+
 def _ward_series(df: pd.DataFrame, ward_id: int) -> pd.DataFrame:
     """Continuous hourly series for one ward, gaps interpolated."""
     w = df[df["ward_id"] == ward_id].set_index("ts").sort_index()
@@ -221,6 +237,7 @@ def _make_features(
     weather: pd.DataFrame,
     city_avg: pd.Series,
     no2_series: pd.Series | None = None,
+    fire_counts: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Lag + weather + calendar + spatial features for the local_excess series.
 
@@ -286,6 +303,17 @@ def _make_features(
         None/NaN when forecasting NO2 itself (circular dependency) or when NO2
         data is unavailable for the ward.
 
+      fire_count_lag1d — VIIRS SNPP NRT regional active-fire pixel count for
+        Punjab + Haryana (distance > 50 km from Delhi), 1 calendar day prior.
+        Stubble burning contributes 30–60% of Delhi's PM2.5 during Oct 15 –
+        Nov 25; models without this feature systematically under-predict
+        transport episodes (Gupta et al. 2021 JGR; Singh et al. 2022 ACP).
+        Fetched daily; NaN outside the FIRMS key window or before first fetch.
+
+      fire_count_lag2d — same, 2 calendar days prior. Smoke from Punjab takes
+        1–2 days to reach Delhi at typical NW wind speeds; the 2-day lag adds
+        the transport-delay signal the 1-day lag alone cannot capture.
+
       city_avg_lag1 — spatial: other wards' simultaneous reading lagged 1h,
         the "nearby station" signal from the plan (§3).
     """
@@ -344,6 +372,22 @@ def _make_features(
     else:
         f["no2_lag1"] = float("nan")
 
+    # Regional fire count lags — daily granularity broadcast to hourly index.
+    # Each hourly row looks up the fire count for (date - 1d) and (date - 2d)
+    # so the model sees the same fire count for all 24 hours of a given day,
+    # which matches the physical reality (one VIIRS overpass per day).
+    if fire_counts is not None and not fire_counts.empty:
+        dates = f.index.normalize()  # UTC midnight for each hour
+        f["fire_count_lag1d"] = [
+            fire_counts.get(d - pd.Timedelta(days=1), float("nan")) for d in dates
+        ]
+        f["fire_count_lag2d"] = [
+            fire_counts.get(d - pd.Timedelta(days=2), float("nan")) for d in dates
+        ]
+    else:
+        f["fire_count_lag1d"] = float("nan")
+        f["fire_count_lag2d"] = float("nan")
+
     # Forward/back-fill short gaps (a ward's weather may lag readings by 1h);
     # leave residual NaNs as NaN — LightGBM handles them natively and a
     # genuinely weather-less ward should not get fabricated zeros.
@@ -374,6 +418,8 @@ FEATURE_COLS = [
     "vc_unfavourable",
     # Co-pollutant
     "no2_lag1",
+    # External fire signal (regional stubble burning, Punjab + Haryana)
+    "fire_count_lag1d", "fire_count_lag2d",
     # Spatial
     "city_avg_lag1",
 ]
@@ -428,6 +474,7 @@ def _recursive_forecast(
     future_weather: pd.DataFrame,
     model,
     no2_series: pd.Series | None = None,
+    fire_counts: pd.Series | None = None,
 ) -> np.ndarray:
     """Recursively forecast local_excess for every timestamp in future_idx,
     using ONLY `hist_*` (data available up to the start of future_idx) plus
@@ -522,6 +569,15 @@ def _recursive_forecast(
         is_fog_season_val = 1.0 if t.month in (12, 1, 2) else 0.0
         vc_unfavourable_val = 1.0 if (pd.notna(vc_val) and vc_val < 6000.0) else 0.0
 
+        # Fire counts: look up by date for each forecast step — changes
+        # when the loop crosses midnight but stays constant within a day.
+        t_date = t.normalize()
+        if fire_counts is not None and not fire_counts.empty:
+            fc_lag1d = float(fire_counts.get(t_date - pd.Timedelta(days=1), float("nan")))
+            fc_lag2d = float(fire_counts.get(t_date - pd.Timedelta(days=2), float("nan")))
+        else:
+            fc_lag1d = fc_lag2d = float("nan")
+
         x = pd.DataFrame(
             [[
                 lag1, lag24, lag48, lag72,
@@ -536,6 +592,7 @@ def _recursive_forecast(
                 pblh_val, pblh_trend_val, vc_val, stagnation,
                 vc_unfavourable_val,
                 no2_lag1_val,
+                fc_lag1d, fc_lag2d,
                 city_lag1,
             ]],
             columns=FEATURE_COLS,
@@ -600,6 +657,7 @@ def _validate(
     baseline_value_at_split: float,
     min_mae_improvement_pct: float,
     no2_series: pd.Series | None = None,
+    fire_counts: pd.Series | None = None,
 ) -> tuple[str, dict, int | None, bool]:
     """Time-based holdout validation. Returns (method, validation_metrics,
     max_validated_horizon_hours, beats_persistence_overall)."""
@@ -635,12 +693,12 @@ def _validate(
     model_pred = diurnal
     method = MODEL_VERSION_DIURNAL
     if use_lgb:
-        feats = _make_features(w.iloc[:split], weather, city_avg, no2_series).dropna()
+        feats = _make_features(w.iloc[:split], weather, city_avg, no2_series, fire_counts).dropna()
         if len(feats) >= MIN_TRAIN_ROWS // 2:
             model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
             model.fit(feats[FEATURE_COLS], feats["y"])
             future_weather = weather.reindex(holdout_idx)
-            model_pred = _recursive_forecast(train_hist, weather.iloc[:split], city_avg.iloc[:split], holdout_idx, future_weather, model, no2_series)
+            model_pred = _recursive_forecast(train_hist, weather.iloc[:split], city_avg.iloc[:split], holdout_idx, future_weather, model, no2_series, fire_counts)
             method = MODEL_VERSION_LGB
 
     metrics: dict = {}
@@ -719,6 +777,7 @@ def _forecast_ward_pollutant(
     threshold: float | None,
     min_mae_improvement_pct: float,
     no2_readings_df: pd.DataFrame | None = None,
+    fire_counts: pd.Series | None = None,
 ) -> dict | None:
     ward_id = int(ward["id"])
     df = _with_local_excess(readings_df)
@@ -749,7 +808,7 @@ def _forecast_ward_pollutant(
             no2_ward_series = no2_ward["value"].reindex(full_no2_idx).interpolate(limit=6).ffill().bfill()
 
     method, validation_metrics, max_validated, beats_persistence = _validate(
-        w, wx_ward, city_avg, threshold, latest_baseline, min_mae_improvement_pct, no2_ward_series
+        w, wx_ward, city_avg, threshold, latest_baseline, min_mae_improvement_pct, no2_ward_series, fire_counts
     )
 
     # ---- the real, future 48h forecast, using ALL available history ----
@@ -779,13 +838,13 @@ def _forecast_ward_pollutant(
     preds_q90: np.ndarray | None = None
 
     if method == MODEL_VERSION_LGB:
-        feats = _make_features(w, wx_ward, city_avg, no2_ward_series).dropna()
+        feats = _make_features(w, wx_ward, city_avg, no2_ward_series, fire_counts).dropna()
         _lgb_kw = dict(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
 
         # Point estimate (regression)
         model_pt = lgb.LGBMRegressor(**_lgb_kw)
         model_pt.fit(feats[FEATURE_COLS], feats["y"])
-        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_pt, no2_ward_series)
+        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_pt, no2_ward_series, fire_counts)
 
         # Calibrated quantile uncertainty bounds — replaces the Gaussian
         # approximation (UNCERTAINTY_Z × RMSE) used by the diurnal fallback.
@@ -799,11 +858,11 @@ def _forecast_ward_pollutant(
         try:
             model_q10 = lgb.LGBMRegressor(objective="quantile", alpha=0.10, **_lgb_kw)
             model_q10.fit(feats[FEATURE_COLS], feats["y"])
-            preds_q10 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q10, no2_ward_series)
+            preds_q10 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q10, no2_ward_series, fire_counts)
 
             model_q90 = lgb.LGBMRegressor(objective="quantile", alpha=0.90, **_lgb_kw)
             model_q90.fit(feats[FEATURE_COLS], feats["y"])
-            preds_q90 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q90, no2_ward_series)
+            preds_q90 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q90, no2_ward_series, fire_counts)
         except Exception:
             log.debug("quantile model training failed for ward %s %s — falling back to Gaussian bounds", ward_id, pollutant)
             preds_q10 = preds_q90 = None
@@ -871,6 +930,10 @@ def run(city_code: str | None = None) -> dict:
         # the forecast target itself (would create a circular dependency).
         no2_readings_df = _hourly_ward_pollutant(readings, "no2")
 
+        # Regional fire counts — daily signal, city-wide (not ward-specific).
+        # Empty Series when FIRMS key is absent or fire_counts table is empty.
+        fire_counts_series = _daily_fire_counts(db.get_fire_counts_history(days=45))
+
         for pollutant in cfg["enabled_pollutants"]:
             readings_df = _hourly_ward_pollutant(readings, pollutant)
             if readings_df.empty:
@@ -897,6 +960,7 @@ def run(city_code: str | None = None) -> dict:
                 result = _forecast_ward_pollutant(
                     ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
                     no2_readings_df=no2_readings_df if pollutant != "no2" else None,
+                    fire_counts=fire_counts_series if not fire_counts_series.empty else None,
                 )
                 if result is None:
                     summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant})
