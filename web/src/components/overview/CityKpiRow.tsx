@@ -24,7 +24,7 @@ function MetricCard({
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`group flex w-full items-center gap-2 px-3 py-2.5 text-left transition ${
+      className={`group flex h-full w-full items-center gap-2 px-3 py-2.5 text-left transition ${
         onClick ? 'focus-ring cursor-pointer hover:bg-slate-50' : ''
       }`}
     >
@@ -120,43 +120,44 @@ export default function CityKpiRow({
     ? 'text-slate-900'
     : 'text-slate-400'
 
+  // No wrapper here — CommandView places these as siblings of the spotlight
+  // cell inside one shared grid, so every cell (spotlight + 4 KPIs) shares
+  // the same border, divider, and row height instead of living in two
+  // differently-sized cards.
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-      {/* 2×2 on mobile, 4-across on sm+ — dividers replace individual card borders */}
-      <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-4 sm:divide-y-0">
-        <MetricCard
-          tone={!forecastRunFailed && reviewCount > 0 ? 'bg-status-warning' : 'bg-slate-300'}
-          label="Wards flagged"
-          value={forecastRunFailed ? '—' : reviewCount}
-          sub={forecastRunFailed ? 'Forecast required' : undefined}
-          valueColor={forecastRunFailed ? 'text-slate-400' : reviewCount > 0 ? 'text-status-warning' : 'text-slate-400'}
-          onClick={onWardsFlaggedClick}
-        />
-        <MetricCard
-          tone={openIncidents > 0 ? 'bg-status-warning' : 'bg-slate-300'}
-          label="Incidents open"
-          value={openIncidents}
-          // Neutral dark for 0 — green implies a positive outcome; zero open
-          // incidents during AQI 322 may mean no response was initiated yet.
-          valueColor={openIncidents > 0 ? 'text-status-warning' : 'text-slate-900'}
-          onClick={() => navigate('/incidents')}
-        />
-        <MetricCard
-          tone={forecastRunFailed ? 'bg-status-warning' : coverage ? 'bg-accent-500' : 'bg-slate-300'}
-          label={forecastLabel}
-          value={forecastValue}
-          valueColor={forecastColor}
-          onClick={() => navigate('/analytics')}
-        />
-        <MetricCard
-          tone={!healthLoaded ? 'bg-slate-300' : freshnessDegraded ? 'bg-status-warning' : 'bg-status-success'}
-          label="Data freshness"
-          value={freshnessStatus}
-          sub={freshnessSub}
-          valueColor={freshnessColor}
-          onClick={() => navigate('/sensors')}
-        />
-      </div>
-    </div>
+    <>
+      <MetricCard
+        tone={!forecastRunFailed && reviewCount > 0 ? 'bg-status-warning' : 'bg-slate-300'}
+        label="Wards flagged"
+        value={forecastRunFailed ? '—' : reviewCount}
+        sub={forecastRunFailed ? 'Forecast required' : undefined}
+        valueColor={forecastRunFailed ? 'text-slate-400' : reviewCount > 0 ? 'text-status-warning' : 'text-slate-400'}
+        onClick={onWardsFlaggedClick}
+      />
+      <MetricCard
+        tone={openIncidents > 0 ? 'bg-status-warning' : 'bg-slate-300'}
+        label="Incidents open"
+        value={openIncidents}
+        // Neutral dark for 0 — green implies a positive outcome; zero open
+        // incidents during AQI 322 may mean no response was initiated yet.
+        valueColor={openIncidents > 0 ? 'text-status-warning' : 'text-slate-900'}
+        onClick={() => navigate('/incidents')}
+      />
+      <MetricCard
+        tone={forecastRunFailed ? 'bg-status-warning' : coverage ? 'bg-accent-500' : 'bg-slate-300'}
+        label={forecastLabel}
+        value={forecastValue}
+        valueColor={forecastColor}
+        onClick={() => navigate('/analytics')}
+      />
+      <MetricCard
+        tone={!healthLoaded ? 'bg-slate-300' : freshnessDegraded ? 'bg-status-warning' : 'bg-status-success'}
+        label="Data freshness"
+        value={freshnessStatus}
+        sub={freshnessSub}
+        valueColor={freshnessColor}
+        onClick={() => navigate('/sensors')}
+      />
+    </>
   )
 }

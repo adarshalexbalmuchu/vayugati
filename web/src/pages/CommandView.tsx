@@ -207,37 +207,38 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero — spotlight card (click to inspect the worst ward) + interactive KPI grid */}
-                <div className="flex shrink-0 items-stretch gap-2">
-                  <button
-                    type="button"
-                    onClick={() => worstWard && setSelectedWardId(worstWard.id)}
-                    disabled={!worstWard}
-                    className="focus-ring group flex flex-shrink-0 items-center gap-3 rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-3 text-left shadow-card transition hover:border-accent-200 hover:shadow-card-lg disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:shadow-card"
-                  >
-                    <CityAqiGauge aqi={worstDisplayAqi} size={80} />
-                    <div className="w-px self-stretch bg-slate-100" aria-hidden />
-                    <div className="min-w-0 w-[220px] flex-none">
-                      <CityStatusHero
-                        aqi={worstDisplayAqi}
-                        wardName={worstWard?.name ?? null}
-                        trend={worstTrend}
-                        source={worstWard?.dominant_source ?? null}
-                        forecastPeak={worstWindowed?.value ?? null}
-                        readingAgeMinutes={worstReadingAge}
-                        forecastLabel={forecastLabel}
-                        forecastSuppressed={suppressForecast}
-                      />
-                    </div>
-                    {worstWard && (
-                      <ChevronRight
-                        className="h-4 w-4 flex-shrink-0 self-center text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
-                        aria-hidden
-                      />
-                    )}
-                  </button>
+                {/* Hero — one shared grid so the spotlight cell and the 4 KPI
+                    cells are all exactly the same size, not two differently
+                    sized cards sitting side by side. */}
+                <div className="shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-card">
+                  <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-5 sm:divide-y-0">
+                    <button
+                      type="button"
+                      onClick={() => worstWard && setSelectedWardId(worstWard.id)}
+                      disabled={!worstWard}
+                      className="focus-ring group flex h-full w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
+                    >
+                      <CityAqiGauge aqi={worstDisplayAqi} size={80} />
+                      <div className="min-w-0 flex-1">
+                        <CityStatusHero
+                          aqi={worstDisplayAqi}
+                          wardName={worstWard?.name ?? null}
+                          trend={worstTrend}
+                          source={worstWard?.dominant_source ?? null}
+                          forecastPeak={worstWindowed?.value ?? null}
+                          readingAgeMinutes={worstReadingAge}
+                          forecastLabel={forecastLabel}
+                          forecastSuppressed={suppressForecast}
+                        />
+                      </div>
+                      {worstWard && (
+                        <ChevronRight
+                          className="ml-1 h-3.5 w-3.5 flex-shrink-0 self-center text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
+                          aria-hidden
+                        />
+                      )}
+                    </button>
 
-                  <div className="min-w-0 flex-1">
                     <CityKpiRow
                       reviewCount={reviewWards.length}
                       openIncidents={metrics.openCount}
