@@ -789,3 +789,293 @@ per forecast step, not a single persisted initial value.
   arrival-time probability at Delhi, conditioned on observed wind. This is
   the approach used in SAFAR/IITM operational forecasts. The lag features are
   an informed approximation, not a transport model.
+
+---
+
+## VayuTrace source-attribution model — design, literature basis, and limitations
+
+VayuTrace is the source-attribution engine in `ingest/app/vayutrace_*.py`. It
+is a **forward dispersion model**: starting from an emission source inventory
+it estimates how much of each source category reaches each ward. This is the
+opposite of **receptor modelling** (PMF/CMB), which works backward from
+chemically-speciated filter samples to infer source contributions. VayuTrace
+outputs must always be labelled "estimated" or "modelled" — never "detected"
+or "measured".
+
+### Why a forward model?
+
+Delhi's 44 CPCB monitoring stations do not collect chemically-speciated samples
+suitable for PMF/CMB receptor modelling in real time. The two published receptor
+studies (IIT Kanpur 2016; TERI-ARAI 2018) are city-level aggregates from
+episodic campaigns, not ward-level, not operationally updated. A forward model
+trades absolute accuracy for spatial resolution: it can produce a per-ward
+breakdown updated every intel cycle, constrained by the published receptor
+studies as a sanity-check target.
+
+### Sector priors — calibration targets
+
+`vayutrace_sector_priors.py` encodes city-level PM2.5 sector breakdowns from
+two independent published studies:
+
+| Sector | IITK 2016 winter | TERI-ARAI 2018 winter |
+|--------|------------------|-----------------------|
+| Secondary particles (SO₄²⁻/NO₃⁻) | 25–30 % | 4–7 % |
+| Vehicles | 20–25 % | 26–30 % |
+| Biomass burning (local + regional) | 17–26 % | 18–22 % |
+| Dust (road, construction, windblown) | 8–12 % | 28–32 % |
+| Industrial | 6–10 % | 10–14 % |
+| Waste open burning | 8–9 % | 5–8 % |
+| Unknown | 0–9 % | 0–5 % |
+
+**IIT Kanpur (2016):** "Source Apportionment of PM2.5 & PM10 Concentrations
+at Delhi, India", commissioned by DPCC, using CMB receptor modelling on
+chemically-speciated filter samples at 5 Delhi locations (Nov–Feb, Apr–Jun
+campaign periods). The highest-cited government-commissioned baseline for
+Delhi's emission source profile.
+
+**TERI-ARAI (2018):** Collaborative study by The Energy and Resources Institute
+and Automotive Research Association of India, submitted to DPCC. PMF receptor
+modelling. Cited in CPCB's 2019 National Clean Air Programme baseline.
+
+The two studies show considerable spread — especially for dust (TERI 28–32% vs.
+IITK 8–12% winter). This is expected: receptor modelling results are sensitive
+to the chemical tracer set, the sampling season, and the spatial coverage of
+filters. VayuTrace uses `consensus_midpoints()` — the arithmetic mean of the
+two studies' midpoints per sector — as its single calibration target for
+`calibrate_vayutrace_sigma.py`. The kernel's city-averaged output should roughly
+match this target; ward-level outputs will deviate according to local source
+proximity.
+
+### Emission source inventory
+
+Three source categories from government documents:
+
+**Industrial zones** (`vayutrace_industrial_zones.py`) — 60 Delhi sources:
+- 29 DSIIDC planned industrial estates (DSIIDC official list, MPD-2021 Ch.10)
+- 4 Flatted Factory Complexes (multi-floor SME buildings)
+- 27 notified non-conforming clusters being redeveloped (DPCC notifications;
+  typically older/informal, lacking modern emission controls → emission_weight=3)
+
+Emission weights (1–3, relative, unitless) reflect source intensity:
+- 3 = heavy industry (metal, chemicals, auto parts)
+- 2 = mixed light/medium (plastics, garments, packaging)
+- 1 = small-scale / flatted factory
+
+Coordinates are **approximate locality centroids** suitable for ward-level
+dispersion at 1–5 km resolution. The tests enforce a Delhi bounding-box guard
+(28.40–28.90°N, 76.84–77.35°E) so any lat/lng swaps are caught.
+
+**Road segments** (`vayutrace_osm_roads.py`) — OpenStreetMap (Geofabrik Delhi
+.pbf extract, 223 MB). Loaded via osmium (pyosmium); emission_weight from OSM
+highway tag hierarchy (motorway/trunk=3, primary=2, secondary=1). Used to
+compute vehicle emission contribution to each ward.
+
+**Fire hotspots** (`vayutrace_firms.py`) — NASA FIRMS VIIRS SNPP NRT, same
+source as the fire_counts pipeline. Each VIIRS pixel has lat/lng, brightness
+temperature, and FRP (fire radiative power, MW). Classified into local (<50 km
+from Delhi centroid) and regional (≥50 km) to separate the kernel model from
+the transport index model.
+
+### The Gaussian dispersion kernel
+
+For each ward W and each emission source S:
+
+```
+contribution(S → W) = emission_weight(S)
+                    × wind_factor(bearing(S→W), wind_dir_at_W, wind_speed_at_W)
+                    × distance_decay(haversine(S, W), σ)
+```
+
+**distance_decay** is a Gaussian:
+```
+decay(d, σ) = exp(−d² / 2σ²)
+```
+Returns 1.0 at d=0, ~0.14 at d=2σ.
+
+**wind_factor** — directional transport alignment:
+```
+factor = max(0, cos(Δθ)) × (1 + wind_speed_ms / 10)
+```
+where Δθ is the angle between (a) the bearing from source to ward and (b) the
+direction the wind is blowing toward. The (1 + v/10) term amplifies transport
+at higher wind speeds.
+
+Per-type contributions are averaged within each type (not summed), then
+normalised to sum to 1 across types. This **per-type mean** prevents 200 k road
+segments from drowning out 60 industrial zones: each type contributes its mean
+spatial signal, keeping the breakdown physically meaningful regardless of source
+inventory size.
+
+### Season-aware σ (Pasquill-Gifford grounding)
+
+σ controls how far each source reaches. The optimal value depends on atmospheric
+stability, which in Delhi follows a strong seasonal cycle:
+
+| Season | Months | Stability | σ | Basis |
+|--------|--------|-----------|---|-------|
+| Winter | Oct–Feb | P-G class E-F (stable), surface inversions 100–400 m | 5 km | Briggs (1973) urban σ_y ≈ 246 m at 5 km under class E-F |
+| Summer | Mar–Sep | P-G class D (neutral to slightly unstable) | 7 km | Wind-stratified Spearman calibration: ρ=0.20, p≈0, n=4,340 reading+weather pairs, 44 Delhi CPCB stations, 30 days |
+
+**Briggs (1973):** "Diffusion Estimation for Small Emissions", ATDL contribution
+file No. 79, NOAA. The standard reference for Pasquill-Gifford urban dispersion
+sigma parameterisations.
+
+Per-source-type σ overrides:
+- **Roads** — σ=1 km (all seasons). Vehicle emissions disperse within 200–500 m
+  of the carriageway due to traffic turbulence. CERC ADMS-Urban documentation;
+  TERI-ARAI 2018: vehicular contribution drops steeply beyond 500 m.
+- **Fire (local)** — σ=30 km (all seasons). PMF receptor studies (Frontiers in
+  Sustainable Cities 2021) show Haryana fires at 50–80 km can contribute 5–15%
+  during active episodes. Gaussian at σ=20 km gives ~4% at 50 km (too low);
+  σ=30 km gives ~25% at 50 km and ~7% at 80 km, consistent with observations.
+- **Industrial** — seasonal σ above (5 km winter / 7 km summer).
+
+### Calm-wind isotropic fallback
+
+Below 1 m/s, wind direction is meteorologically unreliable and dispersion is
+effectively isotropic (EPA AERMOD Guide §4.2; WMO Technical Note 285). Under
+surface inversions — common in Delhi Nov–Feb during the same P-G E-F stable
+regime that tightens σ — the directional cos(Δθ) factor is meaningless.
+
+VayuTrace blends linearly:
+- v ≤ 1 m/s → fully isotropic. Factor = 1/π ≈ 0.318, the expected value of
+  max(0, cos(Δθ)) averaged over all bearings. Using exactly 1/π preserves the
+  contribution magnitude relative to the directional model.
+- 1–2 m/s → linear blend between isotropic and directional.
+- v ≥ 2 m/s → fully directional.
+
+This prevents VayuTrace from falsely attributing all pollution to sources that
+happen to align with an unreliable wind direction during stagnant-air episodes.
+
+### Regional transport — dynamic fraction
+
+The fraction of Delhi's PM2.5 from regional (upwind) transport is **not a fixed
+constant**. The legacy IITK 2016 "64% winter regional" figure conflated fire and
+non-fire transport. VayuTrace separates them:
+
+**Non-fire base regional transport** (Haryana industry, UP/Rajasthan dust,
+secondary aerosol from regional precursors):
+- Winter (Oct–Feb): 35 % (IITK 2016 sector breakdown minus the biomass burning
+  fraction of 17–26%)
+- Summer (Mar–Sep): 15 %
+
+**Fire transport addition** (Punjab/Haryana/UP stubble burning) — modelled via
+`regional_fire_transport_index`:
+- Low fire index (≈0): adds ~0 %
+- High fire index (≈1): adds up to 40 %
+- Total regional fraction = min(base + fire_index × 0.40, 0.78)
+- 78% cap = literature upper bound for extreme stagnant-wind years
+
+**Key literature on regional transport fractions:**
+
+- **Cusworth et al. (2020), ES&T** — GEOS-Chem CTM: crop residue burning (CRB)
+  contributes 7–78% of Delhi PM2.5 (median ~20%) depending on year and
+  meteorology. The range, NOT a fixed number, is the key finding.
+
+- **npj Climate and Atmospheric Science (2025), CUPI-G + WRF-Chem** — Oct–Nov
+  2022 CRB contribution was only ~14% because NW wind alignment was poor: fire
+  counts ≠ surface PM2.5.
+
+- **ACP (2025), NHM(WRF)-Chem + 30-sensor network** — optimised CRB contribution
+  25–35% for active burning periods.
+
+- **Atmospheric Environment systematic review (2025)** — meta-consensus: 14–30%
+  typical, up to 78% in extreme stagnant-NW-wind years.
+
+The `regional_fraction_prior` in kernel output is therefore a **nowcast
+estimate**, not a static prior: it updates every intel cycle based on current
+observed fire activity and wind.
+
+### Regional fire transport index
+
+For regional fires (≥50 km from Delhi), the Gaussian kernel produces effectively
+zero weight at those distances. Instead, `regional_fire_transport_index()` uses
+a **dual-decay transport model** grounded in WRF-Chem and HYSPLIT literature:
+
+```
+contribution(fire) = FRP × wind_alignment × deposition_decay × dilution_decay
+```
+
+Where:
+- **FRP** — fire radiative power (MW) from FIRMS VIIRS, proxy for smoke emission
+  rate (more physically meaningful than pixel count)
+- **wind_alignment** — max(0, cos(Δθ)): is the wind blowing this fire's smoke
+  toward Delhi? Uses same calm-wind blending as local kernel for consistency.
+- **deposition_decay** — exp(−travel_h / τ_dep), τ_dep = 72 h. Dry deposition
+  half-life for accumulation-mode PM2.5. Dry deposition velocity for fine PM is
+  0.1–0.3 cm/s (Seinfeld & Pandis, "Atmospheric Chemistry and Physics" 3rd ed.).
+  At 3 m/s wind over 300 km (≈28 h transit), removes ~15–25% → τ ≈ 72–120 h.
+  WRF-Chem (ACP 2025) survival of 30–55% at 28 h is consistent.
+- **dilution_decay** — exp(−dist_km / L_dil), L_dil = 400 km. Entrainment of
+  cleaner air aloft progressively dilutes the plume. At 300 km (Punjab centroid):
+  exp(−300/400) ≈ 0.47. Combined with deposition → ~32% survival, within
+  Cusworth et al. (ES&T 2020) 30–55% observed range.
+
+The normaliser uses a fixed reference scenario (50 MW fire at 50 km, perfect
+alignment, 3 m/s IGP climatological transport wind) so that the index is
+comparable across days with different ambient wind speeds — following the
+HYSPLIT trajectory-frequency approach, which reports contribution probabilities
+from fixed climatology.
+
+**Interpretation of the index:**
+- 0.00–0.10 → negligible regional fire transport
+- 0.10–0.40 → moderate (some contribution, typical shoulder-season)
+- 0.40–1.00 → strong (active Punjab/Haryana burning episode)
+
+### Confidence signal
+
+```
+confidence = 1 − (min_cpcb_station_distance / 15 km)  [clipped to 0–1]
+```
+
+Wards within 15 km of a CPCB station receive higher confidence because their
+dispersion estimate can be partially constrained against observed readings.
+Wards with no nearby station (confidence ≈ 0) rely entirely on the forward
+model. The confidence value is stored in the `attributions` table and exposed
+in the UI's "Estimated source mix" panel as a cue to the operator.
+
+### Method tag and DB storage
+
+All VayuTrace outputs are stored in the existing `attributions` table with
+`method='vayutrace_v1'`. The `breakdown` column is a JSON object:
+```json
+{"industrial": 0.42, "road": 0.35, "fire": 0.23, "unknown": 0.0}
+```
+`unknown` is always 0.0 in a forward model (there is no residual by design —
+all contribution comes from the source inventory). This distinguishes VayuTrace
+from receptor modelling, where an "unknown" or "other" residual is common and
+meaningful.
+
+### Calibration status and future work
+
+**Current calibration:**
+- Winter σ = 5 km: grounded in Briggs (1973) P-G class E-F theory.
+- Summer σ = 7 km: Spearman-calibrated on 30 days × 44 stations (n=4,340 pairs,
+  ρ=0.20, p≈0). The calibration is statistically significant but the correlation
+  is modest — typical for a forward model without secondary aerosol chemistry.
+
+**Planned re-calibration:**
+- Run `ingest/scripts/calibrate_vayutrace_sigma.py --wind --season winter` in
+  November 2026 once Oct–Feb 2026–27 readings have accumulated. The summer
+  estimate may also shift with more data.
+
+**Known limitations:**
+- **No secondary aerosol chemistry.** Secondary PM2.5 (ammonium sulphate,
+  ammonium nitrate) forms in the atmosphere from SO₂, NOₓ, NH₃ precursors.
+  It accounts for 25–30% of winter PM2.5 in Delhi (IITK 2016) but cannot be
+  modelled without photochemical transport equations. VayuTrace's "unknown=0.0"
+  absorbs this gap — industrial zones that emit SO₂/NOₓ get partial credit, but
+  the secondary formation step is not modelled.
+- **No stack height or vertical mixing.** Industrial stacks at 30–100 m have
+  significantly different near-field dispersion than ground-level road or fire
+  sources. All sources are modelled as ground-level area sources. Stack
+  downwash at 5–7 km σ makes this a minor error for ward-level resolution.
+- **OSM road data is not weighted by traffic volume.** A motorway tag (weight=3)
+  in a low-traffic corridor may overstate its contribution. Integrating DTCP
+  traffic count data would improve road weighting but is not currently available
+  in machine-readable form.
+- **Receptor modelling remains the gold standard.** For legally defensible or
+  regulatory-grade source attribution, PMF/CMB receptor modelling on
+  chemically-speciated samples is required. VayuTrace provides operational,
+  ward-level spatial resolution that the published studies cannot, at the cost
+  of absolute accuracy.
