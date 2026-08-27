@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
@@ -38,6 +38,17 @@ export default function CommandView() {
   const [windowHours, setWindowHours] = useState<TimeWindowHours>(24)
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
   const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh } = useIngestHealth()
+  const riskTableRef = useRef<HTMLDivElement | null>(null)
+  const [flaggedPulse, setFlaggedPulse] = useState(false)
+
+  // Scrolls the ranked ward table into view and briefly rings it — used by
+  // the "Wards flagged" KPI card so the number always points somewhere,
+  // instead of sitting there as inert text.
+  const jumpToRiskTable = () => {
+    riskTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    setFlaggedPulse(true)
+    window.setTimeout(() => setFlaggedPulse(false), 1200)
+  }
 
   const state = useAsync(
     () =>
@@ -196,14 +207,17 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero — gauge | ward summary | KPI rail, compact single row */}
-                <div className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
-                  <div className="flex items-center gap-0">
-                    <div className="flex-shrink-0 pr-5">
-                      <CityAqiGauge aqi={worstDisplayAqi} size={112} />
-                    </div>
+                {/* Hero — spotlight card (click to inspect the worst ward) + interactive KPI grid */}
+                <div className="flex shrink-0 items-stretch gap-2">
+                  <button
+                    type="button"
+                    onClick={() => worstWard && setSelectedWardId(worstWard.id)}
+                    disabled={!worstWard}
+                    className="focus-ring group flex flex-shrink-0 items-center gap-4 rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left shadow-card transition hover:border-accent-200 hover:shadow-card-lg disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:shadow-card"
+                  >
+                    <CityAqiGauge aqi={worstDisplayAqi} size={96} />
                     <div className="w-px self-stretch bg-slate-100" aria-hidden />
-                    <div className="min-w-0 w-[260px] flex-none px-5">
+                    <div className="min-w-0 w-[220px] flex-none">
                       <CityStatusHero
                         aqi={worstDisplayAqi}
                         wardName={worstWard?.name ?? null}
@@ -215,15 +229,22 @@ export default function CommandView() {
                         forecastSuppressed={suppressForecast}
                       />
                     </div>
-                    <div className="w-px self-stretch bg-slate-100" aria-hidden />
-                    <div className="flex-1 pl-5">
-                      <CityKpiRow
-                        reviewCount={reviewWards.length}
-                        openIncidents={metrics.openCount}
-                        coverage={coverageProp}
-                        latestReadingAgeMinutes={latestReadingAgeMinutes}
+                    {worstWard && (
+                      <ChevronRight
+                        className="h-4 w-4 flex-shrink-0 self-center text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
+                        aria-hidden
                       />
-                    </div>
+                    )}
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    <CityKpiRow
+                      reviewCount={reviewWards.length}
+                      openIncidents={metrics.openCount}
+                      coverage={coverageProp}
+                      latestReadingAgeMinutes={latestReadingAgeMinutes}
+                      onWardsFlaggedClick={reviewWards.length > 0 ? jumpToRiskTable : undefined}
+                    />
                   </div>
                 </div>
 
@@ -240,7 +261,12 @@ export default function CommandView() {
                 )}
 
                 {/* Ward risk table — grows to fill all remaining vertical space */}
-                <div className="min-h-0 flex-1">
+                <div
+                  ref={riskTableRef}
+                  className={`min-h-0 flex-1 rounded-xl transition-shadow duration-700 ${
+                    flaggedPulse ? 'ring-2 ring-accent-400' : 'ring-0 ring-transparent'
+                  }`}
+                >
                   <HotspotsRiskTable
                     wards={displayWards}
                     forecasts={forecasts}

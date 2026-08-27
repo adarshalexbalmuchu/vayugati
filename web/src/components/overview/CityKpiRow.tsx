@@ -1,29 +1,56 @@
+import type { LucideIcon } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronRight, Radar, Siren } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useIngestHealth } from '../../contexts/IngestHealthContext'
 
-function MetricCell({
+function MetricCard({
+  icon: Icon,
+  iconTone,
   label,
   value,
   sub,
   valueColor = 'text-slate-900',
+  onClick,
 }: {
+  icon: LucideIcon
+  iconTone: string
   label: string
   value: React.ReactNode
   /** Optional second line — smaller, muted. Use for age or explanatory context. */
   sub?: React.ReactNode
   valueColor?: string
+  onClick?: () => void
 }) {
+  const Comp = onClick ? 'button' : 'div'
   return (
-    <div className="px-3 py-2">
-      <span className="block text-[9px] font-semibold uppercase tracking-wider text-slate-500">
-        {label}
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition ${
+        onClick ? 'focus-ring cursor-pointer hover:bg-slate-50' : ''
+      }`}
+    >
+      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${iconTone}`}>
+        <Icon className="h-4 w-4" aria-hidden />
       </span>
-      <span className={`mt-1 block text-xl font-extrabold tabular-nums leading-none ${valueColor}`}>
-        {value}
+      <span className="min-w-0 flex-1">
+        <span className="block text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        <span className={`mt-0.5 block text-lg font-extrabold tabular-nums leading-none ${valueColor}`}>
+          {value}
+        </span>
+        {sub && (
+          <span className="mt-0.5 block truncate text-[10px] leading-none text-slate-400">{sub}</span>
+        )}
       </span>
-      {sub && (
-        <span className="mt-0.5 block text-[10px] leading-none text-slate-400">{sub}</span>
+      {onClick && (
+        <ChevronRight
+          className="h-3.5 w-3.5 flex-shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
+          aria-hidden
+        />
       )}
-    </div>
+    </Comp>
   )
 }
 
@@ -37,6 +64,7 @@ export default function CityKpiRow({
   openIncidents,
   coverage,
   latestReadingAgeMinutes,
+  onWardsFlaggedClick,
 }: {
   reviewCount: number
   openIncidents: number
@@ -45,8 +73,12 @@ export default function CityKpiRow({
   /** Age of the most recently updated ward reading — used to show a
    *  concrete timestamp alongside the pipeline freshness status. */
   latestReadingAgeMinutes?: number | null
+  /** Scrolls the ranked ward table into view — only wired up when there's
+   *  actually something flagged to jump to. */
+  onWardsFlaggedClick?: () => void
 }) {
   const { readingConfirmedFresh, forecastConfirmedFresh, healthLoaded, health } = useIngestHealth()
+  const navigate = useNavigate()
 
   // When the forecast pipeline is down, forecast-derived metrics cannot be
   // trusted: wardsNeedingReview() returns 0 because the forecast map is empty,
@@ -70,11 +102,10 @@ export default function CityKpiRow({
     : age != null && age < 180
     ? 'Delayed'
     : 'Live'  // pipeline ok but reading age unknown
+  const freshnessDegraded = healthLoaded && (!readingConfirmedFresh || (age != null && age >= 60))
   const freshnessColor = !healthLoaded
     ? 'text-slate-400'
-    : !readingConfirmedFresh
-    ? 'text-status-warning'
-    : age != null && age >= 60
+    : freshnessDegraded
     ? 'text-status-warning'
     : 'text-status-success'
   const freshnessSub = readingConfirmedFresh && age != null ? formatAge(age) : undefined
@@ -95,33 +126,59 @@ export default function CityKpiRow({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-      {/* Single brand accent rule spanning the full panel — not per-metric */}
-      <div className="h-0.5 bg-ink-700" aria-hidden />
       {/* 2×2 on mobile, 4-across on sm+ — dividers replace individual card borders */}
       <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-4 sm:divide-y-0">
-        <MetricCell
+        <MetricCard
+          icon={AlertTriangle}
+          iconTone={
+            !forecastRunFailed && reviewCount > 0
+              ? 'bg-status-warning/10 text-status-warning'
+              : 'bg-slate-100 text-slate-400'
+          }
           label="Wards flagged"
           value={forecastRunFailed ? '—' : reviewCount}
           sub={forecastRunFailed ? 'Forecast required' : undefined}
           valueColor={forecastRunFailed ? 'text-slate-400' : reviewCount > 0 ? 'text-status-warning' : 'text-slate-400'}
+          onClick={onWardsFlaggedClick}
         />
-        <MetricCell
+        <MetricCard
+          icon={Siren}
+          iconTone={openIncidents > 0 ? 'bg-status-warning/10 text-status-warning' : 'bg-slate-100 text-slate-500'}
           label="Incidents open"
           value={openIncidents}
           // Neutral dark for 0 — green implies a positive outcome; zero open
           // incidents during AQI 322 may mean no response was initiated yet.
           valueColor={openIncidents > 0 ? 'text-status-warning' : 'text-slate-900'}
+          onClick={() => navigate('/incidents')}
         />
-        <MetricCell
+        <MetricCard
+          icon={Radar}
+          iconTone={
+            forecastRunFailed
+              ? 'bg-status-warning/10 text-status-warning'
+              : coverage
+              ? 'bg-accent-50 text-accent-600'
+              : 'bg-slate-100 text-slate-400'
+          }
           label={forecastLabel}
           value={forecastValue}
           valueColor={forecastColor}
+          onClick={() => navigate('/analytics')}
         />
-        <MetricCell
+        <MetricCard
+          icon={Activity}
+          iconTone={
+            !healthLoaded
+              ? 'bg-slate-100 text-slate-400'
+              : freshnessDegraded
+              ? 'bg-status-warning/10 text-status-warning'
+              : 'bg-status-success/10 text-status-success'
+          }
           label="Data freshness"
           value={freshnessStatus}
           sub={freshnessSub}
           valueColor={freshnessColor}
+          onClick={() => navigate('/sensors')}
         />
       </div>
     </div>
