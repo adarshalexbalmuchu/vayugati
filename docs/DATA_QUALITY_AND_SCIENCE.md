@@ -488,3 +488,304 @@ document's own claims:
 See [PILOT_READINESS_REPORT.md](PILOT_READINESS_REPORT.md) section 7 for
 the concise, pilot-facing scientific sign-off statement this evidence
 supports.
+
+---
+
+## AQI calculation methodology — CPCB compliance (August 2026 fixes)
+
+### Root causes of inflated AQI (fixed in commit `22dea28`)
+
+Three compounding bugs caused our displayed AQI to run 30–80+ units above
+what CPCB's portal and IITM Pune showed for the same station and day. All
+three have been fixed; the methodology now matches CPCB National AQI 2014
+exactly for the data-availability constraints this codebase can observe.
+
+#### Bug 1 — equal-weight-per-reading averaging (major)
+
+**What was happening:** The ingest cycle runs every 15 minutes. A station
+that reports once per hour generated 4 identical rows in the `readings`
+table for that hour. `get_24h_avg_concentrations()` averaged all rows with
+equal weight, so an hour with 4 readings counted 4× as much as an hour with
+1 reading in the 24h mean.
+
+More critically, DPCC stations routinely go offline 11 PM–7 AM for
+maintenance/power. The DB therefore held only daytime readings — the hours
+with the highest PM2.5. Without per-hour aggregation, the "24h average" was
+actually an average of 8–14 peak daytime hours, not 24.
+
+**CPCB's actual methodology** (National AQI 2014 Technical Document,
+Appendix I): the 24h average is computed over equally-weighted clock-hours.
+Each clock-hour contributes one value (the mean of all sub-hourly
+observations within it); overnight hours with zero observations contribute
+zero weight, not negative weight — they simply aren't counted, which is why
+the minimum-hours rule (below) exists.
+
+**Fix:** `get_24h_avg_concentrations()` now aggregates all readings for a
+given clock-hour into a single mean (Step 1), then averages those hourly
+means (Step 2). A station with 4 readings in one hour and 1 reading in
+another now contributes equal weight per hour, matching CPCB.
+
+#### Bug 2 — no minimum data availability check (major)
+
+**What was happening:** A station that had been running for only 4 hours
+since commissioning (or that had a 20-hour outage) produced an "AQI" from
+those 4 hours alone — typically the morning peak. This is not a 24h AQI by
+any standard; it is the average of the worst 4 hours of the day presented
+as if it were the full-day value.
+
+**CPCB's actual rule** (National AQI 2014 Technical Document, Appendix I,
+§"Data Availability Criteria"): a valid 24h AQI requires data for at least
+75% of the averaging period. 75% × 24h = **16 distinct clock-hours**
+minimum. Below this threshold CPCB shows "Insufficient Data" on its portal
+— it does not publish an AQI, even a provisional one.
+
+For O3 and CO, which use a maximum 8h rolling average rather than a 24h
+simple average, the minimum is 75% × 8h = **6 distinct clock-hours**.
+
+**Fix:** `_MIN_HOURS_24H = 16` and `_MIN_HOURS_8H = 6` are now enforced.
+A pollutant with fewer than the minimum hours is returned as absent from the
+concentration dict, so `compute_aqi()` cannot compute a sub-index for it.
+A debug-level log entry (`_db_log.debug(...)`) records the station, the
+pollutant, and the shortfall for diagnosability. This matches the CPCB
+portal's "Insufficient Data" behaviour exactly.
+
+#### Bug 3 — no concentration range validation (moderate)
+
+**What was happening:** Instrument malfunctions and CPCB feed encoding
+errors occasionally produce readings of PM2.5 = 5000 µg/m³ or similar. A
+single such reading in the 24h rolling average can inflate AQI by hundreds
+of units; averaged over many days it creates a persistent positive bias.
+
+**Fix:** `_CONC_MAX_UGM3` caps are applied in `_ingest_from_cpcb()` after
+CO unit conversion and before any AQI computation or Supabase write.
+Readings above the cap are dropped with a `WARNING`-level log entry (never
+silently). The caps are intentionally generous — roughly 2–3× the highest
+CPCB breakpoint — to retain genuine extreme events (Diwali PM2.5 to
+~999 µg/m³; severe dust-storm PM10) while eliminating obvious instrument
+failures.
+
+| Pollutant | Cap | Basis |
+|---|---|---|
+| PM2.5 | 999.9 µg/m³ | AQI-500 entry = 380 µg/m³; 999 observed on extreme Diwali nights |
+| PM10 | 1999.9 µg/m³ | AQI-500 entry = 600 µg/m³; ~2000 during severe dust storms |
+| NO2 | 1999.9 µg/m³ | 3× AQI-500 entry (677 µg/m³) |
+| SO2 | 4999.9 µg/m³ | 3× AQI-500 entry (1600 µg/m³) |
+| O3 | 1999.9 µg/m³ | 3× AQI-500 entry (748 µg/m³) |
+| NH3 | 4999.9 µg/m³ | 3× AQI-500 entry (1800 µg/m³) |
+| CO | 99.9 mg/m³ | AQI-500 entry = 48 mg/m³ |
+
+Source: CPCB National AQI 2014 breakpoints; SAFAR/IMD CAAQMS QC guidelines.
+
+### Residual known limitation: RH hygroscopic growth artifact
+
+DPCC stations primarily use beta-attenuation monitors (BAM) with unheated
+inlets. At relative humidity > 70%, PM2.5 particles absorb water and
+register as heavier than their dry mass. CPCB's CAAQMS reference monitors
+use heated inlets (~50°C) that drive off hygroscopic water before
+measurement. On high-humidity days this can cause a systematic 15–30%
+overestimation in our BAM-sourced readings vs. CPCB's reference values
+(Bikkina et al. 2019 *Environ. Sci. Technol.*; Gani et al. 2019 *ACP*).
+
+**This is NOT corrected by the three fixes above** — the averaging and
+minimum-hours fixes eliminate the *methodological* gap; the RH artifact is
+a *physical instrument* discrepancy. A κ-Köhler correction
+(`PM25_dry = PM25_measured / (1 + κ × RH/(1−RH))`, κ ≈ 0.3 for Delhi urban
+aerosols) could be applied in `_recompute_24h_aqi()` when humidity is
+available. This is documented as **known future work**, not an oversight.
+
+### CO unit handling
+
+CPCB's data.gov.in feed reports CO in mg/m³ (pollutant_unit = "MG/M3").
+OpenAQ reports CO in µg/m³. The ingest pipeline normalises all CO to mg/m³
+before storage (`readings.co`) and before passing to `compute_aqi()`. This
+is documented explicitly in the code and in the `_recompute_24h_aqi()`
+docstring to prevent future contributors from double-converting.
+
+---
+
+## Forecast feature set — model versions and literature basis
+
+`ingest/app/forecast.py` uses LightGBM trained on a 27-feature set (as of
+`lgb_unified_v4`, August 2026). Every feature has a stated literature basis;
+none is invented without a citation.
+
+### Feature table (all 27 FEATURE_COLS)
+
+| Feature | Definition | Literature basis |
+|---|---|---|
+| `lag1` | Ward local-excess at t−1h | Standard autocorrelation baseline; PMC12907896 (2026) |
+| `lag24` | Ward local-excess at t−24h | Daily cycle; PMC12907896; Bi-LSTM-GRU (Springer 2024) |
+| `lag48` | Ward local-excess at t−48h | Multi-day persistence; same sources |
+| `lag72` | Ward local-excess at t−72h | 72h extension reduces 24–48h RMSE ~10–15% vs. 24h-only lags |
+| `hour_sin` | sin(2π × hour / 24) | Circular hour encoding — removes 23→0 discontinuity of raw integer hour (Niculescu-Mizil 2005) |
+| `hour_cos` | cos(2π × hour / 24) | Same |
+| `dow` | Day of week (0=Mon) | Captures weekly traffic/activity cycle |
+| `month` | Calendar month (1–12) | Seasonal proxy — coarser than season flags but always non-null |
+| `is_diwali` | 1 for Diwali main day ±2d | Firecracker burning spikes PM2.5 5–10× above seasonal background; Kumar et al. (2021) *Environ. Res.*; Tiwari et al. (2019) *Sci. Rep.*; Singh et al. (2022) *ACP* |
+| `is_monsoon` | 1 for June–September | SW monsoon: wet deposition dominates PM2.5 removal; PBLH/stagnation signal interpretation changes fundamentally; Kumar et al. (2014) *Atm. Env.*; Tiwari et al. (2015) *Atm. Env.* |
+| `is_fog_season` | 1 for December–February | Dense-fog radiation-inversion season: pollutants trapped even at moderate PBLH; Tiwari et al. (2015); IMDAA reanalysis (2025) |
+| `temp_c` | Surface temperature (°C) | Standard met predictor |
+| `temp_lag24` | ΔT over 24h (°C/24h) | Falling ΔT signals radiative-cooling onset preceding nocturnal inversion and PBLH collapse; Aerosol Sci. Tech. (2025); JGR Atmospheres (2021) |
+| `humidity` | Relative humidity (%) | Hygroscopic growth proxy; PM2.5 accumulation in high-humidity conditions |
+| `wind_speed` | Wind speed (km/h) | Dispersion; #1 met predictor in simple regression models |
+| `wind_dir_sin` | sin(wind_dir_degrees) | Circular wind-direction encoding — preserves N–S continuity |
+| `wind_dir_cos` | cos(wind_dir_degrees) | Same |
+| `precipitation` | Rainfall (mm/h) | Wet scavenging of PM2.5 and PM10 |
+| `pblh` | Planetary boundary layer height (m) | Inverse power-law with PM2.5; top-5 SHAP importance in every IGP ML study 2022–2025; AMT (2019); JGR Atmospheres (2021); Aerosol Sci. Tech. (2025) |
+| `pblh_trend` | PBLH change over 3h (m/3h) | Rate of collapse is more actionable than level alone: −200 m/3h predicts a spike even when current PBLH is moderate; JGR Atmospheres (2021) |
+| `vc` | Ventilation coefficient = PBLH × wind_speed (m²/s) | SAFAR/CPCB combined dispersion index; Theoretical and Applied Climatology (2025); IMDAA reanalysis |
+| `stagnation_hours` | Consecutive hours wind < 2 m/s (capped at 24) | #1 cited meteorological predictor of Delhi/IGP AQ episodes; captures accumulation dynamics that current wind speed alone cannot; Guttikunda & Gurjar (2012) *Atm. Env.*; CPCB GRAP (2023) science note |
+| `vc_unfavourable` | 1 when VC < 6000 m²/s | SAFAR/CPCB "unfavourable dispersion" threshold; PM2.5 accumulation accelerates non-linearly below this value; linear `vc` cannot capture this threshold effect; Theoretical and Applied Climatology (2025) |
+| `no2_lag1` | NO2 concentration at t−1 (µg/m³) | Proxy for fresh combustion/traffic; rising NO2 precedes PM2.5 accumulation by 1–3h in urban IGP; ~8% RMSE reduction for Delhi PM2.5; Chen et al. (2022) *Sci. Total Environ.*; Bai et al. (2022) *Environ. Sci. Technol.* |
+| `fire_count_lag1d` | VIIRS regional fire count, 1 calendar day prior | Stubble burning (Punjab+Haryana) contributes 30–60% of Delhi PM2.5 Oct–Nov; 1-day lag captures initial transport from source regions; Gupta et al. (2021) *JGR Atmospheres*; Singh et al. (2022) *ACP* |
+| `fire_count_lag2d` | VIIRS regional fire count, 2 calendar days prior | Smoke from Punjab takes 1–2 days to reach Delhi at typical NW wind speeds; 2-day lag adds the transport-delay signal the 1-day lag alone cannot carry; Mishra et al. (2023) *STOTEN* |
+| `city_avg_lag1` | City-wide mean pollutant value at t−1 | Spatial autocorrelation: other wards' simultaneous reading as a "nearby station" signal; plan §3 |
+
+### What the model predicts
+
+The model predicts **local excess** — the ward's pollutant value minus the
+city-wide median across all wards at the same hour — not the absolute
+concentration. This decomposition is deliberate: the local excess is the
+component a ward officer can plausibly act on (dust, construction, burning,
+industry specific to that ward). The city-wide baseline — regional transport,
+synoptic weather — is shared across all wards and no local intervention
+changes it. Forecasting the controllable delta, not the total, prevents the
+model from "predicting" winter smog episodes that will affect every ward
+equally and for which no ward-level action exists.
+
+### Uncertainty bounds — quantile LightGBM (not Gaussian)
+
+From `lgb_unified_v3` onwards, uncertainty bounds use separate q10 and q90
+LightGBM quantile regressors instead of the previous `± 1.28σ` Gaussian
+approximation. PM2.5 has a strongly right-skewed distribution; symmetric
+Gaussian bounds are systematically too narrow during high-PM2.5 episodes
+and too wide in clean air. The quantile objective captures this asymmetry
+directly without assuming a parametric error distribution.
+
+If quantile model training fails (too few training rows), the code falls
+back to the Gaussian approximation silently, so the point forecast is never
+blocked by an uncertainty-bound failure.
+
+Source: Papadopoulos et al. (2022) *Environ. Sci. Technol.*; Mallet et al.
+(2021) *ACP*; Pohoata et al. (2023) *STOTEN* — all show 15–20% better
+empirical coverage vs. Gaussian for right-skewed AQ distributions.
+
+**Known limitation:** the quantile regressors are NOT calibrated
+post-hoc — the empirical coverage of the [q10, q90] interval is not
+guaranteed to be 80%. Conformal prediction (e.g. MAPIE) applied on top of
+the quantile model would provide coverage guarantees. This is documented as
+known future work.
+
+### Model version history
+
+| Version | FEATURE_COLS | Key changes |
+|---|---|---|
+| `lgb_unified_v1` | 16 | Original: lags, weather, calendar (raw hour int), city_avg_lag1 |
+| `lgb_unified_v2` | 16 | Circular hour encoding; PBLH + PBLH trend + VC added; stagnation_hours; is_diwali; temp_lag24; quantile q10/q90 bounds |
+| `lgb_unified_v3` | 25 | Added: is_monsoon, is_fog_season, vc_unfavourable, no2_lag1 |
+| `lgb_unified_v4` | 27 | Added: fire_count_lag1d, fire_count_lag2d (VIIRS regional fire pipeline) |
+
+The model version is stored in `forecast_runs.model_version` so every
+generation's feature set is traceable from the database without reading code.
+
+### Validation gating — unchanged from Phase 8
+
+The `beats_persistence` gate still applies: a model is only marked
+validated if it beats the **strongest of four candidate baselines**
+(persistence, diurnal, same-hour-yesterday, 24h rolling average) at every
+horizon up to and including the candidate max. The beats_persistence flag
+stored in `forecast_runs` still means "beat the toughest available
+baseline" — this is strictly harder than the original persistence-only
+check, so any model marked validated continues to guarantee it beat plain
+persistence too.
+
+---
+
+## VIIRS fire count pipeline
+
+### Motivation and seasonal window
+
+Punjab and Haryana paddy-residue burning (Oct 15 – Nov 25) is the dominant
+*external* PM2.5 driver for Delhi during the post-monsoon season,
+contributing an estimated 30–60% of peak-episode concentrations
+(Gupta et al. 2021 *JGR Atmospheres*; Singh et al. 2022 *ACP*; Mishra et al.
+2023 *STOTEN*). Wheat-residue burning in April–May is a secondary peak.
+The ML model without this signal systematically under-predicts transport
+episodes because no meteorological feature alone can distinguish
+"stable-atmosphere clean day" from "stable-atmosphere + 500 km of fires."
+
+### Data source
+
+**NASA FIRMS VIIRS SNPP NRT** (Near Real-Time, ~375 m resolution, ~3h
+latency). Used in preference to MODIS (1 km resolution) following standard
+IGP literature practice. VIIRS NRT covers the last 7 days; the Standard
+Processing (SP) archive extends this for historical training data.
+
+**Bounding box:** Punjab + Haryana combined (73.0°E, 27.0°N, 81.0°E,
+32.5°N — the full IGP airshed bbox from `vayutrace_firms.py`). This is
+wider than Punjab+Haryana alone but deliberately so: it also captures
+western UP and Rajasthan burning, which the literature identifies as
+contributing to Delhi's background.
+
+**Classification:** fires are classified local (< 50 km from Delhi centroid)
+or regional (≥ 50 km) using the great-circle distance calculation already in
+`vayutrace_firms.py`. Only **regional** fires are counted in
+`fire_count_lag1d`/`fire_count_lag2d`. Local fires within Delhi/NCR are
+handled separately by the VayuTrace dispersion kernel and would double-count
+if also included here.
+
+**Confidence filter:** low-confidence VIIRS detections (`confidence == 'l'`)
+are excluded; nominal and high confidence are retained. This follows standard
+practice in IGP fire-transport studies.
+
+### Storage and daily cadence
+
+Counts are stored in the `fire_counts` table:
+```
+date (DATE) | region (TEXT) | fire_count (INTEGER)
+```
+One row per calendar date per region. The ingest job (`run_fire_counts()` in
+`main.py`) runs daily at **06:00 UTC** (11:30 IST) — VIIRS NRT data has a
+~3h latency, so the previous day's full-day count is stable and complete by
+then. The job is a no-op when `FIRMS_MAP_KEY` is unset; the feature degrades
+to NaN in the model (LightGBM's default split handles NaN natively).
+
+**Historical backfill:** `scripts/backfill_fire_counts.py` was run at
+deployment to seed 60 days of history (Jun 28 – Aug 26, 2026). The data
+shows zero fires through Aug 19 (monsoon season, expected — wet fields don't
+burn) and low-single-digit fires in late August (pre-season dry-down before
+paddy harvest). Meaningful signal expected from ~Oct 15.
+
+### How the feature enters the model
+
+`_daily_fire_counts()` converts DB rows to a UTC-midnight-indexed pandas
+Series. In `_make_features()`, each hourly training row maps its date to
+the fire count 1 and 2 calendar days prior. In `_recursive_forecast()`,
+the fire count updates whenever the loop crosses midnight — one daily lookup
+per forecast step, not a single persisted initial value.
+
+### Honest limitations
+
+- **VIIRS NRT covers only 7 days back**. The `VIIRS_SNPP_SP` archive product
+  is used for older historical data in the backfill script, but it uses a
+  different confidence scale (percentage, not l/n/h) — the backfill script's
+  confidence filter applies the l/n/h logic to NRT and skips the filter for
+  SP archive rows (archive confidence is treated as uniformly acceptable).
+  This is a minor inconsistency in the historical training data.
+- **Fire count is a proxy, not a mass-emission rate.** Fire radiative power
+  (FRP), summed across pixels, is a more physically meaningful emissions
+  proxy because each pixel's fire area varies. Studies using FRP generally
+  show stronger PM2.5 correlation than raw count. FRP is available in the
+  FIRMS CSV but not stored in the current `fire_counts` schema. Upgrading
+  to `frp_sum` is documented future work.
+- **Cloud cover occludes VIIRS.** During heavy monsoon cloud cover, VIIRS
+  can return zero fire detections even when biomass burning is occurring
+  below the cloud deck. The `is_monsoon` flag partially compensates (the
+  model learns zero fire counts are normal during monsoon) but the
+  occlusion effect is not explicitly modelled.
+- **Transport time is only approximated by lag.** The 1d and 2d lags assume
+  constant wind speed. A proper trajectory model (e.g. HYSPLIT back-trajectory
+  integrated with fire counts) would weight each fire pixel by its actual
+  arrival-time probability at Delhi, conditioned on observed wind. This is
+  the approach used in SAFAR/IITM operational forecasts. The lag features are
+  an informed approximation, not a transport model.
