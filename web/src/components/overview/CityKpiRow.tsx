@@ -1,19 +1,17 @@
-import type { LucideIcon } from 'lucide-react'
-import { Activity, AlertTriangle, ChevronRight, Radar, Siren } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useIngestHealth } from '../../contexts/IngestHealthContext'
 
 function MetricCard({
-  icon: Icon,
-  iconTone,
+  tone,
   label,
   value,
   sub,
   valueColor = 'text-slate-900',
   onClick,
 }: {
-  icon: LucideIcon
-  iconTone: string
+  /** Small status dot colour — signals severity without needing an icon set. */
+  tone: string
   label: string
   value: React.ReactNode
   /** Optional second line — smaller, muted. Use for age or explanatory context. */
@@ -26,14 +24,12 @@ function MetricCard({
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`group flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition ${
+      className={`group flex w-full items-center gap-2 px-3 py-2.5 text-left transition ${
         onClick ? 'focus-ring cursor-pointer hover:bg-slate-50' : ''
       }`}
     >
-      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${iconTone}`}>
-        <Icon className="h-4 w-4" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
+      <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${tone}`} aria-hidden />
+      <span className="min-w-0">
         <span className="block text-[9px] font-semibold uppercase tracking-wider text-slate-500">
           {label}
         </span>
@@ -46,7 +42,7 @@ function MetricCard({
       </span>
       {onClick && (
         <ChevronRight
-          className="h-3.5 w-3.5 flex-shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
+          className="ml-1 h-3.5 w-3.5 flex-shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
           aria-hidden
         />
       )}
@@ -129,12 +125,7 @@ export default function CityKpiRow({
       {/* 2×2 on mobile, 4-across on sm+ — dividers replace individual card borders */}
       <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-4 sm:divide-y-0">
         <MetricCard
-          icon={AlertTriangle}
-          iconTone={
-            !forecastRunFailed && reviewCount > 0
-              ? 'bg-status-warning/10 text-status-warning'
-              : 'bg-slate-100 text-slate-400'
-          }
+          tone={!forecastRunFailed && reviewCount > 0 ? 'bg-status-warning' : 'bg-slate-300'}
           label="Wards flagged"
           value={forecastRunFailed ? '—' : reviewCount}
           sub={forecastRunFailed ? 'Forecast required' : undefined}
@@ -142,8 +133,7 @@ export default function CityKpiRow({
           onClick={onWardsFlaggedClick}
         />
         <MetricCard
-          icon={Siren}
-          iconTone={openIncidents > 0 ? 'bg-status-warning/10 text-status-warning' : 'bg-slate-100 text-slate-500'}
+          tone={openIncidents > 0 ? 'bg-status-warning' : 'bg-slate-300'}
           label="Incidents open"
           value={openIncidents}
           // Neutral dark for 0 — green implies a positive outcome; zero open
@@ -152,28 +142,14 @@ export default function CityKpiRow({
           onClick={() => navigate('/incidents')}
         />
         <MetricCard
-          icon={Radar}
-          iconTone={
-            forecastRunFailed
-              ? 'bg-status-warning/10 text-status-warning'
-              : coverage
-              ? 'bg-accent-50 text-accent-600'
-              : 'bg-slate-100 text-slate-400'
-          }
+          tone={forecastRunFailed ? 'bg-status-warning' : coverage ? 'bg-accent-500' : 'bg-slate-300'}
           label={forecastLabel}
           value={forecastValue}
           valueColor={forecastColor}
           onClick={() => navigate('/analytics')}
         />
         <MetricCard
-          icon={Activity}
-          iconTone={
-            !healthLoaded
-              ? 'bg-slate-100 text-slate-400'
-              : freshnessDegraded
-              ? 'bg-status-warning/10 text-status-warning'
-              : 'bg-status-success/10 text-status-success'
-          }
+          tone={!healthLoaded ? 'bg-slate-300' : freshnessDegraded ? 'bg-status-warning' : 'bg-status-success'}
           label="Data freshness"
           value={freshnessStatus}
           sub={freshnessSub}
