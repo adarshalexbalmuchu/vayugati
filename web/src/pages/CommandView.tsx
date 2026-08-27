@@ -207,11 +207,12 @@ export default function CommandView() {
 
             return (
               <>
-                {/* Hero — one shared grid so the spotlight cell and the 4 KPI
-                    cells are all exactly the same size, not two differently
-                    sized cards sitting side by side. */}
+                {/* Hero — one shared grid so every cell shares the same
+                    border, divider, and row height. The spotlight cell gets
+                    extra width (1.6fr vs 1fr) — ward names run much longer
+                    than KPI values and were truncating hard at equal widths. */}
                 <div className="shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-card">
-                  <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-5 sm:divide-y-0">
+                  <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-[1.6fr_1fr_1fr_1fr_1fr] sm:divide-y-0">
                     <button
                       type="button"
                       onClick={() => worstWard && setSelectedWardId(worstWard.id)}
