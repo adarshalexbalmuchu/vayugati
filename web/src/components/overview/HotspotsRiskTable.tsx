@@ -3,6 +3,7 @@ import { ChevronRight, Clock, Info, MapPin } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
 import type { ForecastPoint, LatestReadingReconciliation, WardForecastSummary, WardSummary } from '../../lib/data'
 import OverviewChoroplethMap from './OverviewChoroplethMap'
+import { formatWardName } from '../../lib/format'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
 import { MAP_POLLUTANT_LABEL, type MapPollutant } from '../../lib/mapRules'
 import {
@@ -327,7 +328,7 @@ function WardDetailPanel({
           {worstWard && (
             <div className="px-4 py-3">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Worst ward</p>
-              <p className="truncate text-sm font-bold text-slate-800">{worstWard.name}</p>
+              <p className="truncate text-sm font-bold text-slate-800">{formatWardName(worstWard.name)}</p>
               <p className="mt-0.5 text-xs font-semibold tabular-nums" style={{ color: worstLevel.hex }}>
                 AQI {worstWard.aqi} · {worstLevel.label}
               </p>
@@ -336,7 +337,7 @@ function WardDetailPanel({
           {bestWard && bestWard.id !== worstWard?.id && (
             <div className="px-4 py-3">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Best ward</p>
-              <p className="truncate text-sm font-bold text-slate-800">{bestWard.name}</p>
+              <p className="truncate text-sm font-bold text-slate-800">{formatWardName(bestWard.name)}</p>
               <p className="mt-0.5 text-xs font-semibold tabular-nums" style={{ color: bestLevel.hex }}>
                 AQI {bestWard.aqi} · {bestLevel.label}
               </p>
@@ -407,7 +408,9 @@ function WardDetailPanel({
         <div className="relative flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">Ward</p>
-            <h3 className="mt-0.5 truncate text-sm font-bold text-slate-800">{ward.name}</h3>
+            <h3 className="mt-0.5 truncate text-sm font-bold text-slate-800" title={formatWardName(ward.name)}>
+              {formatWardName(ward.name)}
+            </h3>
             {displayAqi != null && (
               <p className="mt-0.5 text-xs font-semibold" style={{ color: level.hex }}>
                 {level.label}
@@ -629,7 +632,12 @@ export default function HotspotsRiskTable({
                         onClick={() => onSelectWard(selected ? null : ward.id)}
                         className={`cursor-pointer transition ${selected ? 'bg-accent-50' : 'hover:bg-slate-50'}`}
                       >
-                        <td className="max-w-[110px] truncate px-2 py-1.5 font-medium text-slate-800">{ward.name}</td>
+                        <td
+                          title={formatWardName(ward.name)}
+                          className="max-w-[110px] truncate px-2 py-1.5 font-medium text-slate-800"
+                        >
+                          {formatWardName(ward.name)}
+                        </td>
                         <td className="px-2 py-1.5">
                           <CurrentReadingBadge ward={ward} pollutant={pollutant} preferred={preferred} />
                         </td>

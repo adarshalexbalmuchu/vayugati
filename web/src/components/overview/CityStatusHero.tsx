@@ -1,4 +1,5 @@
 import { aqiLevel } from '../AqiBadge'
+import { formatWardName } from '../../lib/format'
 import type { HotspotStatus } from '../../lib/overviewRules'
 
 const TREND_STYLE: Record<HotspotStatus, { color: string; dot: string }> = {
@@ -53,8 +54,11 @@ export default function CityStatusHero({
         Worst ward
       </span>
 
-      <span className="truncate text-xl font-extrabold leading-tight tracking-tight text-slate-900">
-        {wardName ?? '—'}
+      <span
+        className="truncate text-xl font-extrabold leading-tight tracking-tight text-slate-900"
+        title={wardName ? formatWardName(wardName) : undefined}
+      >
+        {wardName ? formatWardName(wardName) : '—'}
       </span>
 
       <div className="flex items-center gap-2">

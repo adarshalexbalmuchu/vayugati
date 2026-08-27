@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FALLBACK_STYLE } from '../../lib/basemaps'
 import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
+import { formatWardName } from '../../lib/format'
 
 const DELHI_CENTER: [number, number] = [77.209, 28.6139]
 const DELHI_ZOOM = 9.6
@@ -117,7 +118,7 @@ export default function OverviewChoroplethMap({
           return {
             type: 'Feature',
             id: b.id,
-            properties: { id: b.id, name: b.name, aqi, isMonitored: ward != null },
+            properties: { id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward != null },
             geometry: b.geometry,
           }
         }),
@@ -142,7 +143,7 @@ export default function OverviewChoroplethMap({
         return {
           type: 'Feature',
           id: w.id,
-          properties: { id: w.id, name: w.name, aqi, isMonitored: true },
+          properties: { id: w.id, name: formatWardName(w.name), aqi, isMonitored: true },
           geometry: { type: 'Point', coordinates: [w.lng!, w.lat!] },
         }
       }),

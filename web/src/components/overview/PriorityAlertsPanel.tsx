@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react'
+import { formatWardName } from '../../lib/format'
 import type { SevereWardAlert, TimeWindowHours } from '../../lib/overviewRules'
 import { Card, CardHeader } from '../ui'
 
@@ -48,7 +49,7 @@ export default function PriorityAlertsPanel({
                     {a.hoursToSevere}h
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-800">{a.wardName}</span>
+                    <span className="block truncate text-sm font-semibold text-slate-800">{formatWardName(a.wardName)}</span>
                     <span className="block text-xs text-slate-400">
                       Peak forecast {a.peakPred != null ? `${Math.round(a.peakPred)} µg/m³` : 'unknown'}
                     </span>
