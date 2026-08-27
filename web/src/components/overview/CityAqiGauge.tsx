@@ -16,11 +16,16 @@ export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: n
   const level = aqiLevel(aqi)
   const fillLen = aqi !== null ? Math.min(aqi / 500, 1) * TRACK_LEN : 0
   // Text was fixed at 30px/11px regardless of `size` — fine at the original
-  // 140px default, but at smaller sizes (e.g. the 96px hero gauge) the label
-  // outgrew the safe inner circle and visually spilled over the arc. Scale
-  // both to the same ratios the fixed sizes had at size=140.
-  const valueSize = Math.round(size * 0.214)
-  const labelSize = Math.max(8, Math.round(size * 0.079))
+  // 140px default, but at smaller sizes the label outgrew the safe inner
+  // circle and visually spilled over the arc. Scaling the font alone isn't
+  // enough to guarantee no overlap (the label sits below the circle's
+  // vertical centre, where the circle is narrower than its full diameter,
+  // and character-width estimates are approximate) — so the label also gets
+  // a hard max-width and is allowed to wrap, which makes overflow
+  // impossible rather than just less likely.
+  const valueSize = Math.round(size * 0.2)
+  const labelSize = Math.max(7, Math.round(size * 0.072))
+  const labelMaxWidth = Math.round(size * 0.56)
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
@@ -53,17 +58,19 @@ export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: n
       </svg>
 
       {/* Centre text — HTML overlay for consistent font rendering */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center px-2">
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-1">
         <span
           className="font-extrabold tabular-nums leading-none"
           style={{ color: aqi !== null ? level.hex : '#475569', fontSize: valueSize }}
         >
           {aqi ?? '—'}
         </span>
-        {/* ink-200 (#DEC7A0) warm cream — higher contrast than slate-400 on dark face */}
+        {/* ink-200 (#DEC7A0) warm cream — higher contrast than slate-400 on dark face.
+            break-words + a hard max-width let "Satisfactory" wrap to a second
+            line instead of ever overflowing past the arc. */}
         <span
-          className="mt-1 whitespace-nowrap font-medium tracking-wide text-ink-200"
-          style={{ fontSize: labelSize }}
+          className="mt-0.5 break-words text-center font-medium leading-tight tracking-wide text-ink-200"
+          style={{ fontSize: labelSize, maxWidth: labelMaxWidth }}
         >
           {level.label}
         </span>
