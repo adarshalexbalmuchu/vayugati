@@ -49,7 +49,7 @@ log = logging.getLogger("ingest.forecast")
 HORIZONS_H = (6, 12, 24, 48)
 MAX_HORIZON_H = max(HORIZONS_H)
 MIN_TRAIN_ROWS = 24 * 10  # ~10 days of hourly data before we trust a learned model
-MODEL_VERSION_LGB = "lgb_unified_v2"
+MODEL_VERSION_LGB = "lgb_unified_v3"
 MODEL_VERSION_DIURNAL = "diurnal_persistence_v2"
 DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2")
 DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
@@ -216,7 +216,12 @@ def _threshold_metrics(pred: np.ndarray, actual: np.ndarray, threshold: float | 
 # ── features ─────────────────────────────────────────────────────────────────
 
 
-def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) -> pd.DataFrame:
+def _make_features(
+    w: pd.DataFrame,
+    weather: pd.DataFrame,
+    city_avg: pd.Series,
+    no2_series: pd.Series | None = None,
+) -> pd.DataFrame:
     """Lag + weather + calendar + spatial features for the local_excess series.
 
     Literature basis for each feature group:
@@ -245,6 +250,12 @@ def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) 
         is India's SAFAR/CPCB "unfavourable dispersion" threshold (Theoretical
         and Applied Climatology 2025, IMDAA reanalysis).
 
+      vc_unfavourable — binary: 1 when VC < 6000 m²/s. Captures the non-linear
+        threshold response that the continuous vc feature cannot: PM2.5
+        accumulation accelerates sharply below this value regardless of where
+        in the favourable range we started (Theoretical and Applied Climatology
+        2025, IMDAA reanalysis). When vc is NaN (PBLH unavailable), defaults to 0.
+
       stagnation_hours — consecutive hours with wind speed < 2 m/s. Captures
         the accumulation dynamics that current wind speed alone cannot: 8h of
         calm is qualitatively different from 1h of calm at the same speed.
@@ -255,6 +266,25 @@ def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) 
         drives PM2.5 5–10× above the seasonal background; models trained on
         non-Diwali data systematically underpredict these episodes without this
         flag (Kumar et al. 2021 Environ. Res.; Tiwari et al. 2019 Sci. Rep.).
+
+      is_monsoon — binary: 1 for June–September (Indian SW monsoon). During
+        this period wet deposition dominates PM2.5 removal and dispersion
+        dynamics differ fundamentally from the post-monsoon accumulation regime;
+        the model learns different PBLH/stagnation weights for each regime
+        (Kumar et al. 2014 Atm. Env.; Tiwari et al. 2015 Atm. Env.).
+
+      is_fog_season — binary: 1 for December–February (dense-fog inversion
+        season). Nocturnal radiation inversions trap pollutants even at moderate
+        PBLH; learning distinct weights for this period improves winter forecasts
+        (Tiwari et al. 2015 Atm. Env.; IMDAA reanalysis 2025).
+
+      no2_lag1 — NO2 concentration at t−1 (µg/m³). Proxy for fresh combustion /
+        traffic emissions; rising NO2 precedes PM2.5 accumulation by 1–3h in
+        urban IGP environments. Already stored in the readings table — no extra
+        API fetch required (Chen et al. 2022 Sci. Total Environ.; Bai et al.
+        2022 Environ. Sci. Technol. — ~8% RMSE reduction for Delhi PM2.5).
+        None/NaN when forecasting NO2 itself (circular dependency) or when NO2
+        data is unavailable for the ward.
 
       city_avg_lag1 — spatial: other wards' simultaneous reading lagged 1h,
         the "nearby station" signal from the plan (§3).
@@ -299,7 +329,20 @@ def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) 
     # Stagnation index: consecutive calm hours (reset on any gust ≥ threshold)
     f["stagnation_hours"] = _stagnation_hours(ws_kmh.reindex(f.index))
 
+    # VC threshold binary: NaN < 6000 → False → 0.0 (neutral when PBLH absent)
+    f["vc_unfavourable"] = (f["vc"] < 6000.0).astype(float)
+
     f["city_avg_lag1"] = city_avg.reindex(f.index).shift(1)
+
+    # Season regime flags — always defined from the timestamp; no NaN possible.
+    f["is_monsoon"]    = f.index.month.isin([6, 7, 8, 9]).astype(float)
+    f["is_fog_season"] = f.index.month.isin([12, 1, 2]).astype(float)
+
+    # NO2 co-pollutant lag — available when the caller passes a ward NO2 series.
+    if no2_series is not None and not no2_series.dropna().empty:
+        f["no2_lag1"] = no2_series.reindex(f.index).shift(1)
+    else:
+        f["no2_lag1"] = float("nan")
 
     # Forward/back-fill short gaps (a ward's weather may lag readings by 1h);
     # leave residual NaNs as NaN — LightGBM handles them natively and a
@@ -309,6 +352,7 @@ def _make_features(w: pd.DataFrame, weather: pd.DataFrame, city_avg: pd.Series) 
         "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos", "precipitation",
         "pblh", "pblh_trend", "vc", "stagnation_hours",
         "city_avg_lag1",
+        "no2_lag1",
     ]
     for c in fill_cols:
         f[c] = pd.to_numeric(f[c], errors="coerce").interpolate(limit=6).ffill().bfill()
@@ -321,11 +365,15 @@ FEATURE_COLS = [
     "lag1", "lag24", "lag48", "lag72",
     # Calendar (circular hour replaces raw integer)
     "hour_sin", "hour_cos", "dow", "month", "is_diwali",
+    "is_monsoon", "is_fog_season",
     # Surface met
     "temp_c", "temp_lag24",
     "humidity", "wind_speed", "wind_dir_sin", "wind_dir_cos", "precipitation",
     # Boundary layer / dispersion
     "pblh", "pblh_trend", "vc", "stagnation_hours",
+    "vc_unfavourable",
+    # Co-pollutant
+    "no2_lag1",
     # Spatial
     "city_avg_lag1",
 ]
@@ -379,6 +427,7 @@ def _recursive_forecast(
     future_idx: pd.DatetimeIndex,
     future_weather: pd.DataFrame,
     model,
+    no2_series: pd.Series | None = None,
 ) -> np.ndarray:
     """Recursively forecast local_excess for every timestamp in future_idx,
     using ONLY `hist_*` (data available up to the start of future_idx) plus
@@ -422,6 +471,14 @@ def _recursive_forecast(
         for _v in weather_hist["temp_c"].iloc[-48:].values:
             temp_dq.append(float(_v) if pd.notna(_v) else float("nan"))
 
+    # NO2 lag — persisted at last known value (we don't recursively predict NO2).
+    # Filter to observations strictly before the forecast window to avoid leakage.
+    no2_lag1_val: float = float("nan")
+    if no2_series is not None and not no2_series.empty:
+        no2_before = no2_series[no2_series.index < future_idx[0]].dropna()
+        if not no2_before.empty:
+            no2_lag1_val = float(no2_before.iloc[-1])
+
     # ── recursive loop ────────────────────────────────────────────────────────
 
     for t in future_idx:
@@ -461,10 +518,15 @@ def _recursive_forecast(
 
         city_lag1 = float(city_hist.iloc[-1]) if len(city_hist) else float("nan")
 
+        is_monsoon_val    = 1.0 if t.month in (6, 7, 8, 9) else 0.0
+        is_fog_season_val = 1.0 if t.month in (12, 1, 2) else 0.0
+        vc_unfavourable_val = 1.0 if (pd.notna(vc_val) and vc_val < 6000.0) else 0.0
+
         x = pd.DataFrame(
             [[
                 lag1, lag24, lag48, lag72,
                 hour_sin, hour_cos, t.dayofweek, t.month, is_diwali,
+                is_monsoon_val, is_fog_season_val,
                 temp_c_val, temp_lag24_val,
                 float(wx.get("humidity", np.nan)) if pd.notna(wx.get("humidity", np.nan)) else float("nan"),
                 ws_kmh_val,
@@ -472,6 +534,8 @@ def _recursive_forecast(
                 np.cos(rad) if pd.notna(rad) else float("nan"),
                 float(wx.get("precipitation", np.nan)) if pd.notna(wx.get("precipitation", np.nan)) else float("nan"),
                 pblh_val, pblh_trend_val, vc_val, stagnation,
+                vc_unfavourable_val,
+                no2_lag1_val,
                 city_lag1,
             ]],
             columns=FEATURE_COLS,
@@ -535,6 +599,7 @@ def _validate(
     threshold: float | None,
     baseline_value_at_split: float,
     min_mae_improvement_pct: float,
+    no2_series: pd.Series | None = None,
 ) -> tuple[str, dict, int | None, bool]:
     """Time-based holdout validation. Returns (method, validation_metrics,
     max_validated_horizon_hours, beats_persistence_overall)."""
@@ -570,12 +635,12 @@ def _validate(
     model_pred = diurnal
     method = MODEL_VERSION_DIURNAL
     if use_lgb:
-        feats = _make_features(w.iloc[:split], weather, city_avg).dropna()
+        feats = _make_features(w.iloc[:split], weather, city_avg, no2_series).dropna()
         if len(feats) >= MIN_TRAIN_ROWS // 2:
             model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
             model.fit(feats[FEATURE_COLS], feats["y"])
             future_weather = weather.reindex(holdout_idx)
-            model_pred = _recursive_forecast(train_hist, weather.iloc[:split], city_avg.iloc[:split], holdout_idx, future_weather, model)
+            model_pred = _recursive_forecast(train_hist, weather.iloc[:split], city_avg.iloc[:split], holdout_idx, future_weather, model, no2_series)
             method = MODEL_VERSION_LGB
 
     metrics: dict = {}
@@ -653,6 +718,7 @@ def _forecast_ward_pollutant(
     weather_df: pd.DataFrame,
     threshold: float | None,
     min_mae_improvement_pct: float,
+    no2_readings_df: pd.DataFrame | None = None,
 ) -> dict | None:
     ward_id = int(ward["id"])
     df = _with_local_excess(readings_df)
@@ -673,8 +739,17 @@ def _forecast_ward_pollutant(
     wx_ward = weather_df[weather_df["ward_id"] == ward_id].set_index("ts").sort_index()
     latest_baseline = float(df.sort_values("ts")["baseline"].iloc[-1])
 
+    # Ward-level NO2 series for the co-pollutant lag feature. Only provided when
+    # forecasting PM2.5 or PM10 (None when NO2 is the target — circular dependency).
+    no2_ward_series: pd.Series | None = None
+    if no2_readings_df is not None and not no2_readings_df.empty:
+        no2_ward = no2_readings_df[no2_readings_df["ward_id"] == ward_id].set_index("ts").sort_index()
+        if not no2_ward.empty:
+            full_no2_idx = pd.date_range(no2_ward.index.min(), no2_ward.index.max(), freq="h", tz="UTC")
+            no2_ward_series = no2_ward["value"].reindex(full_no2_idx).interpolate(limit=6).ffill().bfill()
+
     method, validation_metrics, max_validated, beats_persistence = _validate(
-        w, wx_ward, city_avg, threshold, latest_baseline, min_mae_improvement_pct
+        w, wx_ward, city_avg, threshold, latest_baseline, min_mae_improvement_pct, no2_ward_series
     )
 
     # ---- the real, future 48h forecast, using ALL available history ----
@@ -704,13 +779,13 @@ def _forecast_ward_pollutant(
     preds_q90: np.ndarray | None = None
 
     if method == MODEL_VERSION_LGB:
-        feats = _make_features(w, wx_ward, city_avg).dropna()
+        feats = _make_features(w, wx_ward, city_avg, no2_ward_series).dropna()
         _lgb_kw = dict(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
 
         # Point estimate (regression)
         model_pt = lgb.LGBMRegressor(**_lgb_kw)
         model_pt.fit(feats[FEATURE_COLS], feats["y"])
-        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_pt)
+        preds = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_pt, no2_ward_series)
 
         # Calibrated quantile uncertainty bounds — replaces the Gaussian
         # approximation (UNCERTAINTY_Z × RMSE) used by the diurnal fallback.
@@ -724,11 +799,11 @@ def _forecast_ward_pollutant(
         try:
             model_q10 = lgb.LGBMRegressor(objective="quantile", alpha=0.10, **_lgb_kw)
             model_q10.fit(feats[FEATURE_COLS], feats["y"])
-            preds_q10 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q10)
+            preds_q10 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q10, no2_ward_series)
 
             model_q90 = lgb.LGBMRegressor(objective="quantile", alpha=0.90, **_lgb_kw)
             model_q90.fit(feats[FEATURE_COLS], feats["y"])
-            preds_q90 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q90)
+            preds_q90 = _recursive_forecast(excess_hist, wx_ward, city_avg, future_idx, future_weather, model_q90, no2_ward_series)
         except Exception:
             log.debug("quantile model training failed for ward %s %s — falling back to Gaussian bounds", ward_id, pollutant)
             preds_q10 = preds_q90 = None
@@ -791,6 +866,10 @@ def run(city_code: str | None = None) -> dict:
         readings = db.get_readings_history(hours=24 * 30)
         weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
         last_forecast_times = db.get_last_forecast_times(city["id"])
+        # NO2 hourly series (built once per city) — used as a co-pollutant lag
+        # feature when forecasting PM2.5 and PM10. Passed as None when NO2 is
+        # the forecast target itself (would create a circular dependency).
+        no2_readings_df = _hourly_ward_pollutant(readings, "no2")
 
         for pollutant in cfg["enabled_pollutants"]:
             readings_df = _hourly_ward_pollutant(readings, pollutant)
@@ -816,7 +895,8 @@ def run(city_code: str | None = None) -> dict:
                             )
                             continue
                 result = _forecast_ward_pollutant(
-                    ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"]
+                    ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
+                    no2_readings_df=no2_readings_df if pollutant != "no2" else None,
                 )
                 if result is None:
                     summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant})
