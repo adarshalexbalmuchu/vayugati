@@ -213,9 +213,9 @@ export default function CommandView() {
                     type="button"
                     onClick={() => worstWard && setSelectedWardId(worstWard.id)}
                     disabled={!worstWard}
-                    className="focus-ring group flex flex-shrink-0 items-center gap-4 rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-3 text-left shadow-card transition hover:border-accent-200 hover:shadow-card-lg disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:shadow-card"
+                    className="focus-ring group flex flex-shrink-0 items-center gap-3 rounded-xl border border-slate-200 bg-white py-2 pl-3 pr-3 text-left shadow-card transition hover:border-accent-200 hover:shadow-card-lg disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:shadow-card"
                   >
-                    <CityAqiGauge aqi={worstDisplayAqi} size={96} />
+                    <CityAqiGauge aqi={worstDisplayAqi} size={80} />
                     <div className="w-px self-stretch bg-slate-100" aria-hidden />
                     <div className="min-w-0 w-[220px] flex-none">
                       <CityStatusHero

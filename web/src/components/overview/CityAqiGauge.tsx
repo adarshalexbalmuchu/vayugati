@@ -15,6 +15,12 @@ const START_ROT = 135
 export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: number }) {
   const level = aqiLevel(aqi)
   const fillLen = aqi !== null ? Math.min(aqi / 500, 1) * TRACK_LEN : 0
+  // Text was fixed at 30px/11px regardless of `size` — fine at the original
+  // 140px default, but at smaller sizes (e.g. the 96px hero gauge) the label
+  // outgrew the safe inner circle and visually spilled over the arc. Scale
+  // both to the same ratios the fixed sizes had at size=140.
+  const valueSize = Math.round(size * 0.214)
+  const labelSize = Math.max(8, Math.round(size * 0.079))
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
@@ -47,15 +53,18 @@ export function CityAqiGauge({ aqi, size = 140 }: { aqi: number | null; size?: n
       </svg>
 
       {/* Centre text — HTML overlay for consistent font rendering */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-2">
         <span
-          className="text-3xl font-extrabold tabular-nums leading-none"
-          style={{ color: aqi !== null ? level.hex : '#475569' }}
+          className="font-extrabold tabular-nums leading-none"
+          style={{ color: aqi !== null ? level.hex : '#475569', fontSize: valueSize }}
         >
           {aqi ?? '—'}
         </span>
         {/* ink-200 (#DEC7A0) warm cream — higher contrast than slate-400 on dark face */}
-        <span className="mt-1 text-[11px] font-medium tracking-wide text-ink-200">
+        <span
+          className="mt-1 whitespace-nowrap font-medium tracking-wide text-ink-200"
+          style={{ fontSize: labelSize }}
+        >
           {level.label}
         </span>
       </div>
