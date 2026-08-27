@@ -87,6 +87,8 @@ MIGRATIONS: list[MigrationCheck] = [
     #   select tgname from pg_trigger where tgrelid = 'profiles'::regclass;
     # should include `enforce_profile_role_immutability_trg`.
     MigrationCheck("20260728000000_admin_audit_events.sql", ("table", "admin_audit_events", None)),
+    MigrationCheck("20260826200000_weather_pblh.sql", ("column", "weather", "boundary_layer_height")),
+    MigrationCheck("20260827000000_fire_counts.sql", ("table", "fire_counts", None)),
 ]
 
 
