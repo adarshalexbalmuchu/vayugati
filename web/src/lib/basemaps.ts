@@ -6,7 +6,7 @@ import type { StyleSpecification } from 'maplibre-gl'
  * MapTiler was chosen because one API key's hosted style catalog covers all
  * 5 requested looks with real, published style ids - no bespoke style JSON
  * to author or maintain. Unset key -> only Operational Light is available,
- * mapped to a keyless CARTO Positron basemap (see FALLBACK_STYLE below), so
+ * mapped to a keyless Esri Light Gray basemap (see FALLBACK_STYLE below), so
  * the page keeps working with zero configuration. The other 4 modes are
  * never silently faked - they're visibly disabled.
  */
@@ -23,27 +23,45 @@ export interface BasemapOption {
 }
 
 /**
- * No-key fallback for Operational Light - CARTO's free, keyless "Positron"
- * (light_all) raster tiles: a real, widely-used, low-saturation civic/admin
- * basemap, not MapLibre's own public "demo" style (a colourful political
- * atlas, wrong tone for an operations console). No API key of any kind is
- * involved - this is a public tile endpoint, proper attribution included.
+ * No-key fallback for Operational Light - Esri's free, keyless "Light Gray
+ * Canvas" raster tiles (base + reference/label overlay): a real, widely-used,
+ * low-saturation civic/admin basemap, not MapLibre's own public "demo" style
+ * (a colourful political atlas, wrong tone for an operations console). No API
+ * key of any kind is involved - this is a public tile endpoint, proper
+ * attribution included.
+ *
+ * Previously used CARTO's basemaps.cartocdn.com/light_all - that endpoint now
+ * requires an API key and, without one, serves a watermarked "API key
+ * required" placeholder tile with an HTTP 200 (so it fails silently instead
+ * of erroring). Esri's Canvas/World_Light_Gray_Base + _Reference endpoints
+ * were verified to still serve real, unwatermarked tiles without a key.
  */
 export const FALLBACK_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    'carto-light': {
+    'esri-gray-base': {
       type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'],
+      tiles: [
+        'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      ],
       tileSize: 256,
-      maxzoom: 20,
+      maxzoom: 16,
       attribution:
-        '© <a href="https://carto.com/attributions">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        '© <a href="https://www.esri.com">Esri</a>, HERE, Garmin, © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+    'esri-gray-reference': {
+      type: 'raster',
+      tiles: [
+        'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 16,
     },
   },
   layers: [
     { id: 'background', type: 'background', paint: { 'background-color': '#F1F5F9' } },
-    { id: 'carto-light-layer', type: 'raster', source: 'carto-light' },
+    { id: 'esri-gray-base-layer', type: 'raster', source: 'esri-gray-base' },
+    { id: 'esri-gray-reference-layer', type: 'raster', source: 'esri-gray-reference' },
   ],
 }
 
