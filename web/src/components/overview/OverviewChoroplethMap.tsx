@@ -2,7 +2,7 @@ import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from 'g
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FALLBACK_STYLE } from '../../lib/basemaps'
+import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
 import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
 
@@ -153,9 +153,12 @@ export default function OverviewChoroplethMap({
   useEffect(() => {
     if (!containerRef.current) return
 
+    // Same "Minimal Grey GIS" MapTiler style the dedicated Map page uses when
+    // a key is configured — noticeably crisper than the keyless raster
+    // fallback. Falls back to the keyless Esri tiles with no config needed.
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: FALLBACK_STYLE,
+      style: isBasemapAvailable('minimal-grey') ? resolveStyleUrl('minimal-grey') : FALLBACK_STYLE,
       center: DELHI_CENTER,
       zoom: DELHI_ZOOM,
       attributionControl: false,
