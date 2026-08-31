@@ -396,8 +396,8 @@ export type Database = {
           direction: string | null
           id: number
           method: string | null
-          regional_fraction_prior: number | null
           regional_fire_index: number | null
+          regional_fraction_prior: number | null
           ts: string
           ward_id: number
         }
@@ -407,8 +407,8 @@ export type Database = {
           direction?: string | null
           id?: number
           method?: string | null
-          regional_fraction_prior?: number | null
           regional_fire_index?: number | null
+          regional_fraction_prior?: number | null
           ts?: string
           ward_id: number
         }
@@ -418,8 +418,8 @@ export type Database = {
           direction?: string | null
           id?: number
           method?: string | null
-          regional_fraction_prior?: number | null
           regional_fire_index?: number | null
+          regional_fraction_prior?: number | null
           ts?: string
           ward_id?: number
         }
@@ -602,6 +602,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fire_counts: {
+        Row: {
+          date: string
+          fire_count: number
+          region: string
+        }
+        Insert: {
+          date: string
+          fire_count?: number
+          region: string
+        }
+        Update: {
+          date?: string
+          fire_count?: number
+          region?: string
+        }
+        Relationships: []
       }
       forecast_runs: {
         Row: {
@@ -2341,34 +2359,40 @@ export type Database = {
       }
       weather: {
         Row: {
+          boundary_layer_height: number | null
           humidity: number | null
           id: number
           precipitation: number | null
           pressure: number | null
           temp_c: number | null
           ts: string
+          ventilation_coefficient: number | null
           ward_id: number
           wind_dir: number | null
           wind_speed: number | null
         }
         Insert: {
+          boundary_layer_height?: number | null
           humidity?: number | null
           id?: number
           precipitation?: number | null
           pressure?: number | null
           temp_c?: number | null
           ts: string
+          ventilation_coefficient?: number | null
           ward_id: number
           wind_dir?: number | null
           wind_speed?: number | null
         }
         Update: {
+          boundary_layer_height?: number | null
           humidity?: number | null
           id?: number
           precipitation?: number | null
           pressure?: number | null
           temp_c?: number | null
           ts?: string
+          ventilation_coefficient?: number | null
           ward_id?: number
           wind_dir?: number | null
           wind_speed?: number | null
