@@ -33,7 +33,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional
 
 # ── the migration manifest ───────────────────────────────────────────────────
 # One marker object per migration, chosen to be the smallest reliable signal
@@ -43,7 +43,7 @@ from typing import Literal
 # from the SQL — a parsed heuristic could silently pick the wrong marker and
 # give a false "applied"; an explicit list is auditable by reading it.
 
-Marker = tuple[Literal["table", "column", "bucket"], str, str | None]
+Marker = tuple[Literal["table", "column", "bucket"], str, Optional[str]]
 
 
 @dataclass
@@ -107,8 +107,11 @@ def _load_env_file(path: str) -> dict[str, str]:
 
 
 def _check_table(base_url: str, key: str, table: str) -> tuple[bool, str]:
+    # select=* rather than select=id — not every table has an id column
+    # (e.g. fire_counts has a composite (date, region) primary key), and
+    # asserting one caused a false "MISSING" on a table that actually exists.
     req = urllib.request.Request(
-        f"{base_url}/rest/v1/{table}?select=id&limit=0",
+        f"{base_url}/rest/v1/{table}?select=*&limit=0",
         headers={"apikey": key, "Authorization": f"Bearer {key}"},
     )
     try:
