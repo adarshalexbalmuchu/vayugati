@@ -89,13 +89,19 @@ function CurrentReadingBadge({
     )
   }
   const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-  const displayAqi = usingCpcb ? preferred!.cpcbAqi : (ward.aqi ?? preferred?.openaqAqi ?? null)
+  const rawDisplayAqi = usingCpcb ? preferred!.cpcbAqi : (ward.aqi ?? preferred?.openaqAqi ?? null)
+  // Same reasoning as WardDetailPanel: don't show a max-sub-index number built
+  // from trace pollutants alone as if it were a trustworthy reading.
+  const noData = preferred ? dataConfidenceLevel(preferred) === 'no_data' : false
+  const displayAqi = noData ? null : rawDisplayAqi
   const isStaleValue = !usingCpcb && displayAqi != null && ward.aqi == null
   const level = aqiLevel(displayAqi)
   return (
     <span
       title={
-        usingCpcb
+        noData
+          ? 'Matched station, but no recognized pollutant values in the latest CPCB reading'
+          : usingCpcb
           ? 'Latest reading: CPCB/data.gov preferred'
           : isStaleValue
           ? 'Last known value — readings are stale'
@@ -358,9 +364,17 @@ function WardDetailPanel({
   const forecastPoints = !forecastSuppressed && forecast?.points ? forecast.points : []
 
   const usingCpcb = preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
-  const displayAqi = usingCpcb
+  const rawDisplayAqi = usingCpcb
     ? preferred!.cpcbAqi
     : (ward.aqi ?? preferred?.openaqAqi ?? null)
+  // A max-sub-index AQI computed from only trace pollutants (e.g. O3/CO) while
+  // PM2.5/PM10/NO2 are all absent is technically a real number but not a
+  // meaningful one — it can read "Good" while the pollutants that actually
+  // drive Delhi's air quality have simply stopped reporting. The reconcile
+  // pipeline already flags this case as 'no_data' for the badge below; reuse
+  // that instead of showing a falsely confident number next to a "No data" badge.
+  const noData = preferred ? dataConfidenceLevel(preferred) === 'no_data' : false
+  const displayAqi = noData ? null : rawDisplayAqi
   const level = aqiLevel(displayAqi)
 
   // Build pollutant readings: CPCB → OpenAQ (skip CO from OpenAQ, wrong unit) → ward fields
@@ -411,11 +425,9 @@ function WardDetailPanel({
             <h3 className="mt-0.5 truncate text-sm font-bold text-slate-800" title={formatWardName(ward.name)}>
               {formatWardName(ward.name)}
             </h3>
-            {displayAqi != null && (
-              <p className="mt-0.5 text-xs font-semibold" style={{ color: level.hex }}>
-                {level.label}
-              </p>
-            )}
+            <p className="mt-0.5 text-xs font-semibold" style={{ color: level.hex }}>
+              {level.label}
+            </p>
           </div>
           {displayAqi != null && (
             <span
