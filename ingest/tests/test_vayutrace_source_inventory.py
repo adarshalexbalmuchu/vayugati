@@ -21,6 +21,7 @@ from app.vayutrace_sector_priors import (
     get_priors,
 )
 from app.vayutrace_kernel import (
+    CALM_ISOTROPIC_FACTOR,
     _bearing_deg,
     _distance_decay,
     _haversine_km,
@@ -176,10 +177,14 @@ class TestWindFactor:
         assert wf == pytest.approx(0.0, abs=1e-9)
 
     def test_calm_wind_still_gives_alignment_score(self):
-        # Even at 0 m/s wind the cosine alignment should still be > 0
+        # At 0 m/s wind, direction is meteorologically unreliable (EPA AERMOD
+        # / WMO TN-285) — the kernel falls back to the isotropic factor
+        # (1/pi) regardless of bearing, per the calm-wind model added in
+        # 3e59d2f. This is > 0, so calm wind still gives *some* alignment
+        # score, just not the full directional cos(Delta-theta)=1 the
+        # pre-isotropic-fallback version of this test asserted.
         wf = _wind_factor(180.0, 0.0, wind_speed_ms=0.0)
-        # cos(0°)=1, factor = 1 × (1 + 0) = 1.0
-        assert wf == pytest.approx(1.0, rel=1e-5)
+        assert wf == pytest.approx(CALM_ISOTROPIC_FACTOR, rel=1e-5)
 
 
 # ── Full kernel run ───────────────────────────────────────────────────────────
