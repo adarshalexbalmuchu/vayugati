@@ -460,6 +460,11 @@ function WardDetailPanel({
         {forecastSuppressed && (
           <p className="mt-1 text-[10px] text-slate-400">Forecast unavailable</p>
         )}
+        {!forecastSuppressed && noData && forecastPoints.length > 0 && (
+          <p className="mt-1 text-[10px] text-slate-400">
+            Based on recent history — current station reading unavailable, see below.
+          </p>
+        )}
       </div>
 
       {/* Pollutant breakdown */}
@@ -514,8 +519,10 @@ function WardDetailPanel({
         </div>
       )}
 
-      {/* Dominant source */}
-      {ward.dominant_source && (
+      {/* Dominant source — same reasoning as the AQI number above: this is
+          attributed from pollutant concentrations, so it's just as stale/
+          meaningless as the AQI when the station has no current readings. */}
+      {ward.dominant_source && !noData && (
         <div className="border-t border-slate-100 px-4 py-2.5 mt-auto">
           <span className="text-[10px] text-slate-400">
             Likely source:{' '}
