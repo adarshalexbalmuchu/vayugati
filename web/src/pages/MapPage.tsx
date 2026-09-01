@@ -2,16 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import turfCircle from '@turf/circle'
 import turfDistance from '@turf/distance'
 import { point as turfPoint } from '@turf/helpers'
+import { MapPin, RefreshCw } from 'lucide-react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
 import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps, type WindArrowProps } from '../components/MapView'
 import ChangeModeSummaryPanel, { type ChangeRow } from '../components/map/ChangeModeSummaryPanel'
 import IncidentClusterPanel from '../components/map/IncidentClusterPanel'
-import { ErrorState, Skeleton } from '../components/ui'
+import { ErrorState, Skeleton, StaleBadge } from '../components/ui'
 import BasemapSwitcher from '../components/map/BasemapSwitcher'
 import MapLayerControl, { DEFAULT_LAYER_STATE, type MapLayerKey } from '../components/map/MapLayerControl'
 import MapLegend from '../components/map/MapLegend'
-import MapPageHeader from '../components/map/MapPageHeader'
 import MapToolbar, { type MapViewMode, type ToolKind } from '../components/map/MapToolbar'
 import DataQualityStationPanel, { type DataQualityStationInfo } from '../components/map/DataQualityStationPanel'
 import DataQualitySummaryPanel from '../components/map/DataQualitySummaryPanel'
@@ -1127,9 +1127,39 @@ export default function MapPage() {
   }
 
   return (
-    <AppShell subtitle="Map">
+    <AppShell
+      subtitle="Map"
+      headerContent={
+        <div className="flex flex-1 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-slate-900">Map</h1>
+              {state.stale && <StaleBadge />}
+            </div>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
+              <MapPin className="h-3 w-3" aria-hidden />
+              Delhi City Pack
+              {state.fetchedAt != null && (
+                <span>
+                  · Updated {new Date(state.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  {latestStationReadingAgeMinutes != null && <> · Latest reading {fmtAge(latestStationReadingAgeMinutes)}</>}
+                </span>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={state.refreshing}
+            className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${state.refreshing ? 'animate-spin' : ''}`} aria-hidden />
+            Refresh
+          </button>
+        </div>
+      }
+    >
       <div className="flex min-h-0 flex-1 flex-col">
-        <MapPageHeader stale={state.stale} fetchedAt={state.fetchedAt} refreshing={state.refreshing} onRefresh={refreshAll} latestStationReadingAgeMinutes={latestStationReadingAgeMinutes} />
 
         {state.loading ? (
           <div className="flex-1 p-4">
@@ -1166,62 +1196,63 @@ export default function MapPage() {
               bufferRadiusKm={activeTool.kind === 'buffer' ? activeTool.radiusKm : DEFAULT_BUFFER_RADIUS_KM}
               onBufferRadiusChange={handleBufferRadiusChange}
             />
-            <div className="flex min-h-0 flex-1">
-              <div className="relative min-h-0 flex-1">
-                <MapView
-                  markers={allMarkers}
-                  center={DELHI_CENTER}
-                  zoom={DELHI_DEFAULT_ZOOM}
-                  styleUrl={resolveStyleUrl(basemap)}
-                  showScaleBar
-                  onMarkerClick={handleMarkerClick}
-                  fitBoundsTo={fitBoundsTo}
-                  wardBoundaries={wardBoundaryCollection}
-                  showWardBoundaries={layers.wardBoundaries && wardBoundariesAvailable}
-                  selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
-                  onBoundaryClick={handleBoundaryClick}
-                  selectedMarkerId={selection?.kind === 'station' ? `station-${selection.id}` : null}
-                  incidentGeoJSON={incidentGeoJSON}
-                  onIncidentClick={handleIncidentClick}
-                  onClusterSelect={handleClusterSelect}
-                  selectedIncidentId={selection?.kind === 'incident' ? selection.id : null}
-                  dataQualityMode={viewMode === 'data_quality'}
-                  show3D={layers.aqiExtrusion && wardBoundariesAvailable}
-                  windGeoJSON={windGeoJSON}
-                  showWind={layers.windFlow && windGeoJSON.features.length > 0}
-                  showBuildings3D={layers.buildings3D && maptilerKey() != null}
-                  showAqiHeatmap={layers.aqiHeatmap && stationHeatmapGeoJSON.features.length > 0}
-                  stationHeatmapGeoJSON={stationHeatmapGeoJSON}
-                  showVegetation3D={layers.vegetation3D && maptilerKey() != null}
-                  showLandUse={layers.landUse && maptilerKey() != null}
-                  selectionKey={selectionKey}
-                  selectedIncidentCoords={selectedIncidentCoords}
-                  activeToolKind={activeTool.kind}
-                  onToolClick={handleToolClick}
-                  toolGeoJSON={toolGeoJSON}
+            <div className="relative min-h-0 flex-1">
+              <MapView
+                markers={allMarkers}
+                center={DELHI_CENTER}
+                zoom={DELHI_DEFAULT_ZOOM}
+                styleUrl={resolveStyleUrl(basemap)}
+                showScaleBar
+                onMarkerClick={handleMarkerClick}
+                fitBoundsTo={fitBoundsTo}
+                wardBoundaries={wardBoundaryCollection}
+                showWardBoundaries={layers.wardBoundaries && wardBoundariesAvailable}
+                selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
+                onBoundaryClick={handleBoundaryClick}
+                selectedMarkerId={selection?.kind === 'station' ? `station-${selection.id}` : null}
+                incidentGeoJSON={incidentGeoJSON}
+                onIncidentClick={handleIncidentClick}
+                onClusterSelect={handleClusterSelect}
+                selectedIncidentId={selection?.kind === 'incident' ? selection.id : null}
+                dataQualityMode={viewMode === 'data_quality'}
+                show3D={layers.aqiExtrusion && wardBoundariesAvailable}
+                windGeoJSON={windGeoJSON}
+                showWind={layers.windFlow && windGeoJSON.features.length > 0}
+                showBuildings3D={layers.buildings3D && maptilerKey() != null}
+                showAqiHeatmap={layers.aqiHeatmap && stationHeatmapGeoJSON.features.length > 0}
+                stationHeatmapGeoJSON={stationHeatmapGeoJSON}
+                showVegetation3D={layers.vegetation3D && maptilerKey() != null}
+                showLandUse={layers.landUse && maptilerKey() != null}
+                selectionKey={selectionKey}
+                selectedIncidentCoords={selectedIncidentCoords}
+                activeToolKind={activeTool.kind}
+                onToolClick={handleToolClick}
+                toolGeoJSON={toolGeoJSON}
+              />
+              <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
+                <MapLayerControl
+                  layers={layers}
+                  onToggle={(key: MapLayerKey) => setLayers((l) => ({ ...l, [key]: !l[key] }))}
+                  wardBoundariesAvailable={wardBoundariesAvailable}
+                  wardBoundariesLoading={wardBoundariesState.loading}
+                  citizenReportsAvailable={reports.length > 0}
+                  transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
+                  aqiExtrusionAvailable={wardBoundariesAvailable}
+                  windFlowAvailable={windGeoJSON.features.length > 0}
+                  buildings3DAvailable={maptilerKey() != null}
+                  aqiHeatmapAvailable={stationHeatmapGeoJSON.features.length > 0}
+                  vegetation3DAvailable={maptilerKey() != null}
+                  landUseAvailable={maptilerKey() != null}
+                  forecastSuppressed={forecastSuppressed}
                 />
-                <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
-                  <MapLayerControl
-                    layers={layers}
-                    onToggle={(key: MapLayerKey) => setLayers((l) => ({ ...l, [key]: !l[key] }))}
-                    wardBoundariesAvailable={wardBoundariesAvailable}
-                    wardBoundariesLoading={wardBoundariesState.loading}
-                    citizenReportsAvailable={reports.length > 0}
-                    transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
-                    aqiExtrusionAvailable={wardBoundariesAvailable}
-                    windFlowAvailable={windGeoJSON.features.length > 0}
-                    buildings3DAvailable={maptilerKey() != null}
-                    aqiHeatmapAvailable={stationHeatmapGeoJSON.features.length > 0}
-                    vegetation3DAvailable={maptilerKey() != null}
-                    landUseAvailable={maptilerKey() != null}
-                    forecastSuppressed={forecastSuppressed}
-                  />
-                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} aqiExtrusionOn={layers.aqiExtrusion && wardBoundariesAvailable} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
-                </div>
-                <BasemapSwitcher mode={basemap} onChange={setBasemap} />
+                <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} aqiExtrusionOn={layers.aqiExtrusion && wardBoundariesAvailable} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
               </div>
+              <BasemapSwitcher mode={basemap} onChange={setBasemap} />
 
-              <div className="w-80 flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
+              {/* top-24 (not top-3, matching the layer panel) clears MapLibre's
+                  own NavigationControl, which is anchored top-right - both
+                  wanting the same corner would otherwise overlap. */}
+              <div className="absolute bottom-14 right-3 top-24 z-10 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-card-lg">
                 {activeTool.kind !== 'none' ? (
                   /* ── GIS tool mode - takes priority over marker selection ── */
                   <ToolResultsPanel

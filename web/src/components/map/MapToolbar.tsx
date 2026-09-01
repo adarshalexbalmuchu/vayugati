@@ -208,6 +208,18 @@ export default function MapToolbar({
               )}
             </>
           )}
+          <span
+            title={
+              isQuality
+                ? 'Showing station freshness and ward monitoring coverage. Station colour shows data age, not AQI severity.'
+                : isHistorical && obsViewMode === 'change'
+                  ? `Markers show ${MAP_POLLUTANT_LABEL[pollutant]} change from ${OBS_SLOT_LABEL[obsSlot]} to Now — verified station readings only.`
+                  : markerMeaningLabel(pollutant, timeMode, obsSlot)
+            }
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          >
+            <Info className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+          </span>
           <button
             type="button"
             onClick={onResetView}
@@ -228,17 +240,6 @@ export default function MapToolbar({
           onObsViewModeChange={onObsViewModeChange}
         />
       )}
-
-      <div className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50 px-4 py-1">
-        <Info className="h-3 w-3 flex-shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
-        <p className="text-[11px] text-slate-500">
-          {isQuality
-            ? 'Showing station freshness and ward monitoring coverage. Station colour shows data age, not AQI severity.'
-            : isHistorical && obsViewMode === 'change'
-              ? `Markers show ${MAP_POLLUTANT_LABEL[pollutant]} change from ${OBS_SLOT_LABEL[obsSlot]} to Now — verified station readings only.`
-              : markerMeaningLabel(pollutant, timeMode, obsSlot)}
-        </p>
-      </div>
     </div>
   )
 }
