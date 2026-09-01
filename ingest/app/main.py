@@ -105,19 +105,34 @@ _geoai_lock = threading.Lock()
 def _check_geoai_rate_limit(ip: str) -> None:
     now = time.time()
     with _geoai_lock:
+        # Prune IPs with no calls left in the window on every check - cheap
+        # relative to the LLM call this gates, and keeps this dict from
+        # growing for the life of the process (it would otherwise never
+        # shrink: an IP's entry is only ever appended to, never removed by
+        # the checks below).
+        stale_ips = [
+            ip_key
+            for ip_key, calls in _geoai_calls_by_ip.items()
+            if not any(now - t < _GEOAI_PER_IP_WINDOW_S for t in calls)
+        ]
+        for ip_key in stale_ips:
+            del _geoai_calls_by_ip[ip_key]
+
         global_calls = [t for t in _geoai_global_calls if now - t < _GEOAI_GLOBAL_WINDOW_S]
         if len(global_calls) >= _GEOAI_GLOBAL_LIMIT:
+            retry_after = max(1, int(_GEOAI_GLOBAL_WINDOW_S - (now - min(global_calls))))
             raise HTTPException(
                 status_code=429,
                 detail="GeoAI is at capacity right now — try again shortly.",
-                headers={"Retry-After": "60"},
+                headers={"Retry-After": str(retry_after)},
             )
         ip_calls = [t for t in _geoai_calls_by_ip.get(ip, []) if now - t < _GEOAI_PER_IP_WINDOW_S]
         if len(ip_calls) >= _GEOAI_PER_IP_LIMIT:
+            retry_after = max(1, int(_GEOAI_PER_IP_WINDOW_S - (now - min(ip_calls))))
             raise HTTPException(
                 status_code=429,
                 detail="Too many GeoAI questions from this connection — try again shortly.",
-                headers={"Retry-After": "60"},
+                headers={"Retry-After": str(retry_after)},
             )
         ip_calls.append(now)
         global_calls.append(now)

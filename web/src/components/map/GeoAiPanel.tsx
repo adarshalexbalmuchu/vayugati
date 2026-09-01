@@ -32,7 +32,9 @@ export default function GeoAiPanel({
   stations,
   incidents,
   wardBoundaryByWardId,
+  leadingSourceById,
   onFocus,
+  onFitResults,
   onSetPollutant,
   onSetTimeMode,
   onSetObsSlot,
@@ -48,7 +50,15 @@ export default function GeoAiPanel({
   stations: StationMarker[]
   incidents: Incident[]
   wardBoundaryByWardId: Map<number, GeoJSON.Polygon | GeoJSON.MultiPolygon>
+  /** Same lookup the manual source-category filter uses (MapPage.tsx) -
+   *  incidents carry no source_category field of their own, only a derived
+   *  leading-source-attribution result. */
+  leadingSourceById: Map<number, SourceCategory>
   onFocus: (kind: 'ward' | 'station', id: number, coords: [number, number]) => void
+  /** Pans/fits the camera to a query result's matched coordinates - without
+   *  this, "wards near Anand Vihar..." populates a list but the map itself
+   *  never moves, unlike a focus action. */
+  onFitResults: (coords: [number, number][]) => void
   onSetPollutant: (p: MapPollutant) => void
   onSetTimeMode: (t: MapTimeMode) => void
   onSetObsSlot: (s: ObsSlot) => void
@@ -113,7 +123,11 @@ export default function GeoAiPanel({
         if (action.target === 'incidents') {
           const filteredIds = new Set(
             incidents
-              .filter((i) => action.severity == null || i.severity === action.severity)
+              .filter(
+                (i) =>
+                  (action.severity == null || i.severity === action.severity) &&
+                  (action.source_category == null || leadingSourceById.get(i.id) === action.source_category),
+              )
               .map((i) => i.id),
           )
           results = { wards: [], stations: [], incidents: base.incidents.filter((m) => filteredIds.has(m.id)) }
@@ -136,6 +150,22 @@ export default function GeoAiPanel({
 
     setQueryResults(results)
     setMapUpdated(updated)
+
+    if (results) {
+      const matchedWardIds = new Set(results.wards.map((m) => m.id))
+      const matchedStationIds = new Set(results.stations.map((m) => m.id))
+      const matchedIncidentIds = new Set(results.incidents.map((m) => m.id))
+      const coords: [number, number][] = [
+        ...wards
+          .filter((w) => matchedWardIds.has(w.id) && w.lat != null && w.lng != null)
+          .map((w) => [w.lng as number, w.lat as number] as [number, number]),
+        ...stations.filter((s) => matchedStationIds.has(s.id)).map((s) => [s.lng, s.lat] as [number, number]),
+        ...incidents
+          .filter((i) => matchedIncidentIds.has(i.id) && i.lat != null && i.lng != null)
+          .map((i) => [i.lng as number, i.lat as number] as [number, number]),
+      ]
+      if (coords.length > 0) onFitResults(coords)
+    }
   }
 
   const handleSubmit = async () => {

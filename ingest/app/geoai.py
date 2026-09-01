@@ -93,7 +93,7 @@ Action = SetTimeAction | SetFiltersAction | FocusAction | QueryAction | Unsuppor
 
 class GeoAiResponse(BaseModel):
     explanation: str
-    actions: list[Action] = Field(max_length=MAX_ACTIONS)
+    actions: list[Action] = Field(min_length=1, max_length=MAX_ACTIONS)
 
 
 _SYSTEM = f"""\
@@ -181,25 +181,74 @@ def validate_actions(parsed: GeoAiResponse, entity_ids: set[tuple[str, str]]) ->
     """Deterministic semantic gate run after every parse, before the response
     leaves this module. Structured outputs guarantee shape; this guarantees
     the actions actually make sense against real allowed combinations - the
-    'validator authorizes' step between LLM interpretation and execution."""
+    'validator authorizes' step between LLM interpretation and execution.
+
+    Beyond per-action checks (_invalid_reason), this also normalizes three
+    list-level patterns that a schema-valid response can still get wrong:
+    the model hedging with 'unsupported' alongside real actions, more than
+    one spatial query (the panel only ever displays one result set), and a
+    threshold query paired with a historical/forecast time change (the
+    frontend filters *live* ward/station data regardless of what obs_slot
+    was just set - so this combination would show numbers from now under
+    an explanation claiming "yesterday", which is worse than refusing)."""
+    actions = list(parsed.actions)
+
+    # The model hedging - mixing a self-flagged "can't do this" with other
+    # executable actions - reads as confident when it wasn't. Collapse to
+    # just the first unsupported action rather than half-run an uncertain plan.
+    unsupported_first = next((a for a in actions if isinstance(a, UnsupportedAction)), None)
+    if unsupported_first is not None:
+        return GeoAiResponse(explanation=parsed.explanation, actions=[unsupported_first])
+
+    has_non_now_time = any(
+        isinstance(a, SetTimeAction)
+        and ((a.obs_slot is not None and a.obs_slot != "now") or (a.time_mode is not None and a.time_mode != "now"))
+        for a in actions
+    )
+
     validated: list[Action] = []
-    for action in parsed.actions:
+    seen_query = False
+    for action in actions:
         reason = _invalid_reason(action, entity_ids)
+        if reason is None and isinstance(action, QueryAction):
+            if seen_query:
+                reason = "Only one spatial query is shown at a time - ask a follow-up for another."
+            elif has_non_now_time and action.pollutant is not None and action.op is not None and action.threshold is not None:
+                reason = (
+                    "Historical and forecast threshold queries aren't supported yet - "
+                    "results would be calculated from current data, not the requested time."
+                )
         if reason is not None:
             validated.append(UnsupportedAction(type="unsupported", reason=reason))
             continue
-        if isinstance(action, QueryAction) and action.radius_km is not None:
-            action = action.model_copy(
-                update={"radius_km": max(MIN_RADIUS_KM, min(MAX_RADIUS_KM, action.radius_km))}
-            )
+        if isinstance(action, QueryAction):
+            seen_query = True
+            if action.radius_km is not None:
+                action = action.model_copy(
+                    update={"radius_km": max(MIN_RADIUS_KM, min(MAX_RADIUS_KM, action.radius_km))}
+                )
         validated.append(action)
     return GeoAiResponse(explanation=parsed.explanation, actions=validated)
 
 
 def _invalid_reason(action: Action, entity_ids: set[tuple[str, str]]) -> str | None:
     if isinstance(action, FocusAction):
-        if action.target_ref is not None and (action.target_ref.type, action.target_ref.id) not in entity_ids:
+        if action.target_ref is None:
+            return "Couldn't identify a location to focus on."
+        if (action.target_ref.type, action.target_ref.id) not in entity_ids:
             return "Couldn't resolve that location to a known ward or station."
+        return None
+
+    if isinstance(action, SetTimeAction):
+        if action.time_mode is None and action.obs_slot is None:
+            return "That didn't specify a time change."
+        return None
+
+    if isinstance(action, SetFiltersAction):
+        if action.pollutant is None and action.source_filter is None and action.severity_filter is None and action.view_mode is None:
+            return "That didn't specify any filter change."
+        if action.source_filter is not None and action.source_filter not in SOURCE_CATEGORIES:
+            return f"Unrecognized source category: {action.source_filter}."
         return None
 
     if isinstance(action, QueryAction):
@@ -213,13 +262,9 @@ def _invalid_reason(action: Action, entity_ids: set[tuple[str, str]]) -> str | N
         else:
             if action.severity is not None or action.source_category is not None:
                 return "Severity and source-category filters apply to incidents, not wards or stations."
-            if (action.op is None) != (action.threshold is None):
-                return "A pollutant threshold needs both a comparison and a value."
-        return None
-
-    if isinstance(action, SetFiltersAction):
-        if action.source_filter is not None and action.source_filter not in SOURCE_CATEGORIES:
-            return f"Unrecognized source category: {action.source_filter}."
+            threshold_fields = (action.pollutant, action.op, action.threshold)
+            if not (all(f is None for f in threshold_fields) or all(f is not None for f in threshold_fields)):
+                return "A pollutant threshold needs a pollutant, a comparison, and a value together."
         return None
 
     return None

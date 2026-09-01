@@ -1199,7 +1199,12 @@ export default function MapPage() {
               onSeverityFilterChange={setSeverityFilter}
               freshnessFilter={freshnessFilter}
               onFreshnessFilterChange={setFreshnessFilter}
-              onResetView={() => setResetToken((t) => t + 1)}
+              onResetView={() => {
+                setResetToken((t) => t + 1)
+                // Without this, a prior GeoAI focus/query permanently wins over
+                // Reset to Delhi (fitBoundsTo prefers geoAiFocusBounds whenever set).
+                setGeoAiFocusBounds(undefined)
+              }}
               forecastSuppressed={forecastSuppressed}
               obsSlot={obsSlot}
               onObsSlotChange={setObsSlot}
@@ -1275,10 +1280,12 @@ export default function MapPage() {
                     stations={stations}
                     incidents={incidents}
                     wardBoundaryByWardId={wardBoundaryByWardId}
+                    leadingSourceById={leadingSourceById}
                     onFocus={(kind, id, coords) => {
                       setSelection({ kind, id })
                       setGeoAiFocusBounds([coords])
                     }}
+                    onFitResults={(coords) => setGeoAiFocusBounds(coords)}
                     onSetPollutant={setPollutant}
                     onSetTimeMode={setTimeMode}
                     onSetObsSlot={setObsSlot}

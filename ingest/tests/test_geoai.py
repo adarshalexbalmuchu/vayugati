@@ -6,6 +6,9 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import geoai  # noqa: E402
@@ -77,6 +80,35 @@ def test_parses_valid_focus_action(monkeypatch):
 
 def test_parses_bounded_multi_action_query(monkeypatch):
     payload = {
+        "explanation": "Showing wards near Anand Vihar with PM2.5 above 200.",
+        "actions": [
+            {"type": "set_filters", "pollutant": "pm25"},
+            {
+                "type": "query",
+                "target": "wards",
+                "near_ref": {"type": "ward", "id": "ward_1"},
+                "radius_km": 3,
+                "pollutant": "pm25",
+                "op": ">",
+                "threshold": 200,
+            },
+        ],
+    }
+    _patch_anthropic(monkeypatch, text=json.dumps(payload))
+    entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
+    result = geoai.parse_geo_query("wards near Anand Vihar with PM2.5 above 200", entities)
+    assert [a.type for a in result.actions] == ["set_filters", "query"]
+    query = result.actions[1]
+    assert query.near_ref.id == "ward_1"
+    assert query.threshold == 200
+
+
+def test_historical_time_downgrades_threshold_query(monkeypatch):
+    """A threshold query paired with a non-'now' time change is scientifically
+    misleading (the frontend filters live data regardless of obs_slot), so
+    the validator must downgrade the query rather than let it execute
+    against the wrong dataset under an honest-sounding 'yesterday' explanation."""
+    payload = {
         "explanation": "Showing wards near Anand Vihar with PM2.5 above 200 yesterday.",
         "actions": [
             {"type": "set_time", "obs_slot": "-24h"},
@@ -94,10 +126,22 @@ def test_parses_bounded_multi_action_query(monkeypatch):
     _patch_anthropic(monkeypatch, text=json.dumps(payload))
     entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
     result = geoai.parse_geo_query("wards near Anand Vihar with PM2.5 above 200 yesterday", entities)
+    assert [a.type for a in result.actions] == ["set_time", "unsupported"]
+    assert "historical" in result.actions[1].reason.lower() or "forecast" in result.actions[1].reason.lower()
+
+
+def test_historical_time_allows_non_threshold_query():
+    """A pure spatial query (no threshold) under a historical time context is
+    still fine - it doesn't depend on any pollutant value, only location,
+    which doesn't change."""
+    action = geoai.QueryAction(
+        type="query", target="wards", near_ref=geoai.EntityRef(type="ward", id="ward_1")
+    )
+    set_time = geoai.SetTimeAction(type="set_time", obs_slot="-24h")
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[set_time, action])
+    result = geoai.validate_actions(parsed, entity_ids={("ward", "ward_1")})
     assert [a.type for a in result.actions] == ["set_time", "query"]
-    query = result.actions[1]
-    assert query.near_ref.id == "ward_1"
-    assert query.threshold == 200
+    assert result.actions[1].near_ref.id == "ward_1"
 
 
 def test_validate_actions_rejects_pollutant_threshold_on_incidents():
@@ -123,6 +167,60 @@ def test_validate_actions_clamps_radius():
     result = geoai.validate_actions(parsed, entity_ids=set())
     assert result.actions[0].type == "query"
     assert result.actions[0].radius_km == geoai.MAX_RADIUS_KM
+
+
+def test_validate_actions_rejects_focus_with_null_target():
+    action = geoai.FocusAction(type="focus", target_ref=None)
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[action])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert result.actions[0].type == "unsupported"
+
+
+def test_validate_actions_rejects_noop_set_time():
+    action = geoai.SetTimeAction(type="set_time")
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[action])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert result.actions[0].type == "unsupported"
+
+
+def test_validate_actions_rejects_noop_set_filters():
+    action = geoai.SetFiltersAction(type="set_filters")
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[action])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert result.actions[0].type == "unsupported"
+
+
+def test_validate_actions_rejects_threshold_missing_pollutant():
+    action = geoai.QueryAction(type="query", target="wards", op=">", threshold=200)
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[action])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert result.actions[0].type == "unsupported"
+
+
+def test_validate_actions_collapses_unsupported_mixed_with_executable():
+    """The model hedging - flagging part of a plan unsupported while also
+    returning executable actions - should not partially execute; collapse
+    to just the unsupported action rather than run an uncertain plan."""
+    filters = geoai.SetFiltersAction(type="set_filters", pollutant="pm25")
+    unsupported = geoai.UnsupportedAction(type="unsupported", reason="Not sure what you meant by the rest.")
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[filters, unsupported])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert len(result.actions) == 1
+    assert result.actions[0].type == "unsupported"
+
+
+def test_validate_actions_allows_only_one_query():
+    q1 = geoai.QueryAction(type="query", target="wards")
+    q2 = geoai.QueryAction(type="query", target="stations")
+    parsed = geoai.GeoAiResponse(explanation="test", actions=[q1, q2])
+    result = geoai.validate_actions(parsed, entity_ids=set())
+    assert result.actions[0].type == "query"
+    assert result.actions[1].type == "unsupported"
+
+
+def test_geoai_response_rejects_empty_actions_list():
+    with pytest.raises(ValidationError):
+        geoai.GeoAiResponse(explanation="test", actions=[])
 
 
 def test_validate_actions_allows_severity_on_incidents():
