@@ -784,6 +784,33 @@ export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTra
   }
 }
 
+/**
+ * Latest VayuTrace attribution per ward, city-wide - same "fetch a broad
+ * window, keep first (latest) row per key" pattern fetchAllWardsAqi already
+ * uses above, rather than one query per ward. A ward with no VayuTrace row
+ * yet is simply absent from the returned Map (never fabricated).
+ */
+export async function fetchAllVayuTraceAttributions(): Promise<Map<number, VayuTraceAttribution>> {
+  const { data } = await supabase
+    .from('attributions')
+    .select('ward_id, breakdown, confidence, regional_fraction_prior, regional_fire_index, ts')
+    .eq('method', 'vayutrace_v1')
+    .order('ts', { ascending: false })
+
+  const byWard = new Map<number, VayuTraceAttribution>()
+  for (const row of data ?? []) {
+    if (byWard.has(row.ward_id)) continue // already have the latest (rows are ts-desc)
+    byWard.set(row.ward_id, {
+      breakdown: (row.breakdown ?? null) as VayuTraceAttribution['breakdown'],
+      confidence: row.confidence ?? null,
+      regional_fraction_prior: row.regional_fraction_prior ?? null,
+      regional_fire_index: row.regional_fire_index ?? null,
+      ts: row.ts,
+    })
+  }
+  return byWard
+}
+
 // ── Gati metric (Phase 4): signal-to-action time ─────────────────────────────
 
 export interface GatiMetrics {

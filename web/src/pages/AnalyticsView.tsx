@@ -3,11 +3,13 @@ import { CheckCircle2, Clock3, RefreshCw, ShieldCheck, TrendingUp } from 'lucide
 import AppShell from '../components/AppShell'
 import { ErrorState, Skeleton } from '../components/ui'
 import KpiStrip, { type KpiItem } from '../components/overview/KpiStrip'
+import ActionabilityPanel from '../components/analytics/ActionabilityPanel'
 import AgencyPerformancePanel from '../components/analytics/AgencyPerformancePanel'
 import ForecastTrustPanel from '../components/analytics/ForecastTrustPanel'
 import InterventionOutcomesPanel from '../components/analytics/InterventionOutcomesPanel'
 import RecurrencePanel from '../components/analytics/RecurrencePanel'
-import { fetchAllWardsAqi, fetchForecastAccuracySummary, fetchGatiMetrics, fetchImpactOutcomeSummary } from '../lib/data'
+import { rankWardsByActionability } from '../lib/actionabilityRules'
+import { fetchAllVayuTraceAttributions, fetchAllWardsAqi, fetchForecastAccuracySummary, fetchGatiMetrics, fetchImpactOutcomeSummary } from '../lib/data'
 import { listIncidents, listTaskDispatchesForAnalytics } from '../lib/incidents'
 import { bucketAgencyPerformance, recurringWardsSummary, tallySourceMix } from '../lib/overviewRules'
 import { useAsync } from '../lib/useAsync'
@@ -43,6 +45,7 @@ export default function AnalyticsView() {
   const outcomes = useAsync(fetchImpactOutcomeSummary, [], { cacheKey: 'analytics:outcomes' })
   const forecastAccuracy = useAsync(fetchForecastAccuracySummary, [], { cacheKey: 'analytics:forecast-accuracy' })
   const wardsState = useAsync(fetchAllWardsAqi, [], { cacheKey: 'analytics:wards' })
+  const attributionsState = useAsync(fetchAllVayuTraceAttributions, [], { cacheKey: 'analytics:vayutrace-attributions' })
   const incidentsState = useAsync(() => listIncidents({ limit: 1000 }), [], { cacheKey: 'analytics:incidents' })
   const dispatchState = useAsync(() => listTaskDispatchesForAnalytics(windowDays), [windowDays], {
     cacheKey: `analytics:dispatch:${windowDays}`,
@@ -55,6 +58,10 @@ export default function AnalyticsView() {
   )
   const recurringWards = useMemo(() => recurringWardsSummary(incidentsInWindow), [incidentsInWindow])
   const sourceMix = useMemo(() => tallySourceMix(wardsState.data ?? []), [wardsState.data])
+  const actionabilityRanking = useMemo(
+    () => rankWardsByActionability(wardsState.data ?? [], attributionsState.data ?? new Map()),
+    [wardsState.data, attributionsState.data],
+  )
   const agencyRows = useMemo(() => bucketAgencyPerformance(dispatchState.data ?? []), [dispatchState.data])
 
   // Real, distinct from gati.medianHours below: incident.closed_at minus
@@ -120,6 +127,7 @@ export default function AnalyticsView() {
     outcomes.refresh()
     forecastAccuracy.refresh()
     wardsState.refresh()
+    attributionsState.refresh()
     incidentsState.refresh()
     dispatchState.refresh()
   }
@@ -186,6 +194,16 @@ export default function AnalyticsView() {
           onRetry={() => {
             incidentsState.refresh()
             wardsState.refresh()
+          }}
+        />
+
+        <ActionabilityPanel
+          rankings={actionabilityRanking}
+          loading={wardsState.loading || attributionsState.loading}
+          error={wardsState.error ?? attributionsState.error}
+          onRetry={() => {
+            wardsState.refresh()
+            attributionsState.refresh()
           }}
         />
 
