@@ -1,7 +1,8 @@
 # Vayu Gati — Implementation Status
 
-Last updated: 2026-07-25 (Phase 11 — Delhi pilot validation, historical
-replay, end-to-end scenario testing and pilot readiness sign-off).
+Last updated: 2026-09-01 (Phase 12 backfill — VayuTrace source-attribution
+dispersion kernel, built 2026-08-26 through 09-01 but not previously
+recorded here; see that phase's own section for why).
 
 This is the living status document required by the migration brief. It is
 the single place to check "what actually works right now" before trusting
@@ -1085,6 +1086,106 @@ Existing docs ([ARCHITECTURE.md](ARCHITECTURE.md),
 [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md),
 [PILOT_RUNBOOK.md](PILOT_RUNBOOK.md)) all updated with Phase 11 findings.
 
+## Completed in this pass — Phase 12
+
+The vertical slice: **build a real, literature-grounded source-attribution
+dispersion model** — not a placeholder, not a rule-based heuristic. Built as
+`ingest/app/vayutrace_*.py`: a genuine forward-dispersion Gaussian kernel
+over a real 60-source Delhi emission inventory, wind- and distance-weighted,
+season- and source-type-aware, statistically calibrated against real CPCB
+station data where enough history exists, and honestly labelled where it
+doesn't. Wired into the live intel cycle and rendered in the Map's ward
+detail panel. This work happened across several passes on 2026-08-26 through
+09-01 but was never recorded in this document — this entry backfills that
+gap (this doc's own "single place to check what actually works" promise had
+drifted, its last real entry being Phase 11 on 2026-07-25).
+
+### New: source-attribution kernel (`ingest/app/vayutrace_*.py`)
+
+- **`vayutrace_industrial_zones.py`** — 60 Delhi emission sources: 29 DSIIDC
+  planned industrial estates, 4 Flatted Factory Complexes, 27 notified
+  non-conforming clusters (official DSIIDC/DPCC records, MPD-2021 Ch.10).
+  Emission weights (1–3) reflect source intensity, not just presence.
+- **`vayutrace_osm_roads.py`** — road network from a real Geofabrik Delhi
+  `.pbf` extract (223 MB, gitignored), parsed via `osmium`, weighted by OSM
+  highway-tag hierarchy.
+- **`vayutrace_firms.py`** — NASA FIRMS VIIRS SNPP fire hotspots, expanded
+  from an initial Delhi-only bounding box to the full Indo-Gangetic Plain
+  airshed (Punjab/Haryana/Rajasthan/western UP) after finding the original
+  80×60 km box was blind to Punjab stubble burning — the dominant driver of
+  Delhi's worst Oct–Nov PM2.5 episodes (Amritsar is 430 km away; the
+  original kernel gave it ~zero weight regardless of actual fire activity).
+- **`vayutrace_kernel.py`** — the Gaussian dispersion kernel itself:
+  `emission_weight × wind_factor × distance_decay`, per-type mean (not sum)
+  scoring so 200k+ road segments don't drown out 60 industrial zones. Four
+  literature-grounded refinements landed after the initial build: season-aware
+  σ (`SIGMA_WINTER_KM=5`, `SIGMA_SUMMER_KM=7`, Pasquill-Gifford stability
+  classes), per-source-type σ overrides (`SIGMA_ROAD_KM=1` hyperlocal,
+  `SIGMA_FIRE_KM=30` regional — matching their genuinely different real-world
+  dispersion scales), an isotropic calm-wind fallback below 1 m/s (EPA
+  AERMOD §4.2 / WMO TN-285 — Delhi winter inversions frequently produce
+  meteorologically unreliable wind direction, and the kernel was previously
+  trusting that noise), and a dual-decay regional fire-transport model
+  (72h deposition half-life × 400km dilution e-folding, replacing an
+  unsupported single 24h half-life).
+- **`vayutrace_attribution.py`** — the runner, wired into `run_intel()`,
+  writing real per-ward breakdowns to the existing `attributions` table
+  (`method='vayutrace_v1'`), coexisting with the older Phase 7 rule-based
+  attribution rather than replacing it.
+- **`ingest/scripts/calibrate_vayutrace_sigma.py`** — a real calibration
+  script, not a placeholder. Season-aware (`--season winter|summer|all`),
+  imports the kernel's own wind-factor logic directly rather than an
+  inlined copy. Summer σ=7km is genuinely regression-calibrated (Spearman,
+  ρ≈0.18–0.20, p≈0, n≈4,300–5,100 station-reading pairs across two runs);
+  winter σ=5km is theory-grounded (Briggs 1973 P-G class E-F) only, since
+  this platform has been live since July 2026 and doesn't yet have a real
+  Oct–Feb winter to calibrate against — honestly stated, not worked around.
+  Verified directly in code this pass (`SIGMA_FIRE_KM = 30.0` etc. in
+  `vayutrace_kernel.py`), not assumed from commit messages alone.
+
+### Frontend
+
+`SelectedWardPanel` shows an "Estimated source mix" bar chart
+(industrial/road/fire) plus the seasonal regional-background fraction
+("~64% of city PM2.5 is regional/upwind transport (IITK 2016) — not
+captured above") and a fire-transport banner when the regional fire index
+crosses a threshold. Fetched via `fetchVayuTraceAttribution()` in `data.ts`.
+
+### Renamed from "ISRM" to "VayuTrace"
+
+The original working name was too closely associated with IIT Bombay's
+ISRM_PAVITRA workshop, despite being an independent derivation (no PAVITRA
+code or data used at any point — stated explicitly in the original build
+commit). Renamed across the full stack (Python modules, DB method string,
+TypeScript types/functions/props) once the model was functioning, not
+before — 28 tests passing, zero TypeScript errors at the rename commit.
+
+### Real findings from this phase
+
+- **A real, silently-broken CI test**: `test_calm_wind_still_gives_
+  alignment_score` asserted the pre-isotropic-fallback behavior and was
+  never updated when the calm-wind fix landed — failing CI since that
+  commit, unnoticed until this backfill pass reproduced it locally against
+  the same Python version CI pins and confirmed the *app* code was correct,
+  not the test. Fixed.
+- **Independently re-verified this pass, not just trusted from prior
+  commit messages**: 28/28 `ingest/tests/test_vayutrace_source_inventory.py`
+  tests pass against a fresh install; a full read-through of every
+  `vayutrace_*.py` module found no stubs, TODOs, or `NotImplementedError`s.
+
+### Documentation (new/updated this phase)
+
+[DATA_QUALITY_AND_SCIENCE.md](DATA_QUALITY_AND_SCIENCE.md) gained a full
+"VayuTrace source-attribution model" section — kernel design, both sector-
+prior studies, every literature citation behind the physics choices above,
+and an explicit, permanent (not TODO) limitations list: no secondary
+aerosol chemistry, no stack height/vertical mixing, OSM road weights not
+traffic-volume-adjusted, and PMF/CMB receptor modelling remains the real
+regulatory gold standard VayuTrace is positioned as an operational proxy
+for, not a replacement of. This document (this Phase 12 entry) is the
+other piece — closing the gap between what the codebase actually does and
+what the living status doc says it does.
+
 ## Checks run
 
 | Check | Result |
@@ -1103,6 +1204,8 @@ Existing docs ([ARCHITECTURE.md](ARCHITECTURE.md),
 | Historical replay (`historical_replay.py --reset`, `forecast_replay.py`) | ✅ Runs cleanly against real OpenAQ/Open-Meteo data; results in [HISTORICAL_REPLAY_REPORT.md](HISTORICAL_REPLAY_REPORT.md) |
 | `ingest/` Python — `python3 -m py_compile` on every module | ✅ Passes |
 | `ingest/` Python — `pytest` | ✅ 37/37 pass (unchanged this phase — the replay scripts call existing, already-tested `forecast.py` functions directly rather than adding new pytest coverage) |
+| `ingest/tests/test_vayutrace_source_inventory.py` | ✅ 28/28 pass (Phase 12; independently re-verified against a fresh install this backfill pass, not just trusted from commit messages) |
+| Full read-through of every `vayutrace_*.py` module for stubs/TODOs/`NotImplementedError` | ✅ None found (Phase 12) |
 
 ### What the Phase 8 database tests actually prove
 `supabase/tests/90_unified_forecasting.sql` — 9 tests, 13 assertions, same
@@ -1597,6 +1700,17 @@ live exclusively on `actions`, which citizens cannot read at all. The test
     phase's own acceptance checklist is a structural/mechanism check
     (every step is backed by real, tested code), not proof that a trained
     human has clicked through the actual UI end to end.
+39. **VayuTrace (Phase 12) has real, permanent, disclosed limitations —
+    not TODOs**: no secondary aerosol chemistry, no stack height/vertical
+    mixing, OSM road weights not traffic-volume-adjusted, and PMF/CMB
+    receptor modelling remains the actual regulatory gold standard it is
+    positioned as an operational proxy for. Winter σ is theory-grounded
+    only (no real Oct–Feb data has accumulated yet to regression-calibrate
+    it the way summer σ was); re-run
+    `calibrate_vayutrace_sigma.py --season winter` once Oct–Feb 2026–27
+    readings exist. Full detail in
+    [DATA_QUALITY_AND_SCIENCE.md](DATA_QUALITY_AND_SCIENCE.md)'s VayuTrace
+    section — deliberately not duplicated here in full.
 
 ## Required credentials / data for next steps
 
@@ -1647,6 +1761,12 @@ live exclusively on `actions`, which citizens cannot read at all. The test
   `ingest/render.yaml`), no account credentials exist in this environment.
 - **Optional GitHub repo secrets** `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
   to enable the informational (never-blocking) hosted-drift CI job.
+- **`FIRMS_MAP_KEY`** (Phase 12, `ingest/.env`) — free registration at
+  [firms.modaps.eosdis.nasa.gov/api/area/](https://firms.modaps.eosdis.nasa.gov/api/area/).
+  `vayutrace_firms.py` already handles the unset case gracefully (logs
+  "FIRMS_MAP_KEY not set — skipping fire hotspot fetch" and continues with
+  industrial+road sources only) — this is the one genuinely unfinished
+  piece of VayuTrace, and it's a credential, not code.
 
 ## Exact next vertical slice
 
