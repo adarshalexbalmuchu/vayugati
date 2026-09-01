@@ -38,15 +38,20 @@ export default function TasksView() {
   const [filters, setFilters] = useState<TaskFilters>(DEFAULT_FILTERS)
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
-  const active = useAsync(() => listActiveTaskDispatches({ offset: 0, pageSize: 1000 }), [])
+  const active = useAsync(() => listActiveTaskDispatches({ offset: 0, pageSize: 1000 }), [], {
+    cacheKey: 'tasks:active',
+  })
   const activeRows = useMemo(() => active.data?.rows ?? [], [active.data])
 
-  const analytics = useAsync(() => listTaskDispatchesForAnalytics(ANALYTICS_WINDOW_DAYS), [])
+  const analytics = useAsync(() => listTaskDispatchesForAnalytics(ANALYTICS_WINDOW_DAYS), [], {
+    cacheKey: 'tasks:analytics',
+  })
   const analyticsRows = analytics.data ?? []
 
   const leadingSource = useAsync(
     () => listLeadingSourceCategories(activeRows.map((d) => d.incident_id).filter((id): id is number => id != null)),
     [activeRows],
+    { cacheKey: 'tasks:leading-source' },
   )
   const leadingSourceById = leadingSource.data ?? new Map()
 

@@ -35,17 +35,25 @@ export default function SensorsView() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
 
-  const state = useAsync(() => Promise.all([fetchStationHealth(), fetchAllStationsWithReadings()]), [])
-  const incidentsState = useAsync(() => listIncidents({ excludeClosed: true, limit: 1000 }), [])
+  const state = useAsync(() => Promise.all([fetchStationHealth(), fetchAllStationsWithReadings()]), [], {
+    cacheKey: 'sensors:main',
+  })
+  const incidentsState = useAsync(() => listIncidents({ excludeClosed: true, limit: 1000 }), [], {
+    cacheKey: 'sensors:incidents',
+  })
   const openIncidents = incidentsState.data ?? []
 
   // Readiness card's own inputs - independent fetches (not blocking the
   // station table above), same pattern as Analytics' forecastAccuracy hook.
-  const footprintState = useAsync(fetchDataFootprint, [])
-  const forecastAccuracyState = useAsync(fetchForecastAccuracySummary, [])
+  const footprintState = useAsync(fetchDataFootprint, [], { cacheKey: 'sensors:footprint' })
+  const forecastAccuracyState = useAsync(fetchForecastAccuracySummary, [], {
+    cacheKey: 'sensors:forecast-accuracy',
+  })
   // Same independent-fetch contract - a failure here just leaves every
   // row's existing OpenAQ-sourced aqi unchanged, readingSource undefined.
-  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
+  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [], {
+    cacheKey: 'sensors:latest-readings',
+  })
 
   const rows: SensorRow[] = useMemo(() => {
     if (!state.data) return []

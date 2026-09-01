@@ -84,7 +84,7 @@ function ToggleButton({ on, onClick, disabled }: { on: boolean; onClick: () => v
 }
 
 function SystemHealthSection() {
-  const state = useAsync(fetchSystemHealth, [])
+  const state = useAsync(fetchSystemHealth, [], { cacheKey: 'ops:system-health' })
   const rows = state.data ?? []
 
   return (
@@ -281,10 +281,16 @@ type EditTarget =
 
 function PilotAdminSections({ city }: { city: CityConfigRow }) {
   const { session } = useAuth()
-  const stations = useAsync(() => fetchStations(city.id), [city.id])
-  const registry = useAsync(() => fetchResponsibilityRegistryForAdmin(city.id), [city.id])
-  const slaRules = useAsync(() => fetchSlaRulesForAdmin(city.id), [city.id])
-  const playbooks = useAsync(() => fetchPlaybooksForAdmin(city.id), [city.id])
+  const stations = useAsync(() => fetchStations(city.id), [city.id], { cacheKey: `ops:stations:${city.id}` })
+  const registry = useAsync(() => fetchResponsibilityRegistryForAdmin(city.id), [city.id], {
+    cacheKey: `ops:registry:${city.id}`,
+  })
+  const slaRules = useAsync(() => fetchSlaRulesForAdmin(city.id), [city.id], {
+    cacheKey: `ops:sla-rules:${city.id}`,
+  })
+  const playbooks = useAsync(() => fetchPlaybooksForAdmin(city.id), [city.id], {
+    cacheKey: `ops:playbooks:${city.id}`,
+  })
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
 
   if (!session) return null
@@ -374,7 +380,7 @@ function PilotAdminSections({ city }: { city: CityConfigRow }) {
 }
 
 export default function OpsView() {
-  const citiesState = useAsync(fetchCities, [])
+  const citiesState = useAsync(fetchCities, [], { cacheKey: 'ops:cities' })
   const cities = citiesState.data ?? []
   const [selectedCityId, setSelectedCityId] = useState<number | null>(null)
   const activeCity = cities.find((c) => c.id === selectedCityId) ?? cities[0] ?? null

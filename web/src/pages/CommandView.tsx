@@ -58,10 +58,15 @@ export default function CommandView() {
         fetchForecastAccuracySummary(),
       ]),
     [],
+    { cacheKey: 'command:main' },
   )
   const forecastPollutant = forecastPollutantFor(pollutant)
-  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant])
-  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
+  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant], {
+    cacheKey: `command:forecasts:${forecastPollutant}`,
+  })
+  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [], {
+    cacheKey: 'command:latest-readings',
+  })
 
   return (
     <AppShell

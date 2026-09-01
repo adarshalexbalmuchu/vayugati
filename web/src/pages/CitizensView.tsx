@@ -59,7 +59,7 @@ function ReportRow({ r }: { r: CitizenReportRow }) {
 }
 
 export default function CitizensView() {
-  const state = useAsync(() => listAllCitizenReports(), [])
+  const state = useAsync(() => listAllCitizenReports(), [], { cacheKey: 'citizens:main' })
   const rows = state.data ?? []
 
   const kpis: KpiItem[] | null = state.loading

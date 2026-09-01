@@ -39,12 +39,14 @@ export default function AnalyticsView() {
   const [windowDays, setWindowDays] = useState<WindowDays>(30)
   const windowLabel = `last ${windowDays}d`
 
-  const gati = useAsync(fetchGatiMetrics, [])
-  const outcomes = useAsync(fetchImpactOutcomeSummary, [])
-  const forecastAccuracy = useAsync(fetchForecastAccuracySummary, [])
-  const wardsState = useAsync(fetchAllWardsAqi, [])
-  const incidentsState = useAsync(() => listIncidents({ limit: 1000 }), [])
-  const dispatchState = useAsync(() => listTaskDispatchesForAnalytics(windowDays), [windowDays])
+  const gati = useAsync(fetchGatiMetrics, [], { cacheKey: 'analytics:gati' })
+  const outcomes = useAsync(fetchImpactOutcomeSummary, [], { cacheKey: 'analytics:outcomes' })
+  const forecastAccuracy = useAsync(fetchForecastAccuracySummary, [], { cacheKey: 'analytics:forecast-accuracy' })
+  const wardsState = useAsync(fetchAllWardsAqi, [], { cacheKey: 'analytics:wards' })
+  const incidentsState = useAsync(() => listIncidents({ limit: 1000 }), [], { cacheKey: 'analytics:incidents' })
+  const dispatchState = useAsync(() => listTaskDispatchesForAnalytics(windowDays), [windowDays], {
+    cacheKey: `analytics:dispatch:${windowDays}`,
+  })
 
   const cutoff = useMemo(() => new Date(Date.now() - windowDays * 24 * 3_600_000), [windowDays])
   const incidentsInWindow = useMemo(

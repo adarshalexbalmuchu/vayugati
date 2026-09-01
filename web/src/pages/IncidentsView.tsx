@@ -66,13 +66,14 @@ export default function IncidentsView() {
   // The 5 open queues, loaded in full (capped defensively - see OPEN_QUEUE_CAP).
   const list = useAsync(() => listIncidents({ limit: OPEN_QUEUE_CAP, excludeClosed: true }), [], {
     staleAfterMs: 120_000,
+    cacheKey: 'incidents:list',
   })
   const openIncidents = useMemo(() => list.data ?? [], [list.data])
 
   // Ward-level live AQI, for the "current reading" column/fact - fetched once
   // per page load, independent of queue, reused from the Overview page's own
   // data.ts function. Real data, not a new backend endpoint.
-  const wardAqi = useAsync(fetchAllWardsAqi, [])
+  const wardAqi = useAsync(fetchAllWardsAqi, [], { cacheKey: 'incidents:ward-aqi' })
   const wardAqiById = useMemo(() => new Map(wardAqi.data?.map((w) => [w.id, w.aqi]) ?? []), [wardAqi.data])
 
   // `closed` and `recurrence` are paginated independently of each other and

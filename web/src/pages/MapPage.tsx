@@ -291,6 +291,7 @@ export default function MapPage() {
         listActiveTaskDispatches({ offset: 0, pageSize: 200 }),
       ]),
     [],
+    { cacheKey: 'map:main' },
   )
 
   const [wards, stations, incidents, reports, stationHealth, dispatchPage] = state.data ?? EMPTY_DATA
@@ -325,7 +326,9 @@ export default function MapPage() {
   // re-runs whenever the selection changes (unlike the old hardcoded-pm25
   // one-shot fetch).
   const forecastPollutant = forecastPollutantFor(pollutant)
-  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant])
+  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant], {
+    cacheKey: `map:forecasts:${forecastPollutant}`,
+  })
   const forecasts = (forecastSuppressed ? new Map() : forecastsState.data) ?? EMPTY_FORECASTS
 
   // Ward boundary polygons are ~8MB of real OSM-derived GeoJSON across all
@@ -336,14 +339,14 @@ export default function MapPage() {
   // payload at all; when they do, `wardBoundariesAvailable` below already
   // correctly reflects "not loaded yet" via the same disabled-toggle affordance
   // that previously covered a hard fetch failure - no new UI state needed.
-  const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(), [])
+  const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(), [], { cacheKey: 'map:ward-boundaries' })
   const wardBoundaries = wardBoundariesState.data ?? EMPTY_BOUNDARIES
 
   // Delhi OTD transport-activity context layer - independent fetch, same
   // graceful-degradation contract as Overview's own TransportActivityPanel
   // (null on any failure, an explicit unavailableReason on a reachable-but-
   // empty summary). Never blocks the rest of the map.
-  const transitState = useAsync(() => fetchTransportActivity(), [])
+  const transitState = useAsync(() => fetchTransportActivity(), [], { cacheKey: 'map:transit' })
   const transitByWard = useMemo(
     () => new Map((transitState.data?.perWard ?? []).map((w) => [w.wardId, w])),
     [transitState.data],
@@ -354,7 +357,9 @@ export default function MapPage() {
   // failure here just leaves station markers/popups on their existing
   // OpenAQ-sourced AQI, unchanged. See docs/data/cpcb-data-gov-primary-
   // latest-integration-report.md.
-  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [])
+  const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [], {
+    cacheKey: 'map:latest-readings',
+  })
   const latestReadingByStationId = useMemo(
     () => new Map((latestReadingsState.data ?? []).map((r) => [r.stationId, r])),
     [latestReadingsState.data],
@@ -362,13 +367,15 @@ export default function MapPage() {
 
   // Wind data — Open-Meteo readings per ward, latest within 2h.
   // Independent fetch so a slow/missing weather table never blocks the map.
-  const windState = useAsync(() => fetchAllWindByWard(), [])
+  const windState = useAsync(() => fetchAllWindByWard(), [], { cacheKey: 'map:wind' })
   const windByWardId = useMemo(
     () => new Map((windState.data ?? []).map((w) => [w.ward_id, w])),
     [windState.data],
   )
 
-  const leadingSource = useAsync(() => listLeadingSourceCategories(incidents.map((i) => i.id)), [incidents])
+  const leadingSource = useAsync(() => listLeadingSourceCategories(incidents.map((i) => i.id)), [incidents], {
+    cacheKey: 'map:leading-source',
+  })
   const leadingSourceById = leadingSource.data ?? new Map()
 
   const stationHealthById = useMemo(() => new Map(stationHealth.map((s) => [s.id, s])), [stationHealth])

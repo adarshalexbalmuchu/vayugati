@@ -530,7 +530,7 @@ function InterventionsCard() {
   const state = useAsync(
     () => (session ? listInterventionsForOfficer(session.user.id) : Promise.resolve([])),
     [session?.user.id],
-    { enabled: !!session },
+    { enabled: !!session, cacheKey: session ? `missions:interventions:${session.user.id}` : undefined },
   )
 
   const interventions = state.data ?? []
@@ -635,7 +635,7 @@ export default function MissionsView() {
   const state = useAsync(
     () => (session ? listMissionsForUser(session.user.id) : Promise.resolve([])),
     [session?.user.id],
-    { enabled: !!session },
+    { enabled: !!session, cacheKey: session ? `missions:list:${session.user.id}` : undefined },
   )
 
   const missions = state.data ?? []
