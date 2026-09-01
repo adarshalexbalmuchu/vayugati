@@ -1145,7 +1145,20 @@ export default function MapView({
           maxzoom: 14,
         })
       }
-      map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION })
+      // setTerrain() while an animation is in flight (pitch/bearing easeTo
+      // and fitBounds below both run a 600ms animation on every mount,
+      // whether or not their start/end values actually differ) can crash
+      // MapLibre with "Attempting to run(), but is already running" - a
+      // known upstream bug (maplibre/maplibre-gl-js#6011), reproduced live
+      // here via a ResizeObserver-triggered redraw racing terrain setup on
+      // page load. 'idle' (no animation, no pending tiles) sidesteps most of
+      // the race; deferring the actual call one more frame past idle gives
+      // extra margin against a redraw firing in the same tick idle resolved in.
+      map.once('idle', () => {
+        requestAnimationFrame(() => {
+          map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION })
+        })
+      })
     }
     if (map.isStyleLoaded()) addTerrain()
     else map.once('style.load', addTerrain)
