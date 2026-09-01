@@ -297,8 +297,9 @@ interface Props {
   selectedIncidentCoords?: [number, number] | null
   /** Which GIS analysis tool is active - gates map click handling so a tool
    *  click (placing a measure point / buffer center) is never also
-   *  interpreted as marker/boundary/incident selection. */
-  activeToolKind?: 'none' | 'measure' | 'buffer'
+   *  interpreted as marker/boundary/incident selection. 'ask' has no map
+   *  click of its own but still suspends selection while its panel is open. */
+  activeToolKind?: 'none' | 'measure' | 'buffer' | 'ask'
   /** Called with the clicked map coordinate while a tool is active. */
   onToolClick?: (lngLat: { lng: number; lat: number }) => void
   /** Measure line / buffer circle geometry to render - built in MapPage.tsx
@@ -1518,13 +1519,17 @@ export default function MapView({
     else map.once('load', apply)
   }, [toolGeoJSON])
 
-  // Crosshair cursor while a GIS tool is active - the hover handlers above
-  // (boundary/incident) already check activeToolKindRef before overriding
-  // this with their own 'pointer' cursor, so it doesn't get clobbered.
+  // Crosshair cursor while a click-driven GIS tool is active - the hover
+  // handlers above (boundary/incident) already check activeToolKindRef
+  // before overriding this with their own 'pointer' cursor, so it doesn't
+  // get clobbered. 'ask' doesn't read map clicks (it's a text panel), so it
+  // keeps the normal cursor even though marker/boundary selection is still
+  // suspended while its panel occupies the right-panel slot (see the
+  // activeToolKindRef !== 'none' guards above).
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    map.getCanvas().style.cursor = activeToolKind !== 'none' ? 'crosshair' : ''
+    map.getCanvas().style.cursor = activeToolKind === 'measure' || activeToolKind === 'buffer' ? 'crosshair' : ''
   }, [activeToolKind])
 
   // Push updated station heatmap data into the GL source

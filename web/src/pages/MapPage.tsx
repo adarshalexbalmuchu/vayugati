@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import turfBooleanIntersects from '@turf/boolean-intersects'
 import turfCircle from '@turf/circle'
 import turfDistance from '@turf/distance'
-import { feature as turfFeature, point as turfPoint } from '@turf/helpers'
+import { point as turfPoint } from '@turf/helpers'
 import { MapPin, RefreshCw } from 'lucide-react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
@@ -17,6 +16,7 @@ import MapToolbar, { type MapViewMode, type ToolKind } from '../components/map/M
 import DataQualityStationPanel, { type DataQualityStationInfo } from '../components/map/DataQualityStationPanel'
 import DataQualitySummaryPanel from '../components/map/DataQualitySummaryPanel'
 import DataQualityWardPanel from '../components/map/DataQualityWardPanel'
+import GeoAiPanel from '../components/map/GeoAiPanel'
 import SelectedIncidentPanel from '../components/map/SelectedIncidentPanel'
 import SelectedStationPanel, { type SelectedStation, type StationHistoricalComparison } from '../components/map/SelectedStationPanel'
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
@@ -92,6 +92,7 @@ import {
 } from '../lib/mapRules'
 import { rollupStationHealth, severeWardsWithin, tallySourceMix } from '../lib/overviewRules'
 import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
+import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
 
 type Selection =
@@ -106,6 +107,7 @@ type ActiveTool =
   | { kind: 'none' }
   | { kind: 'measure'; points: [number, number][] }
   | { kind: 'buffer'; center: [number, number] | null; radiusKm: number }
+  | { kind: 'ask' }
 
 const DEFAULT_BUFFER_RADIUS_KM = 1
 
@@ -754,11 +756,17 @@ export default function MapPage() {
     [DELHI_BOUNDS.minLng, DELHI_BOUNDS.minLat],
     [DELHI_BOUNDS.maxLng, DELHI_BOUNDS.maxLat],
   ]
-  const fitBoundsTo = useMemo(
-    () => (resetToken > 0 ? (cityBoundsCoords.length > 0 ? [...cityBoundsCoords] : delhiBoundsCoords) : undefined),
+  // Today, selecting a ward/station by click or from a results list does not
+  // move the camera - only the "Reset to Delhi" button (resetToken) drives
+  // fitBoundsTo. GeoAI needs the map to actually pan when it resolves a
+  // location ("take me to Anand Vihar" should visibly go there), so it gets
+  // its own bounds override, checked first.
+  const [geoAiFocusBounds, setGeoAiFocusBounds] = useState<[number, number][] | undefined>(undefined)
+  const fitBoundsTo = useMemo(() => {
+    if (geoAiFocusBounds) return geoAiFocusBounds
+    return resetToken > 0 ? (cityBoundsCoords.length > 0 ? [...cityBoundsCoords] : delhiBoundsCoords) : undefined
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resetToken],
-  )
+  }, [resetToken, geoAiFocusBounds])
 
   const locationsUnavailable = useMemo(() => {
     const invalidWards = wards.filter((w) => !isValidDelhiCoordinate(w.lat, w.lng)).length
@@ -883,7 +891,8 @@ export default function MapPage() {
   const handleActiveToolChange = useCallback((kind: ToolKind) => {
     if (kind === 'none') setActiveTool({ kind: 'none' })
     else if (kind === 'measure') setActiveTool({ kind: 'measure', points: [] })
-    else setActiveTool({ kind: 'buffer', center: null, radiusKm: DEFAULT_BUFFER_RADIUS_KM })
+    else if (kind === 'buffer') setActiveTool({ kind: 'buffer', center: null, radiusKm: DEFAULT_BUFFER_RADIUS_KM })
+    else setActiveTool({ kind: 'ask' })
   }, [])
   const handleBufferRadiusChange = useCallback((km: number) => {
     setActiveTool((prev) => (prev.kind === 'buffer' ? { ...prev, radiusKm: km } : prev))
@@ -935,32 +944,14 @@ export default function MapPage() {
   )
 
   const bufferMatches = useMemo(() => {
-    const empty = { wards: [] as { id: number; label: string }[], stations: [] as { id: number; label: string }[], incidents: [] as { id: number; label: string }[] }
+    const empty: RadiusMatches = { wards: [], stations: [], incidents: [] }
     if (activeTool.kind !== 'buffer' || !activeTool.center) return empty
-    const center = turfPoint(activeTool.center)
-    const radiusKm = activeTool.radiusKm
-    const circle = turfCircle(activeTool.center, radiusKm, { steps: 64, units: 'kilometers' })
-    const withinPoint = (lat: number | null | undefined, lng: number | null | undefined) =>
-      lat != null && lng != null && turfDistance(center, turfPoint([lng, lat]), { units: 'kilometers' }) <= radiusKm
-
-    // Points (stations/incidents) have no ambiguity - distance-to-center is
-    // already the exact test, same as point-in-circle. Wards are the one
-    // case where v1's centroid check was a real approximation: prefer true
-    // polygon intersection against the boundary geometry (any part of the
-    // ward overlapping the buffer counts, matching a real GIS "select by
-    // location" query), falling back to centroid distance only for the
-    // small number of wards with no captured boundary yet.
-    const wardWithin = (w: (typeof wards)[number]) => {
-      const geometry = wardBoundaryByWardId.get(w.id)
-      if (geometry) return turfBooleanIntersects(circle, turfFeature(geometry))
-      return withinPoint(w.lat, w.lng)
-    }
-
-    return {
-      wards: wards.filter(wardWithin).map((w) => ({ id: w.id, label: w.name })),
-      stations: stations.filter((s) => withinPoint(s.lat, s.lng)).map((s) => ({ id: s.id, label: s.name })),
-      incidents: incidents.filter((i) => withinPoint(i.lat, i.lng)).map((i) => ({ id: i.id, label: i.summary ?? `Incident #${i.id}` })),
-    }
+    return findWithinRadius(activeTool.center, activeTool.radiusKm, {
+      wards,
+      stations,
+      incidents,
+      wardBoundaryByWardId,
+    })
   }, [activeTool, wards, stations, incidents, wardBoundaryByWardId])
 
   const handleBoundaryClick = useCallback((ward: WardBoundaryFeatureProps) => {
@@ -1277,7 +1268,29 @@ export default function MapPage() {
                   own NavigationControl, which is anchored top-right - both
                   wanting the same corner would otherwise overlap. */}
               <div className="absolute bottom-14 right-3 top-24 z-10 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-card-lg">
-                {activeTool.kind !== 'none' ? (
+                {activeTool.kind === 'ask' ? (
+                  /* ── GeoAI mode - takes priority over marker selection ── */
+                  <GeoAiPanel
+                    wards={wards}
+                    stations={stations}
+                    incidents={incidents}
+                    wardBoundaryByWardId={wardBoundaryByWardId}
+                    onFocus={(kind, id, coords) => {
+                      setSelection({ kind, id })
+                      setGeoAiFocusBounds([coords])
+                    }}
+                    onSetPollutant={setPollutant}
+                    onSetTimeMode={setTimeMode}
+                    onSetObsSlot={setObsSlot}
+                    onSetSourceFilter={setSourceFilter}
+                    onSetSeverityFilter={setSeverityFilter}
+                    onSetViewMode={setViewMode}
+                    onSelectWard={(id) => setSelection({ kind: 'ward', id })}
+                    onSelectStation={(id) => setSelection({ kind: 'station', id })}
+                    onSelectIncident={(id) => setSelection({ kind: 'incident', id })}
+                    onClose={() => setActiveTool({ kind: 'none' })}
+                  />
+                ) : activeTool.kind !== 'none' ? (
                   /* ── GIS tool mode - takes priority over marker selection ── */
                   <ToolResultsPanel
                     mode={activeTool.kind}

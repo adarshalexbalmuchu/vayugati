@@ -9,16 +9,18 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import sentry_sdk
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import anomaly_detection, attribution, vayutrace_attribution
 from . import classify as classify_mod
+from . import geoai as geoai_mod
 from . import (
     config,
     data_gov_cpcb,
@@ -82,6 +84,45 @@ _last_cpcb_reconcile: list[dict] | None = None
 _REFRESH_COOLDOWN_S = 600
 _last_public_refresh_ts: float = 0.0
 _public_refresh_lock = threading.Lock()
+
+# Public /geoai/query rate limits — this endpoint costs real money per call
+# (an Anthropic API request) and has no auth key, so it needs its own guard
+# distinct from /refresh's single-action cooldown: GeoAI is chat-shaped (a
+# user reasonably asks several questions in a row), so it's a per-IP budget
+# plus a global cost ceiling rather than one action per N minutes. This is
+# in-process state — fine for this service's current single-instance Render
+# deployment, but would need a shared store (Redis/Upstash) if it's ever
+# scaled to multiple workers, since each worker would get its own budget.
+_GEOAI_PER_IP_LIMIT = 20
+_GEOAI_PER_IP_WINDOW_S = 3600
+_GEOAI_GLOBAL_LIMIT = 100
+_GEOAI_GLOBAL_WINDOW_S = 3600
+_geoai_calls_by_ip: dict[str, list[float]] = {}
+_geoai_global_calls: list[float] = []
+_geoai_lock = threading.Lock()
+
+
+def _check_geoai_rate_limit(ip: str) -> None:
+    now = time.time()
+    with _geoai_lock:
+        global_calls = [t for t in _geoai_global_calls if now - t < _GEOAI_GLOBAL_WINDOW_S]
+        if len(global_calls) >= _GEOAI_GLOBAL_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail="GeoAI is at capacity right now — try again shortly.",
+                headers={"Retry-After": "60"},
+            )
+        ip_calls = [t for t in _geoai_calls_by_ip.get(ip, []) if now - t < _GEOAI_PER_IP_WINDOW_S]
+        if len(ip_calls) >= _GEOAI_PER_IP_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many GeoAI questions from this connection — try again shortly.",
+                headers={"Retry-After": "60"},
+            )
+        ip_calls.append(now)
+        global_calls.append(now)
+        _geoai_calls_by_ip[ip] = ip_calls
+        _geoai_global_calls[:] = global_calls
 
 
 def run_ingest() -> dict:
@@ -590,3 +631,28 @@ def classify(req: ClassifyRequest):
         }
     ).eq("id", req.report_id).execute()
     return result
+
+
+class GeoAiEntityRef(BaseModel):
+    type: Literal["ward", "station"]
+    id: str
+    name: str
+
+
+class GeoAiRequest(BaseModel):
+    question: str = Field(max_length=500)
+    entities: list[GeoAiEntityRef] = Field(default_factory=list, max_length=500)
+
+
+@app.post("/geoai/query")
+def geoai_query(req: GeoAiRequest, request: Request):
+    """Public, rate-limited endpoint for the Map page's natural-language GIS
+    agent (no X-Ingest-Key — the browser calls this directly, same as
+    /refresh). Claude only turns the question into a bounded set of
+    structured actions (see geoai.py); it never computes geography itself,
+    and every action is re-validated server-side before being returned."""
+    ip = request.client.host if request.client else "unknown"
+    _check_geoai_rate_limit(ip)
+    entities = [{"type": e.type, "id": e.id, "name": e.name} for e in req.entities]
+    result = geoai_mod.parse_geo_query(req.question, entities)
+    return result.model_dump()

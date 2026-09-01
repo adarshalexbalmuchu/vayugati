@@ -7,7 +7,7 @@ import ObsTimeSlider from './ObsTimeSlider'
 export type MapViewMode = 'pollution' | 'data_quality'
 /** GIS analysis tool mode — 'none' means normal marker/boundary selection
  *  behaviour, unaffected by anything in this file. */
-export type ToolKind = 'none' | 'measure' | 'buffer'
+export type ToolKind = 'none' | 'measure' | 'buffer' | 'ask'
 
 const POLLUTANTS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
 const TIME_MODES: { key: MapTimeMode; label: string }[] = [
@@ -22,6 +22,7 @@ const TOOL_OPTIONS: { key: ToolKind; label: string }[] = [
   { key: 'none', label: 'Select' },
   { key: 'measure', label: 'Measure' },
   { key: 'buffer', label: 'Buffer' },
+  { key: 'ask', label: 'Ask' },
 ]
 const RADIUS_PRESETS_KM = [1, 2, 5]
 

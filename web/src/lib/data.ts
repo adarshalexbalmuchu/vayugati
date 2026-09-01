@@ -1054,6 +1054,74 @@ export async function classifyReport(params: {
   }
 }
 
+/** How long to wait for the GeoAI agent before giving up on it. LLM calls
+ *  with structured outputs are slower than classifyReport's plain-text call
+ *  above, especially the first request against a new schema (Anthropic
+ *  compiles + caches the schema server-side on first use). */
+const GEOAI_TIMEOUT_MS = 20_000
+
+export interface GeoAiEntityRef {
+  type: 'ward' | 'station'
+  id: string
+}
+
+export type GeoAiAction =
+  | { type: 'set_time'; time_mode: 'now' | '24h' | '48h' | null; obs_slot: 'now' | '-3h' | '-6h' | '-12h' | '-24h' | null }
+  | {
+      type: 'set_filters'
+      pollutant: 'aqi' | 'pm25' | 'pm10' | 'no2' | null
+      source_filter: string | null
+      severity_filter: 'severe' | 'high' | 'moderate' | 'low' | null
+      view_mode: 'pollution' | 'data_quality' | null
+    }
+  | { type: 'focus'; target_ref: GeoAiEntityRef | null }
+  | {
+      type: 'query'
+      target: 'wards' | 'stations' | 'incidents'
+      near_ref: GeoAiEntityRef | null
+      radius_km: number | null
+      pollutant: 'aqi' | 'pm25' | 'pm10' | 'no2' | null
+      op: '>' | '>=' | '<' | '<=' | null
+      threshold: number | null
+      source_category: string | null
+      severity: 'severe' | 'high' | 'moderate' | 'low' | null
+    }
+  | { type: 'unsupported'; reason: string }
+
+export interface GeoAiResponse {
+  explanation: string
+  actions: GeoAiAction[]
+}
+
+/**
+ * Ask the GeoAI agent (natural-language -> structured map actions) via the
+ * ingest service. Public, rate-limited endpoint - no auth key, matching
+ * classifyReport's best-effort pattern above: returns null on any failure
+ * (down, unconfigured, rate-limited, slow) and the caller shows a plain
+ * "couldn't reach GeoAI" message rather than hanging or throwing.
+ *
+ * `entities` is the compact ward/station catalog already loaded on the Map
+ * page - used server-side only to resolve fuzzy place names to exact IDs,
+ * never persisted.
+ */
+export async function askGeoAi(
+  question: string,
+  entities: { type: 'ward' | 'station'; id: string; name: string }[],
+): Promise<GeoAiResponse | null> {
+  try {
+    const res = await fetch(`${INGEST_URL}/geoai/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, entities }),
+      signal: AbortSignal.timeout(GEOAI_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
 // ── Delhi Open Transit Data (transport-activity context layer) ─────────────
 // Context only - never pollution evidence, never congestion/emission
 // attribution. See docs/data/delhi-otd-transport-context-integration-report.md.
