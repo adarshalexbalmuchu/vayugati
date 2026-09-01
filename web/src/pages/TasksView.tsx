@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Clock3, ClipboardList, HourglassIcon, MapPin, RefreshCw, Timer } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock3, ClipboardList, HourglassIcon, RefreshCw, Timer } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { ErrorState, Skeleton, StaleBadge } from '../components/ui'
+import { ErrorState, Skeleton } from '../components/ui'
 import KpiStrip, { type KpiItem } from '../components/overview/KpiStrip'
 import DispatchTable from '../components/tasks/DispatchTable'
 import TaskDetailPanel from '../components/tasks/TaskDetailPanel'
@@ -141,21 +141,10 @@ export default function TasksView() {
   }, [active.loading, active.data, activeRows, analytics.loading, analyticsRows])
 
   return (
-    <AppShell subtitle="Tasks">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sky-50 p-3 sm:p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
-          <div>
-            <h1 className="text-base font-bold text-slate-900">Tasks / Dispatch</h1>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
-              <MapPin className="h-3 w-3" aria-hidden />
-              Delhi City Pack
-              {active.stale && <StaleBadge />}
-            </p>
-            <p className="mt-1 max-w-xl text-xs text-slate-400">
-              Tracks routed enforcement actions and field follow-up - every incident assigned to an authority becomes a
-              dispatch here until it&apos;s completed and verified.
-            </p>
-          </div>
+    <AppShell
+      subtitle="Tasks"
+      headerContent={
+        <div className="flex flex-1 items-center justify-end">
           <button
             type="button"
             onClick={() => {
@@ -163,12 +152,15 @@ export default function TasksView() {
               analytics.refresh()
             }}
             disabled={active.refreshing}
-            className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${active.refreshing ? 'animate-spin' : ''}`} aria-hidden />
             Refresh
           </button>
         </div>
+      }
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-sky-50 p-3 sm:p-4">
 
         {loading ? (
           <Skeleton className="h-20 w-full rounded-xl" />

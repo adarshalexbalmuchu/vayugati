@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, MapPin, RefreshCw, ShieldCheck, TrendingUp } from 'lucide-react'
+import { CheckCircle2, Clock3, RefreshCw, ShieldCheck, TrendingUp } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { ErrorState, Skeleton, StaleBadge } from '../components/ui'
+import { ErrorState, Skeleton } from '../components/ui'
 import KpiStrip, { type KpiItem } from '../components/overview/KpiStrip'
 import AgencyPerformancePanel from '../components/analytics/AgencyPerformancePanel'
 import ForecastTrustPanel from '../components/analytics/ForecastTrustPanel'
@@ -125,48 +125,38 @@ export default function AnalyticsView() {
   }
 
   return (
-    <AppShell subtitle="Analytics">
-      <div className="flex-1 space-y-4 overflow-y-auto bg-sky-50 p-3 sm:p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-card">
-          <div>
-            <h1 className="text-base font-bold text-slate-900">Analytics</h1>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
-              <MapPin className="h-3 w-3" aria-hidden />
-              Delhi City Pack
-              {(dispatchState.stale || incidentsState.stale) && <StaleBadge />}
-            </p>
-            <p className="mt-1 max-w-xl text-xs text-slate-400">
-              Tracks system performance, forecast trust, recurrence, and intervention outcomes - proof of whether the
-              platform is producing verified action, not a generic chart dashboard.
-            </p>
+    <AppShell
+      subtitle="Analytics"
+      headerContent={
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
+            <Clock3 className="ml-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden />
+            {WINDOW_OPTIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setWindowDays(d)}
+                className={`focus-ring rounded-md px-2 py-1 text-xs font-semibold transition ${
+                  windowDays === d ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
-              <Clock3 className="ml-1.5 h-3.5 w-3.5 text-slate-400" aria-hidden />
-              {WINDOW_OPTIONS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setWindowDays(d)}
-                  className={`focus-ring rounded-md px-2 py-1 text-xs font-semibold transition ${
-                    windowDays === d ? 'bg-accent-500 text-white' : 'text-slate-500 hover:bg-slate-100'
-                  }`}
-                >
-                  {d}d
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={refreshAll}
-              disabled={dispatchState.refreshing}
-              className="focus-ring flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${dispatchState.refreshing ? 'animate-spin' : ''}`} aria-hidden />
-              Refresh
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={dispatchState.refreshing}
+            className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${dispatchState.refreshing ? 'animate-spin' : ''}`} aria-hidden />
+            Refresh
+          </button>
         </div>
+      }
+    >
+      <div className="flex-1 space-y-4 overflow-y-auto bg-sky-50 p-3 sm:p-4">
 
         {kpiLoading ? (
           <Skeleton className="h-20 w-full rounded-xl" />
