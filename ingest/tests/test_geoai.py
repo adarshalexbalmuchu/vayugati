@@ -1,8 +1,12 @@
 """GeoAI structured-output parsing + semantic validation - no live Anthropic
 calls. Anthropic client is fully mocked; the no-API-key stub path and the
-validate_actions() semantic gate are exercised directly."""
+validate_actions() semantic gate are exercised directly.
 
-import json
+The fake client mocks client.messages.parse() (not .create()) and returns
+.parsed_output directly, matching what parse_geo_query() actually calls -
+see geoai.py's comment on why .parse(output_format=...) is required instead
+of a hand-built output_config schema."""
+
 import sys
 from pathlib import Path
 
@@ -14,38 +18,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import geoai  # noqa: E402
 
 
-class _FakeTextBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
-
-
 class _FakeResponse:
-    def __init__(self, text, stop_reason="end_turn"):
+    def __init__(self, parsed_output, stop_reason="end_turn"):
         self.stop_reason = stop_reason
-        self.content = [_FakeTextBlock(text)]
+        self.parsed_output = parsed_output
 
 
 class _FakeMessages:
-    def __init__(self, text, stop_reason):
-        self._text = text
+    def __init__(self, parsed_output, stop_reason):
+        self._parsed_output = parsed_output
         self._stop_reason = stop_reason
 
-    def create(self, **kwargs):
-        return _FakeResponse(self._text, self._stop_reason)
+    def parse(self, **kwargs):
+        return _FakeResponse(self._parsed_output, self._stop_reason)
 
 
 class _FakeAnthropicClient:
-    def __init__(self, api_key=None, text="", stop_reason="end_turn"):
-        self.messages = _FakeMessages(text, stop_reason)
+    def __init__(self, api_key=None, parsed_output=None, stop_reason="end_turn"):
+        self.messages = _FakeMessages(parsed_output, stop_reason)
 
 
-def _patch_anthropic(monkeypatch, text, stop_reason="end_turn"):
+def _patch_anthropic(monkeypatch, parsed_output=None, stop_reason="end_turn"):
     monkeypatch.setattr(geoai.config, "ANTHROPIC_API_KEY", "fake-key-for-tests")
     monkeypatch.setattr(
         geoai.anthropic,
         "Anthropic",
-        lambda api_key=None: _FakeAnthropicClient(api_key, text, stop_reason),
+        lambda api_key=None: _FakeAnthropicClient(api_key, parsed_output, stop_reason),
     )
 
 
@@ -58,17 +56,17 @@ def test_no_api_key_returns_unsupported_stub(monkeypatch):
 
 
 def test_refusal_stop_reason_returns_unsupported_stub(monkeypatch):
-    _patch_anthropic(monkeypatch, text="", stop_reason="refusal")
+    _patch_anthropic(monkeypatch, parsed_output=None, stop_reason="refusal")
     result = geoai.parse_geo_query("anything", [])
     assert result.actions[0].type == "unsupported"
 
 
 def test_parses_valid_focus_action(monkeypatch):
-    payload = {
-        "explanation": "Taking you to Anand Vihar.",
-        "actions": [{"type": "focus", "target_ref": {"type": "ward", "id": "ward_1"}}],
-    }
-    _patch_anthropic(monkeypatch, text=json.dumps(payload))
+    parsed_output = geoai.GeoAiResponse(
+        explanation="Taking you to Anand Vihar.",
+        actions=[geoai.FocusAction(type="focus", target_ref=geoai.EntityRef(type="ward", id="ward_1"))],
+    )
+    _patch_anthropic(monkeypatch, parsed_output=parsed_output)
     entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
     result = geoai.parse_geo_query("take me to Anand Vihar", entities)
     assert len(result.actions) == 1
@@ -79,22 +77,22 @@ def test_parses_valid_focus_action(monkeypatch):
 
 
 def test_parses_bounded_multi_action_query(monkeypatch):
-    payload = {
-        "explanation": "Showing wards near Anand Vihar with PM2.5 above 200.",
-        "actions": [
-            {"type": "set_filters", "pollutant": "pm25"},
-            {
-                "type": "query",
-                "target": "wards",
-                "near_ref": {"type": "ward", "id": "ward_1"},
-                "radius_km": 3,
-                "pollutant": "pm25",
-                "op": ">",
-                "threshold": 200,
-            },
+    parsed_output = geoai.GeoAiResponse(
+        explanation="Showing wards near Anand Vihar with PM2.5 above 200.",
+        actions=[
+            geoai.SetFiltersAction(type="set_filters", pollutant="pm25"),
+            geoai.QueryAction(
+                type="query",
+                target="wards",
+                near_ref=geoai.EntityRef(type="ward", id="ward_1"),
+                radius_km=3,
+                pollutant="pm25",
+                op=">",
+                threshold=200,
+            ),
         ],
-    }
-    _patch_anthropic(monkeypatch, text=json.dumps(payload))
+    )
+    _patch_anthropic(monkeypatch, parsed_output=parsed_output)
     entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
     result = geoai.parse_geo_query("wards near Anand Vihar with PM2.5 above 200", entities)
     assert [a.type for a in result.actions] == ["set_filters", "query"]
@@ -108,22 +106,22 @@ def test_historical_time_downgrades_threshold_query(monkeypatch):
     misleading (the frontend filters live data regardless of obs_slot), so
     the validator must downgrade the query rather than let it execute
     against the wrong dataset under an honest-sounding 'yesterday' explanation."""
-    payload = {
-        "explanation": "Showing wards near Anand Vihar with PM2.5 above 200 yesterday.",
-        "actions": [
-            {"type": "set_time", "obs_slot": "-24h"},
-            {
-                "type": "query",
-                "target": "wards",
-                "near_ref": {"type": "ward", "id": "ward_1"},
-                "radius_km": 3,
-                "pollutant": "pm25",
-                "op": ">",
-                "threshold": 200,
-            },
+    parsed_output = geoai.GeoAiResponse(
+        explanation="Showing wards near Anand Vihar with PM2.5 above 200 yesterday.",
+        actions=[
+            geoai.SetTimeAction(type="set_time", obs_slot="-24h"),
+            geoai.QueryAction(
+                type="query",
+                target="wards",
+                near_ref=geoai.EntityRef(type="ward", id="ward_1"),
+                radius_km=3,
+                pollutant="pm25",
+                op=">",
+                threshold=200,
+            ),
         ],
-    }
-    _patch_anthropic(monkeypatch, text=json.dumps(payload))
+    )
+    _patch_anthropic(monkeypatch, parsed_output=parsed_output)
     entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
     result = geoai.parse_geo_query("wards near Anand Vihar with PM2.5 above 200 yesterday", entities)
     assert [a.type for a in result.actions] == ["set_time", "unsupported"]

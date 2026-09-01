@@ -16,7 +16,7 @@ import os
 from typing import Literal
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config
 
@@ -149,28 +149,31 @@ def parse_geo_query(question: str, entities: list[dict]) -> GeoAiResponse:
     user_content = f"Known wards and stations:\n{entity_lines}\n\nQuestion: {question}"
 
     try:
-        response = client.messages.create(
+        # client.messages.parse(output_format=...) is required here, not a
+        # hand-built output_config={"format": {"schema": model_json_schema()}}
+        # - Anthropic's structured-outputs endpoint requires every object in
+        # the schema to carry additionalProperties: false and rejects some
+        # raw Pydantic constraints (e.g. maxItems) outright. .parse() applies
+        # those transformations itself (anthropic/lib/_parse/_transform.py);
+        # a hand-passed raw schema was silently getting every request
+        # rejected with a 400, caught below as a generic "couldn't process".
+        response = client.messages.parse(
             model=GEOAI_MODEL,
             max_tokens=800,
             system=_SYSTEM,
-            output_config={"format": {"type": "json_schema", "schema": GeoAiResponse.model_json_schema()}},
+            output_format=GeoAiResponse,
             messages=[{"role": "user", "content": user_content}],
         )
-    except anthropic.APIError as e:
+    except (anthropic.APIError, ValidationError) as e:
         log.warning("GeoAI request failed: %s", e)
         return _stub_response("GeoAI couldn't process that question right now.")
 
     if response.stop_reason == "refusal":
         return _stub_response("GeoAI declined to answer that question.")
 
-    text_block = next((b for b in response.content if b.type == "text"), None)
-    if text_block is None:
-        return _stub_response("GeoAI returned an unexpected response.")
-
-    try:
-        parsed = GeoAiResponse.model_validate_json(text_block.text)
-    except Exception:
-        log.warning("GeoAI structured output failed validation: %s", text_block.text[:200])
+    parsed = response.parsed_output
+    if parsed is None:
+        log.warning("GeoAI structured output did not parse - stop_reason=%s", response.stop_reason)
         return _stub_response("GeoAI returned a response that couldn't be parsed.")
 
     entity_ids = {(e["type"], e["id"]) for e in entities}
