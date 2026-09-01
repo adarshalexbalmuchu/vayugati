@@ -920,6 +920,22 @@ stability, which in Delhi follows a strong seasonal cycle:
 file No. 79, NOAA. The standard reference for Pasquill-Gifford urban dispersion
 sigma parameterisations.
 
+**Reading the summer calibration correlation correctly**: ρ=0.20 is a real,
+statistically significant signal (p≈0 reflects the sample size, n=4,340 —
+not the correlation strength; a large n makes even a weak correlation
+easy to distinguish from zero, it doesn't make the correlation itself
+strong). For calibration, ENFUSER (Kukkonen et al., 2022, *Environmental
+Modelling & Software*) — a mature, multi-year operational dispersion +
+data-assimilation system evaluated against 12 real stations over two full
+years — reports Pearson correlations of 0.70–0.87 across pollutants.
+VayuTrace's ρ=0.20 should be read as an early, genuine signal that the
+model captures real spatial structure, not as validation on par with a
+mature deployed system. Winter's σ=5km, by contrast, rests on Briggs
+(1973) theory alone with no empirical regression behind it yet, pending
+the November 2026 recalibration once Oct–Feb 2026-27 data accumulates —
+a weaker evidentiary basis than summer's despite sitting in the same
+table row-for-row.
+
 Per-source-type σ overrides:
 - **Roads** — σ=1 km (all seasons). Vehicle emissions disperse within 200–500 m
   of the carriageway due to traffic turbulence. CERC ADMS-Urban documentation;
