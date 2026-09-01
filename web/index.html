@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#422B1C" />
+    <!-- Without this, a browser in dark mode paints its own black default
+         background during the brief window before index.css loads — visible
+         as a flash of black on every cold/uncached reload. -->
+    <meta name="color-scheme" content="light" />
     <meta name="description" content="Vayu Gati - pan-India urban air incident-response platform. Delhi is the first city pack." />
     <link rel="icon" type="image/png" href="/brand/favicon.png" />
     <link rel="apple-touch-icon" href="/brand/favicon-192.png" />
@@ -17,6 +21,10 @@
       rel="stylesheet"
     />
     <title>Vayu Gati | from information to action</title>
+    <!-- Matches body's bg-cream (#F6EFE4) from index.css — painted immediately,
+         before the stylesheet loads, so there's never a gap where the browser's
+         own default background (black in dark mode) is visible. -->
+    <style>html,body{background:#F6EFE4}</style>
   </head>
   <body>
     <div id="root"></div>
