@@ -58,6 +58,11 @@ def test_status_ok_when_everything_is_fresh(monkeypatch):
     fake = _FakeClient(readings=[{"ts": now.isoformat()}])
     monkeypatch.setattr(health_checks.db, "client", lambda: fake)
     monkeypatch.setattr(health_checks, "_job_health", lambda: {"forecast": {"status": "ok"}})
+    # _osm_pbf() checks a real file on disk (OSM_PBF_PATH) that doesn't exist
+    # in a test/CI environment — unmocked, it correctly reports "missing" and
+    # degrades "everything is fresh" for a reason unrelated to what this test
+    # is actually about.
+    monkeypatch.setattr(health_checks, "_osm_pbf", lambda: {"status": "ok", "size_mb": 222})
 
     result = health_checks.compute_health()
 

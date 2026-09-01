@@ -51,6 +51,13 @@ MAX_HORIZON_H = max(HORIZONS_H)
 MIN_TRAIN_ROWS = 24 * 10  # ~10 days of hourly data before we trust a learned model
 MODEL_VERSION_LGB = "lgb_unified_v4"
 MODEL_VERSION_DIURNAL = "diurnal_persistence_v2"
+# Without this, LightGBM's own internal randomness (bagging, split
+# tie-breaking) is unseeded, so the exact same input data can train a
+# slightly different model on different machines/runs — usually harmless,
+# but made test_lightgbm_path_can_be_selected_when_it_genuinely_beats_
+# persistence flaky across environments (passed locally, failed in CI) since
+# "beats persistence by >=5%" is a threshold a marginal difference can flip.
+LGB_RANDOM_STATE = 42
 DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2")
 DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
 # Gaussian fallback Z-score (80% two-sided interval) — used only when the
@@ -695,7 +702,10 @@ def _validate(
     if use_lgb:
         feats = _make_features(w.iloc[:split], weather, city_avg, no2_series, fire_counts).dropna()
         if len(feats) >= MIN_TRAIN_ROWS // 2:
-            model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
+            model = lgb.LGBMRegressor(
+                n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1,
+                random_state=LGB_RANDOM_STATE,
+            )
             model.fit(feats[FEATURE_COLS], feats["y"])
             future_weather = weather.reindex(holdout_idx)
             model_pred = _recursive_forecast(train_hist, weather.iloc[:split], city_avg.iloc[:split], holdout_idx, future_weather, model, no2_series, fire_counts)
@@ -839,7 +849,10 @@ def _forecast_ward_pollutant(
 
     if method == MODEL_VERSION_LGB:
         feats = _make_features(w, wx_ward, city_avg, no2_ward_series, fire_counts).dropna()
-        _lgb_kw = dict(n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1)
+        _lgb_kw = dict(
+            n_estimators=300, learning_rate=0.05, num_leaves=31, min_child_samples=10, verbose=-1,
+            random_state=LGB_RANDOM_STATE,
+        )
 
         # Point estimate (regression)
         model_pt = lgb.LGBMRegressor(**_lgb_kw)

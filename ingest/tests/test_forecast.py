@@ -363,6 +363,11 @@ def test_run_end_to_end_against_fixed_dataset(monkeypatch):
     monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
     # no real HTTP calls for the weather forecast either
     monkeypatch.setattr(forecast.open_meteo, "get_hourly_forecast", lambda lat, lng, hours=48: [])
+    # fire_counts feature (added for VIIRS regional fire lag features) hits a
+    # real Supabase client if unmocked, which fails outside an environment
+    # with real credentials — empty history is a normal, handled case (see
+    # forecast.py's "empty Series when ... fire_counts table is empty").
+    monkeypatch.setattr(forecast.db, "get_fire_counts_history", lambda days=45: [])
 
     summary = forecast.run(city_code="delhi")
 
@@ -409,6 +414,7 @@ def test_run_skips_a_ward_with_no_readings_without_crashing(monkeypatch):
     monkeypatch.setattr(forecast.db, "replace_forecasts", lambda ward_id, pollutant, rows: fake.forecasts.extend(rows))
     monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
     monkeypatch.setattr(forecast.open_meteo, "get_hourly_forecast", lambda lat, lng, hours=48: [])
+    monkeypatch.setattr(forecast.db, "get_fire_counts_history", lambda days=45: [])
 
     summary = forecast.run(city_code="delhi")
 
@@ -435,20 +441,37 @@ def test_lightgbm_path_can_be_selected_when_it_genuinely_beats_persistence():
         + rng.normal(0, 1.5, len(idx))  # small, fixed-seed noise
     )
     w = pd.DataFrame({"local_excess": values, "baseline": 0.0, "value": values}, index=idx)
+    wind_speed = 5.0
+    # Diurnal PBLH: low overnight (~200m), peaking midday (~1600m) — a typical
+    # IGP shape. Without boundary_layer_height/ventilation_coefficient columns,
+    # _make_features()'s pblh/pblh_trend/vc end up entirely NaN (no column to
+    # read from at all, not even a fillable gap), and _validate()'s blanket
+    # .dropna() then drops every single row — silently degrading this test to
+    # the diurnal fallback with zero training rows, which is what made
+    # "beats" fail: not flakiness, an empty training set every time.
+    pblh = 900 + 700 * np.sin(2 * np.pi * (idx.hour - 6) / 24)
     weather = pd.DataFrame(
         {
             "temp_c": 28 + 6 * np.sin(2 * np.pi * idx.hour / 24),
             "humidity": 50.0,
-            "wind_speed": 5.0,
+            "wind_speed": wind_speed,
             "wind_dir": 180.0,
             "precipitation": 0.0,
+            "boundary_layer_height": pblh,
+            "ventilation_coefficient": pblh * wind_speed,
         },
         index=idx,
     )
     city_avg = pd.Series(60.0, index=idx)
+    # no2_lag1 and fire_count_lag1d/lag2d are equally all-NaN-or-nothing when
+    # their source series is None/absent — same reasoning as PBLH/VC above.
+    no2_series = pd.Series(20 + 10 * np.sin(2 * np.pi * idx.hour / 24), index=idx)
+    fire_dates = pd.date_range(idx.normalize().min() - pd.Timedelta(days=2), idx.normalize().max(), freq="D")
+    fire_counts = pd.Series(2.0, index=fire_dates)
 
     method, metrics, max_validated, beats = forecast._validate(
-        w, weather, city_avg, threshold=None, baseline_value_at_split=0.0, min_mae_improvement_pct=5.0
+        w, weather, city_avg, threshold=None, baseline_value_at_split=0.0, min_mae_improvement_pct=5.0,
+        no2_series=no2_series, fire_counts=fire_counts,
     )
     assert metrics, "expected at least one horizon's metrics to be computed"
     # not asserting method == LGB specifically (a legitimate, honestly-
