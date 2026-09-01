@@ -80,12 +80,13 @@ export default function ToolResultsPanel({
         <>
           <p className="mb-3 text-xs text-slate-400">Click the map to place the buffer center.</p>
           <div className="grid grid-cols-3 gap-2">
-            <Stat value={wardMatches.length} label="Nearby wards" />
+            <Stat value={wardMatches.length} label="Wards" />
             <Stat value={stationMatches.length} label="Stations" />
             <Stat value={incidentMatches.length} label="Incidents" />
           </div>
           <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-            Within {radiusKm}km — ward results use centroid proximity, a v1 approximation, not polygon intersection.
+            Within {radiusKm}km — wards matched by true boundary/circle intersection (not just centroid distance),
+            falling back to centroid distance only for the few wards with no captured boundary geometry yet.
           </p>
 
           {([

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import turfBooleanIntersects from '@turf/boolean-intersects'
 import turfCircle from '@turf/circle'
 import turfDistance from '@turf/distance'
-import { point as turfPoint } from '@turf/helpers'
+import { feature as turfFeature, point as turfPoint } from '@turf/helpers'
 import { MapPin, RefreshCw } from 'lucide-react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
@@ -925,19 +926,42 @@ export default function MapPage() {
   // incident's own point, not polygon containment (see ToolResultsPanel's
   // own caption: works without requiring the heavy ward-boundary layer to
   // be loaded, a deliberate v1 approximation, not silently imprecise).
+  // wardId -> real boundary geometry, for the true polygon-intersection
+  // buffer query below. Built from the same wardBoundaries array
+  // wardBoundaryCollection already renders, so no extra fetch.
+  const wardBoundaryByWardId = useMemo(
+    () => new Map(wardBoundaries.map((b) => [b.id, b.geometry])),
+    [wardBoundaries],
+  )
+
   const bufferMatches = useMemo(() => {
     const empty = { wards: [] as { id: number; label: string }[], stations: [] as { id: number; label: string }[], incidents: [] as { id: number; label: string }[] }
     if (activeTool.kind !== 'buffer' || !activeTool.center) return empty
     const center = turfPoint(activeTool.center)
     const radiusKm = activeTool.radiusKm
-    const within = (lat: number | null | undefined, lng: number | null | undefined) =>
+    const circle = turfCircle(activeTool.center, radiusKm, { steps: 64, units: 'kilometers' })
+    const withinPoint = (lat: number | null | undefined, lng: number | null | undefined) =>
       lat != null && lng != null && turfDistance(center, turfPoint([lng, lat]), { units: 'kilometers' }) <= radiusKm
-    return {
-      wards: wards.filter((w) => within(w.lat, w.lng)).map((w) => ({ id: w.id, label: w.name })),
-      stations: stations.filter((s) => within(s.lat, s.lng)).map((s) => ({ id: s.id, label: s.name })),
-      incidents: incidents.filter((i) => within(i.lat, i.lng)).map((i) => ({ id: i.id, label: i.summary ?? `Incident #${i.id}` })),
+
+    // Points (stations/incidents) have no ambiguity - distance-to-center is
+    // already the exact test, same as point-in-circle. Wards are the one
+    // case where v1's centroid check was a real approximation: prefer true
+    // polygon intersection against the boundary geometry (any part of the
+    // ward overlapping the buffer counts, matching a real GIS "select by
+    // location" query), falling back to centroid distance only for the
+    // small number of wards with no captured boundary yet.
+    const wardWithin = (w: (typeof wards)[number]) => {
+      const geometry = wardBoundaryByWardId.get(w.id)
+      if (geometry) return turfBooleanIntersects(circle, turfFeature(geometry))
+      return withinPoint(w.lat, w.lng)
     }
-  }, [activeTool, wards, stations, incidents])
+
+    return {
+      wards: wards.filter(wardWithin).map((w) => ({ id: w.id, label: w.name })),
+      stations: stations.filter((s) => withinPoint(s.lat, s.lng)).map((s) => ({ id: s.id, label: s.name })),
+      incidents: incidents.filter((i) => withinPoint(i.lat, i.lng)).map((i) => ({ id: i.id, label: i.summary ?? `Incident #${i.id}` })),
+    }
+  }, [activeTool, wards, stations, incidents, wardBoundaryByWardId])
 
   const handleBoundaryClick = useCallback((ward: WardBoundaryFeatureProps) => {
     setSelection({ kind: 'wardBoundary', id: ward.id })
