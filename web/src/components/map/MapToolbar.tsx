@@ -5,6 +5,9 @@ import { MAP_POLLUTANT_LABEL, markerMeaningLabel, OBS_SLOT_LABEL, type MapPollut
 import ObsTimeSlider from './ObsTimeSlider'
 
 export type MapViewMode = 'pollution' | 'data_quality'
+/** GIS analysis tool mode — 'none' means normal marker/boundary selection
+ *  behaviour, unaffected by anything in this file. */
+export type ToolKind = 'none' | 'measure' | 'buffer'
 
 const POLLUTANTS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
 const TIME_MODES: { key: MapTimeMode; label: string }[] = [
@@ -15,6 +18,12 @@ const TIME_MODES: { key: MapTimeMode; label: string }[] = [
 const SEVERITY_ORDER: Severity[] = ['severe', 'high', 'moderate', 'low']
 const SOURCE_CATEGORIES = Object.keys(SOURCE_CATEGORY_LABEL) as SourceCategory[]
 const FRESHNESS_FILTER_OPTIONS: FreshnessClass[] = ['fresh', 'delayed', 'stale', 'no_reading', 'unavailable']
+const TOOL_OPTIONS: { key: ToolKind; label: string }[] = [
+  { key: 'none', label: 'Select' },
+  { key: 'measure', label: 'Measure' },
+  { key: 'buffer', label: 'Buffer' },
+]
+const RADIUS_PRESETS_KM = [1, 2, 5]
 
 function SegmentedGroup<T extends string>({
   value,
@@ -77,6 +86,10 @@ export default function MapToolbar({
   obsLoading = false,
   obsViewMode,
   onObsViewModeChange,
+  activeTool = 'none',
+  onActiveToolChange,
+  bufferRadiusKm = 1,
+  onBufferRadiusChange,
 }: {
   viewMode: MapViewMode
   onViewModeChange: (m: MapViewMode) => void
@@ -98,6 +111,11 @@ export default function MapToolbar({
   obsLoading?: boolean
   obsViewMode: ObsViewMode
   onObsViewModeChange: (m: ObsViewMode) => void
+  activeTool?: ToolKind
+  onActiveToolChange?: (t: ToolKind) => void
+  /** Only shown/relevant while activeTool === 'buffer'. */
+  bufferRadiusKm?: number
+  onBufferRadiusChange?: (km: number) => void
 }) {
   const isHistorical = obsSlot !== 'now'
   // Forecast modes are unavailable when viewing historical observations: a
@@ -178,6 +196,18 @@ export default function MapToolbar({
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {!isQuality && onActiveToolChange && (
+            <>
+              <SegmentedGroup value={activeTool} onChange={onActiveToolChange} options={TOOL_OPTIONS} />
+              {activeTool === 'buffer' && onBufferRadiusChange && (
+                <SegmentedGroup
+                  value={String(bufferRadiusKm)}
+                  onChange={(v) => onBufferRadiusChange(Number(v))}
+                  options={RADIUS_PRESETS_KM.map((km) => ({ key: String(km), label: `${km}km` }))}
+                />
+              )}
+            </>
+          )}
           <button
             type="button"
             onClick={onResetView}

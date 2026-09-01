@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import turfCircle from '@turf/circle'
+import turfDistance from '@turf/distance'
+import { point as turfPoint } from '@turf/helpers'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
 import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps, type WindArrowProps } from '../components/MapView'
@@ -9,7 +12,7 @@ import BasemapSwitcher from '../components/map/BasemapSwitcher'
 import MapLayerControl, { DEFAULT_LAYER_STATE, type MapLayerKey } from '../components/map/MapLayerControl'
 import MapLegend from '../components/map/MapLegend'
 import MapPageHeader from '../components/map/MapPageHeader'
-import MapToolbar, { type MapViewMode } from '../components/map/MapToolbar'
+import MapToolbar, { type MapViewMode, type ToolKind } from '../components/map/MapToolbar'
 import DataQualityStationPanel, { type DataQualityStationInfo } from '../components/map/DataQualityStationPanel'
 import DataQualitySummaryPanel from '../components/map/DataQualitySummaryPanel'
 import DataQualityWardPanel from '../components/map/DataQualityWardPanel'
@@ -18,6 +21,7 @@ import SelectedStationPanel, { type SelectedStation, type StationHistoricalCompa
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
 import SelectedWardPanel from '../components/map/SelectedWardPanel'
 import SpatialSummaryPanel from '../components/map/SpatialSummaryPanel'
+import ToolResultsPanel from '../components/map/ToolResultsPanel'
 import { DEFAULT_BASEMAP_MODE, maptilerKey, resolveStyleUrl, type BasemapMode } from '../lib/basemaps'
 import {
   fetchAllForecasts,
@@ -96,6 +100,13 @@ type Selection =
   | { kind: 'wardBoundary'; id: number }
   | { kind: 'incidentCluster'; incidentIds: number[] }
   | null
+
+type ActiveTool =
+  | { kind: 'none' }
+  | { kind: 'measure'; points: [number, number][] }
+  | { kind: 'buffer'; center: [number, number] | null; radiusKm: number }
+
+const DEFAULT_BUFFER_RADIUS_KM = 1
 
 // Stable module-level fallback for state.data's pre-load shape. An inline
 // `?? [[], [], ...]` literal would allocate a NEW array/tuple every render
@@ -217,6 +228,7 @@ export default function MapPage() {
   const [viewMode, setViewMode] = useState<MapViewMode>('pollution')
   const [freshnessFilter, setFreshnessFilter] = useState<FreshnessClass | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
+  const [activeTool, setActiveTool] = useState<ActiveTool>({ kind: 'none' })
   const [resetToken, setResetToken] = useState(0)
   const [historicalReadingByStationId, setHistoricalReadingByStationId] = useState<Map<number, HistoricalStationReading>>(new Map())
   const [obsLoading, setObsLoading] = useState(false)
@@ -252,14 +264,18 @@ export default function MapPage() {
     if (viewMode === 'data_quality' && obsViewMode !== 'snapshot') setObsViewMode('snapshot')
   }, [viewMode, obsViewMode])
 
-  // Escape key clears any active selection.
+  // Escape key: exits an active GIS tool first (standard "escape cancels
+  // current mode" convention), only falling through to clearing selection
+  // when no tool is active.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelection(null)
+      if (e.key !== 'Escape') return
+      if (activeTool.kind !== 'none') setActiveTool({ kind: 'none' })
+      else setSelection(null)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [activeTool.kind])
 
   // Warm the browser's cache for every basemap the user hasn't picked yet,
   // so a later manual switch is instant instead of paying its real
@@ -470,10 +486,6 @@ export default function MapPage() {
       : null
   const stationForecastValue = stationForecastPoint?.predicted_value ?? stationForecastPoint?.pm25_pred ?? null
 
-  const dispatchIncidentIds = useMemo(
-    () => new Set(dispatchPage.rows.map((d) => d.incident_id).filter((id): id is number => id != null)),
-    [dispatchPage.rows],
-  )
   const severeWards = useMemo(() => severeWardsWithin(wards, forecasts, 36), [wards, forecasts])
   const severeWardIds = useMemo(() => new Set(severeWards.map((s) => s.wardId)), [severeWards])
   const sourceMix = useMemo(() => tallySourceMix(wards), [wards])
@@ -756,10 +768,23 @@ export default function MapPage() {
   }, [wards, stations, incidents, reports])
 
   const handleMarkerClick = useCallback((marker: MapMarker) => {
+    if (activeTool.kind !== 'none') return
     const [kind, rawId] = marker.id.split('-')
     const id = Number(rawId)
     if (kind === 'ward') setSelection({ kind: 'ward', id })
     else if (kind === 'station') setSelection({ kind: 'station', id })
+  }, [activeTool.kind])
+
+  // Places a measure point / sets the buffer center — the map's generic
+  // click handler (MapView.tsx) only fires this while a tool is active, so
+  // no additional gating is needed here.
+  const handleToolClick = useCallback((lngLat: { lng: number; lat: number }) => {
+    const coord: [number, number] = [lngLat.lng, lngLat.lat]
+    setActiveTool((prev) => {
+      if (prev.kind === 'measure') return { kind: 'measure', points: [...prev.points, coord] }
+      if (prev.kind === 'buffer') return { kind: 'buffer', center: coord, radiusKm: prev.radiusKm }
+      return prev
+    })
   }, [])
 
   const handleIncidentClick = useCallback((id: number) => {
@@ -852,6 +877,68 @@ export default function MapPage() {
         }]
       }),
   }), [wards, windByWardId])
+
+  // ── GIS tools: measure distance / buffer zone ────────────────────────────
+  const handleActiveToolChange = useCallback((kind: ToolKind) => {
+    if (kind === 'none') setActiveTool({ kind: 'none' })
+    else if (kind === 'measure') setActiveTool({ kind: 'measure', points: [] })
+    else setActiveTool({ kind: 'buffer', center: null, radiusKm: DEFAULT_BUFFER_RADIUS_KM })
+  }, [])
+  const handleBufferRadiusChange = useCallback((km: number) => {
+    setActiveTool((prev) => (prev.kind === 'buffer' ? { ...prev, radiusKm: km } : prev))
+  }, [])
+  const handleClearMeasure = useCallback(() => {
+    setActiveTool((prev) => (prev.kind === 'measure' ? { kind: 'measure', points: [] } : prev))
+  }, [])
+
+  const measureDistanceKm = useMemo(() => {
+    if (activeTool.kind !== 'measure' || activeTool.points.length < 2) return null
+    let total = 0
+    for (let i = 1; i < activeTool.points.length; i++) {
+      total += turfDistance(turfPoint(activeTool.points[i - 1]), turfPoint(activeTool.points[i]), { units: 'kilometers' })
+    }
+    return total
+  }, [activeTool])
+
+  // Geometry rendered on the map for the active tool - pure geometry built
+  // here (not map-lifecycle logic), same pattern as wardBoundaryCollection/
+  // windGeoJSON above, just handed to MapView as a prop.
+  const toolGeoJSON = useMemo<GeoJSON.FeatureCollection>(() => {
+    if (activeTool.kind === 'measure' && activeTool.points.length >= 2) {
+      return {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: activeTool.points },
+        }],
+      }
+    }
+    if (activeTool.kind === 'buffer' && activeTool.center) {
+      const circle = turfCircle(activeTool.center, activeTool.radiusKm, { steps: 64, units: 'kilometers' })
+      return { type: 'FeatureCollection', features: [circle as GeoJSON.Feature] }
+    }
+    return { type: 'FeatureCollection', features: [] }
+  }, [activeTool])
+
+  // Buffer spatial query - centroid distance against each ward/station/
+  // incident's own point, not polygon containment (see ToolResultsPanel's
+  // own caption: works without requiring the heavy ward-boundary layer to
+  // be loaded, a deliberate v1 approximation, not silently imprecise).
+  const bufferMatches = useMemo(() => {
+    const empty = { wards: [] as { id: number; label: string }[], stations: [] as { id: number; label: string }[], incidents: [] as { id: number; label: string }[] }
+    if (activeTool.kind !== 'buffer' || !activeTool.center) return empty
+    const center = turfPoint(activeTool.center)
+    const radiusKm = activeTool.radiusKm
+    const within = (lat: number | null | undefined, lng: number | null | undefined) =>
+      lat != null && lng != null && turfDistance(center, turfPoint([lng, lat]), { units: 'kilometers' }) <= radiusKm
+    return {
+      wards: wards.filter((w) => within(w.lat, w.lng)).map((w) => ({ id: w.id, label: w.name })),
+      stations: stations.filter((s) => within(s.lat, s.lng)).map((s) => ({ id: s.id, label: s.name })),
+      incidents: incidents.filter((i) => within(i.lat, i.lng)).map((i) => ({ id: i.id, label: i.summary ?? `Incident #${i.id}` })),
+    }
+  }, [activeTool, wards, stations, incidents])
+
   const handleBoundaryClick = useCallback((ward: WardBoundaryFeatureProps) => {
     setSelection({ kind: 'wardBoundary', id: ward.id })
   }, [])
@@ -1074,6 +1161,10 @@ export default function MapPage() {
               obsLoading={obsLoading}
               obsViewMode={obsViewMode}
               onObsViewModeChange={setObsViewMode}
+              activeTool={activeTool.kind}
+              onActiveToolChange={handleActiveToolChange}
+              bufferRadiusKm={activeTool.kind === 'buffer' ? activeTool.radiusKm : DEFAULT_BUFFER_RADIUS_KM}
+              onBufferRadiusChange={handleBufferRadiusChange}
             />
             <div className="flex min-h-0 flex-1">
               <div className="relative min-h-0 flex-1">
@@ -1105,6 +1196,9 @@ export default function MapPage() {
                   showLandUse={layers.landUse && maptilerKey() != null}
                   selectionKey={selectionKey}
                   selectedIncidentCoords={selectedIncidentCoords}
+                  activeToolKind={activeTool.kind}
+                  onToolClick={handleToolClick}
+                  toolGeoJSON={toolGeoJSON}
                 />
                 <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
                   <MapLayerControl
@@ -1112,7 +1206,6 @@ export default function MapPage() {
                     onToggle={(key: MapLayerKey) => setLayers((l) => ({ ...l, [key]: !l[key] }))}
                     wardBoundariesAvailable={wardBoundariesAvailable}
                     wardBoundariesLoading={wardBoundariesState.loading}
-                    dispatchZonesAvailable={dispatchIncidentIds.size > 0}
                     citizenReportsAvailable={reports.length > 0}
                     transitActivityAvailable={transitState.data?.unavailableReason == null && (transitState.data?.perWard?.length ?? 0) > 0}
                     aqiExtrusionAvailable={wardBoundariesAvailable}
@@ -1123,13 +1216,29 @@ export default function MapPage() {
                     landUseAvailable={maptilerKey() != null}
                     forecastSuppressed={forecastSuppressed}
                   />
-                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
+                  <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} aqiExtrusionOn={layers.aqiExtrusion && wardBoundariesAvailable} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
                 </div>
                 <BasemapSwitcher mode={basemap} onChange={setBasemap} />
               </div>
 
               <div className="w-80 flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
-                {viewMode === 'data_quality' ? (
+                {activeTool.kind !== 'none' ? (
+                  /* ── GIS tool mode - takes priority over marker selection ── */
+                  <ToolResultsPanel
+                    mode={activeTool.kind}
+                    measurePointCount={activeTool.kind === 'measure' ? activeTool.points.length : 0}
+                    measureDistanceKm={measureDistanceKm}
+                    onClearMeasure={handleClearMeasure}
+                    radiusKm={activeTool.kind === 'buffer' ? activeTool.radiusKm : DEFAULT_BUFFER_RADIUS_KM}
+                    wardMatches={bufferMatches.wards}
+                    stationMatches={bufferMatches.stations}
+                    incidentMatches={bufferMatches.incidents}
+                    onSelectWard={(id) => setSelection({ kind: 'ward', id })}
+                    onSelectStation={(id) => setSelection({ kind: 'station', id })}
+                    onSelectIncident={(id) => setSelection({ kind: 'incident', id })}
+                    onClose={() => setActiveTool({ kind: 'none' })}
+                  />
+                ) : viewMode === 'data_quality' ? (
                   /* ── Data Quality mode panels ───────────────────────── */
                   dataQualityStationInfo ? (
                     <DataQualityStationPanel info={dataQualityStationInfo} onClose={() => setSelection(null)} />

@@ -1,4 +1,5 @@
-import { Layers2 } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, Layers2 } from 'lucide-react'
 
 export type MapLayerKey =
   | 'wardBoundaries'
@@ -7,7 +8,6 @@ export type MapLayerKey =
   | 'incidents'
   | 'predictedHotspots'
   | 'sourceAttribution'
-  | 'dispatchZones'
   | 'citizenReports'
   | 'sensorFreshness'
   | 'transitActivity'
@@ -28,36 +28,44 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'windFlow',
   'wardMarkers',
   'stations',
-  'sensorFreshness',
   'incidents',
-  'predictedHotspots',
-  'dispatchZones',
-  'sourceAttribution',
   'citizenReports',
   'transitActivity',
+  'sensorFreshness',
+  'predictedHotspots',
+  'sourceAttribution',
 ]
 
-/** Groups define the UI structure. Order within each group matches LAYER_ORDER. */
-const LAYER_GROUPS: { label: string; keys: MapLayerKey[] }[] = [
+/** Groups define the UI structure. Order within each group matches LAYER_ORDER.
+ *  `subtitle` marks a group as something other than a set of independent
+ *  layers — currently only "Highlights", whose 3 entries recolor/decorate
+ *  markers that another layer already rendered, rather than adding new
+ *  geometry to the map. */
+const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
-    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'vegetation3D', 'landUse', 'windFlow', 'wardMarkers', 'stations', 'sensorFreshness'],
+    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'vegetation3D', 'landUse', 'windFlow', 'wardMarkers', 'stations'],
   },
   {
     label: 'Operations',
-    keys: ['incidents', 'predictedHotspots', 'dispatchZones'],
+    keys: ['incidents'],
   },
   {
     label: 'Source context',
-    keys: ['sourceAttribution', 'citizenReports', 'transitActivity'],
+    keys: ['citizenReports', 'transitActivity'],
+  },
+  {
+    label: 'Highlights',
+    subtitle: 'Recolors existing markers — not separate layers',
+    keys: ['sensorFreshness', 'predictedHotspots', 'sourceAttribution'],
   },
 ]
 
 export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean; note: string }> = {
   // `available` here is the no-data default. MapPage.tsx overrides it once
   // it knows the real backing data exists (real Supabase rows decide this,
-  // never a hardcoded flip) - see the wardBoundaries/dispatchZones/
-  // citizenReports handling in the component below.
+  // never a hardcoded flip) - see the wardBoundaries/citizenReports handling
+  // in the component below.
   wardBoundaries: {
     label: 'Ward boundaries',
     available: false,
@@ -89,11 +97,6 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: true,
     note: 'Colour-codes markers by leading suspected source - a preliminary point signal, not a mapped zone or confirmed finding.',
   },
-  dispatchZones: {
-    label: 'Dispatch/task zones',
-    available: false,
-    note: 'No incident currently has an active dispatch to flag.',
-  },
   citizenReports: {
     label: 'Citizen reports',
     available: false,
@@ -105,9 +108,9 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     note: 'Delhi Open Transit Data is unavailable right now.',
   },
   aqiExtrusion: {
-    label: '3D Pollution mountains',
+    label: 'Relative AQI elevation',
     available: false,
-    note: 'Ward polygons extruded by AQI — height shows pollution level. Requires ward boundaries.',
+    note: 'Ward polygons extruded by AQI — height represents AQI magnitude, not physical pollution altitude. Requires ward boundaries.',
   },
   windFlow: {
     label: 'Wind flow arrows',
@@ -147,7 +150,6 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   incidents: true,
   predictedHotspots: false,
   sourceAttribution: false,
-  dispatchZones: false,
   citizenReports: false,
   sensorFreshness: false,
   transitActivity: false,
@@ -180,13 +182,15 @@ function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
  *  apart from "this was never built". Compact by default: one line per
  *  layer, descriptions live in the title tooltip rather than always-visible
  *  subtext, and the panel is a solid card (no glass/blur) so it reads as a
- *  control surface, not a decoration. */
+ *  control surface, not a decoration. Groups collapse by default (except
+ *  "Air quality") so the panel opens showing ~5 controls, not all 15 at
+ *  once - dashboard cognitive-load research puts 5-7 simultaneous options
+ *  as the practical working-memory ceiling. */
 export default function MapLayerControl({
   layers,
   onToggle,
   wardBoundariesAvailable = false,
   wardBoundariesLoading = false,
-  dispatchZonesAvailable = false,
   citizenReportsAvailable = false,
   transitActivityAvailable = false,
   aqiExtrusionAvailable = false,
@@ -201,7 +205,6 @@ export default function MapLayerControl({
   onToggle: (key: MapLayerKey) => void
   wardBoundariesAvailable?: boolean
   wardBoundariesLoading?: boolean
-  dispatchZonesAvailable?: boolean
   citizenReportsAvailable?: boolean
   transitActivityAvailable?: boolean
   /** True once ward boundaries are loaded — same requirement as the boundary layer. */
@@ -218,6 +221,10 @@ export default function MapLayerControl({
   landUseAvailable?: boolean
   forecastSuppressed?: boolean
 }) {
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(LAYER_GROUPS.map((g) => [g.label, g.label !== 'Air quality'])),
+  )
+
   // Compute effective meta for each key (same logic as before, now used in
   // grouped rendering below).
   function effectiveMeta(key: MapLayerKey): { label: string; available: boolean; note: string } {
@@ -228,8 +235,6 @@ export default function MapLayerControl({
         : wardBoundariesAvailable
           ? { ...meta, available: true, note: 'Real MCD ward boundaries (Phase 2 import).' }
           : meta
-    } else if (key === 'dispatchZones' && dispatchZonesAvailable) {
-      meta = { ...meta, available: true, note: "Flags an incident's marker when it has an active dispatch." }
     } else if (key === 'citizenReports' && citizenReportsAvailable) {
       meta = { ...meta, available: true, note: 'Open citizen reports with a known location.' }
     } else if (key === 'transitActivity' && transitActivityAvailable) {
@@ -273,37 +278,56 @@ export default function MapLayerControl({
         )}
       </div>
 
-      {LAYER_GROUPS.map((group) => (
-        <div key={group.label}>
-          <p className="mt-1 px-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
-            {group.label}
-          </p>
-          <ul>
-            {group.keys.map((key) => {
-              const meta = effectiveMeta(key)
-              const on = layers[key] && meta.available
-              return (
-                <li key={key}>
-                  <button
-                    type="button"
-                    disabled={!meta.available}
-                    title={meta.note}
-                    onClick={() => onToggle(key)}
-                    className={`focus-ring flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left transition ${
-                      meta.available ? 'hover:bg-slate-50' : 'cursor-not-allowed opacity-50'
-                    }`}
-                  >
-                    <span className={`truncate text-[11px] font-medium ${meta.available ? 'text-slate-700' : 'text-slate-400'}`}>
-                      {meta.label}
-                    </span>
-                    <Toggle on={on} disabled={!meta.available} />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ))}
+      {LAYER_GROUPS.map((group) => {
+        const collapsed = collapsedGroups[group.label]
+        return (
+          <div key={group.label}>
+            <button
+              type="button"
+              onClick={() => setCollapsedGroups((prev) => ({ ...prev, [group.label]: !prev[group.label] }))}
+              className="focus-ring mt-1 flex w-full items-center gap-1 px-1.5 pb-0.5"
+            >
+              {collapsed ? (
+                <ChevronRight className="h-2.5 w-2.5 flex-shrink-0 text-slate-400" aria-hidden />
+              ) : (
+                <ChevronDown className="h-2.5 w-2.5 flex-shrink-0 text-slate-400" aria-hidden />
+              )}
+              <span className="text-left text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                {group.label}
+              </span>
+            </button>
+            {group.subtitle && !collapsed && (
+              <p className="px-1.5 pb-0.5 pl-5 text-[9px] leading-tight text-slate-400">{group.subtitle}</p>
+            )}
+            {!collapsed && (
+              <ul className={group.subtitle ? 'ml-1.5 border-l-2 border-dashed border-slate-200 pl-1' : undefined}>
+                {group.keys.map((key) => {
+                  const meta = effectiveMeta(key)
+                  const on = layers[key] && meta.available
+                  return (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        disabled={!meta.available}
+                        title={meta.note}
+                        onClick={() => onToggle(key)}
+                        className={`focus-ring flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left transition ${
+                          meta.available ? 'hover:bg-slate-50' : 'cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <span className={`truncate text-[11px] font-medium ${meta.available ? 'text-slate-700' : 'text-slate-400'}`}>
+                          {meta.label}
+                        </span>
+                        <Toggle on={on} disabled={!meta.available} />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

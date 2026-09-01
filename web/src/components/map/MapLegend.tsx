@@ -82,6 +82,7 @@ export default function MapLegend({
   sourceAttributionOn,
   pollutant,
   transitActivityOn,
+  aqiExtrusionOn = false,
   forecastSuppressed = false,
   obsViewMode = 'snapshot',
 }: {
@@ -89,6 +90,11 @@ export default function MapLegend({
   sourceAttributionOn: boolean
   pollutant: MapPollutant
   transitActivityOn: boolean
+  /** True while the "Relative AQI elevation" 3D extrusion layer is on — shows
+   *  a clarifying caption directly on the map, not just in the layer-control
+   *  tooltip, since a viewer looking at the 3D scene (e.g. in a screenshot)
+   *  won't necessarily have that panel open. */
+  aqiExtrusionOn?: boolean
   forecastSuppressed?: boolean
   obsViewMode?: ObsViewMode
 }) {
@@ -230,6 +236,13 @@ export default function MapLegend({
             <p className="text-[10px] text-slate-500">
               Marker colour in "Now" mode is still AQI-coloured; the number shown is {MAP_POLLUTANT_LABEL[pollutant]} in µg/m³, a
               different scale from AQI.
+            </p>
+          )}
+
+          {aqiExtrusionOn && (
+            <p className="mt-1.5 rounded-md bg-slate-50 px-1.5 py-1 text-[10px] leading-relaxed text-slate-500">
+              <span className="font-semibold text-slate-600">Relative AQI elevation:</span> height represents AQI
+              magnitude, not physical pollution altitude.
             </p>
           )}
 

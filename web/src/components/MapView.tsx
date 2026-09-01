@@ -2,7 +2,7 @@ import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'g
 import maplibregl, { type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FALLBACK_STYLE } from '../lib/basemaps'
+import { FALLBACK_STYLE, maptilerKey } from '../lib/basemaps'
 import WindParticles from './WindParticles'
 import {
   areIdenticalCoords,
@@ -75,6 +75,13 @@ const VEGETATION_LAYER_ID = 'osm-vegetation-3d'
 const LANDCOVER_TREES_LAYER_ID = 'osm-landcover-trees'
 const LANDUSE_LAYER_ID = 'osm-landuse-fill'
 const WATER_LAYER_ID = 'osm-water-fill'
+const TERRAIN_SOURCE_ID = 'maptiler-terrain-dem'
+// AQI-elevation and building/vegetation extrusions render relative to this
+// surface once active — real relief (subtly, the Delhi Ridge), not decoration.
+const TERRAIN_EXAGGERATION = 1.3
+const TOOL_SOURCE_ID = 'gis-tool-overlay'
+const TOOL_LINE_LAYER_ID = 'gis-tool-line'
+const TOOL_FILL_LAYER_ID = 'gis-tool-fill'
 // Quieter defaults let markers remain the primary focal point at city zoom;
 // hover/select progressively reveal the polygon for spatial orientation.
 const FILL_OPACITY_DEFAULT = 0.015  // near-transparent at city zoom
@@ -288,6 +295,16 @@ interface Props {
    *  pin a DOM marker overlay that stays visible even when the incident is
    *  absorbed into a cluster at lower zoom.  Null removes the overlay. */
   selectedIncidentCoords?: [number, number] | null
+  /** Which GIS analysis tool is active - gates map click handling so a tool
+   *  click (placing a measure point / buffer center) is never also
+   *  interpreted as marker/boundary/incident selection. */
+  activeToolKind?: 'none' | 'measure' | 'buffer'
+  /** Called with the clicked map coordinate while a tool is active. */
+  onToolClick?: (lngLat: { lng: number; lat: number }) => void
+  /** Measure line / buffer circle geometry to render - built in MapPage.tsx
+   *  (pure geometry, not map-lifecycle logic), same pattern as
+   *  wardBoundaries/windGeoJSON below. */
+  toolGeoJSON?: FeatureCollection
 }
 
 /**
@@ -326,6 +343,9 @@ export default function MapView({
   showLandUse = false,
   selectionKey = 'none',
   selectedIncidentCoords = null,
+  activeToolKind = 'none',
+  onToolClick,
+  toolGeoJSON,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -374,6 +394,15 @@ export default function MapView({
   const stationHeatmapGeoJSONRef = useRef(stationHeatmapGeoJSON)
   const showVegetation3DRef = useRef(showVegetation3D)
   const showLandUseRef = useRef(showLandUse)
+
+  // ── GIS tool (measure/buffer) refs ────────────────────────────────────────
+  const activeToolKindRef = useRef(activeToolKind)
+  const onToolClickRef = useRef(onToolClick)
+  const toolGeoJSONRef = useRef(toolGeoJSON)
+  const ensureToolLayersRef = useRef<(() => void) | null>(null)
+  useEffect(() => { activeToolKindRef.current = activeToolKind }, [activeToolKind])
+  useEffect(() => { onToolClickRef.current = onToolClick }, [onToolClick])
+  useEffect(() => { toolGeoJSONRef.current = toolGeoJSON }, [toolGeoJSON])
 
   // ── Incident GL layer refs ────────────────────────────────────────────────
   const incidentGeoJSONRef = useRef(incidentGeoJSON)
@@ -488,15 +517,26 @@ export default function MapView({
       map.on('mouseout', () => onHoverCoordinates(null))
     }
 
+    // Generic click handler for GIS tool modes (measure/buffer) - fires on
+    // every click; the layer-scoped handlers below each check
+    // activeToolKindRef themselves so a tool click is never also
+    // interpreted as a marker/boundary/incident selection.
+    map.on('click', (e) => {
+      if (activeToolKindRef.current === 'none') return
+      onToolClickRef.current?.({ lng: e.lngLat.lng, lat: e.lngLat.lat })
+    })
+
     // Delegated listeners on the boundary fill layer - registered once, up
     // front. MapLibre only dispatches these once a layer with this id
     // actually exists, so this is safe even before the layer is first added
     // (initial data load) and keeps working across every later setStyle().
     map.on('click', BOUNDARY_FILL_LAYER_ID, (e) => {
+      if (activeToolKindRef.current !== 'none') return
       const feature = e.features?.[0] as Feature<Polygon | MultiPolygon, WardBoundaryFeatureProps> | undefined
       if (feature) onBoundaryClickRef.current?.(feature.properties)
     })
     map.on('mouseenter', BOUNDARY_FILL_LAYER_ID, () => {
+      if (activeToolKindRef.current !== 'none') return
       map.getCanvas().style.cursor = 'pointer'
     })
     map.on('mouseleave', BOUNDARY_FILL_LAYER_ID, () => {
@@ -648,6 +688,7 @@ export default function MapView({
     clusterPopupRef.current = clusterPopup
 
     map.on('mouseenter', INCIDENT_CLUSTER_LAYER, (e) => {
+      if (activeToolKindRef.current !== 'none') return
       map.getCanvas().style.cursor = 'pointer'
       const props = e.features?.[0]?.properties
       if (!props) return
@@ -668,11 +709,14 @@ export default function MapView({
       map.getCanvas().style.cursor = ''
       clusterPopup.remove()
     })
-    map.on('mouseenter', INCIDENT_POINT_LAYER, () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseenter', INCIDENT_POINT_LAYER, () => {
+      if (activeToolKindRef.current === 'none') map.getCanvas().style.cursor = 'pointer'
+    })
     map.on('mouseleave', INCIDENT_POINT_LAYER, () => { map.getCanvas().style.cursor = '' })
 
     // Cluster click: resolve leaves, zoom in or spiderfy.
     map.on('click', INCIDENT_CLUSTER_LAYER, async (e) => {
+      if (activeToolKindRef.current !== 'none') return
       clearSpiderfyMarkers()
       const feature = e.features?.[0]
       if (!feature) return
@@ -724,6 +768,7 @@ export default function MapView({
 
     // Individual incident click
     map.on('click', INCIDENT_POINT_LAYER, (e) => {
+      if (activeToolKindRef.current !== 'none') return
       clearSpiderfyMarkers()
       const id = e.features?.[0]?.properties?.id as number | undefined
       if (id != null) onIncidentClickRef.current?.(id)
@@ -1081,6 +1126,67 @@ export default function MapView({
     else map.once('style.load', addLandcoverTrees)
     map.on('style.load', addLandcoverTrees)
 
+    // Real, tiltable 3D terrain (a DEM mesh via setTerrain — distinct from
+    // the "Terrain" basemap style, which is just a 2D hillshaded raster).
+    // Universal across all 5 basemap modes, not a layer toggle: this is
+    // base-map-level ground relief, like the always-on water layer, not a
+    // data overlay competing for a commander's attention. No-key deployments
+    // stay flat, the same graceful-degradation contract as buildings/
+    // vegetation/land-use below. Delhi's relief is subtle (the Ridge) but
+    // real and meteorologically relevant to local dispersion.
+    const addTerrain = () => {
+      const key = maptilerKey()
+      if (!key) return
+      if (!map.getSource(TERRAIN_SOURCE_ID)) {
+        map.addSource(TERRAIN_SOURCE_ID, {
+          type: 'raster-dem',
+          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`,
+          tileSize: 512,
+          maxzoom: 14,
+        })
+      }
+      map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION })
+    }
+    if (map.isStyleLoaded()) addTerrain()
+    else map.once('style.load', addTerrain)
+    map.on('style.load', addTerrain)
+
+    // Measure-distance / buffer-zone overlay - a single empty-by-default
+    // GeoJSON source populated from MapPage's toolGeoJSON prop (pure
+    // geometry built there, same pattern as wardBoundaries/windGeoJSON).
+    // One `line` layer renders both the measure LineString and the buffer
+    // Polygon's outline (MapLibre line layers draw polygon outlines too);
+    // the `fill` layer only paints when a Polygon feature is present.
+    const addToolLayers = () => {
+      if (!map.getSource(TOOL_SOURCE_ID)) {
+        map.addSource(TOOL_SOURCE_ID, {
+          type: 'geojson',
+          data: toolGeoJSONRef.current ?? { type: 'FeatureCollection', features: [] },
+        })
+      }
+      if (!map.getLayer(TOOL_FILL_LAYER_ID)) {
+        map.addLayer({
+          id: TOOL_FILL_LAYER_ID,
+          type: 'fill',
+          source: TOOL_SOURCE_ID,
+          filter: ['==', ['geometry-type'], 'Polygon'] as maplibregl.ExpressionSpecification,
+          paint: { 'fill-color': '#0F6CBD', 'fill-opacity': 0.08 },
+        })
+      }
+      if (!map.getLayer(TOOL_LINE_LAYER_ID)) {
+        map.addLayer({
+          id: TOOL_LINE_LAYER_ID,
+          type: 'line',
+          source: TOOL_SOURCE_ID,
+          paint: { 'line-color': '#0F6CBD', 'line-width': 2, 'line-dasharray': [2, 1.5] },
+        })
+      }
+    }
+    ensureToolLayersRef.current = addToolLayers
+    if (map.isStyleLoaded()) addToolLayers()
+    else map.once('style.load', addToolLayers)
+    map.on('style.load', addToolLayers)
+
     map.once('load', () => {
       mapReadyRef.current = true
     })
@@ -1384,6 +1490,29 @@ export default function MapView({
   }, [windGeoJSON])
 
   // Wind arrows replaced by WindParticles canvas — no GL layer toggle needed.
+
+  // Push updated measure/buffer geometry into the GL source
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => {
+      const source = map.getSource(TOOL_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+      const data = toolGeoJSON ?? { type: 'FeatureCollection' as const, features: [] }
+      if (source) source.setData(data)
+      else ensureToolLayersRef.current?.()
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [toolGeoJSON])
+
+  // Crosshair cursor while a GIS tool is active - the hover handlers above
+  // (boundary/incident) already check activeToolKindRef before overriding
+  // this with their own 'pointer' cursor, so it doesn't get clobbered.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    map.getCanvas().style.cursor = activeToolKind !== 'none' ? 'crosshair' : ''
+  }, [activeToolKind])
 
   // Push updated station heatmap data into the GL source
   useEffect(() => {

@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
+    "@turf/circle": "^7.4.0",
+    "@turf/distance": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
     "idb": "^8.0.3",
     "lucide-react": "^1.25.0",
     "maplibre-gl": "^4.7.1",
