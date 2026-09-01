@@ -93,6 +93,11 @@ export default function GeoAiPanel({
   const executeActions = (actions: GeoAiAction[]) => {
     let updated = false
     let results: { wards: RadiusMatch[]; stations: RadiusMatch[]; incidents: RadiusMatch[] } | null = null
+    // Where a query's near_ref resolved to, if any - used so the map still
+    // pans to show *where* it searched even when zero matches came back.
+    // Without this, a genuinely-empty result (a real answer, not a bug) reads
+    // as "nothing happened" because the camera never moves at all.
+    let queryCenter: [number, number] | null = null
 
     for (const action of actions) {
       if (action.type === 'set_time') {
@@ -111,6 +116,7 @@ export default function GeoAiPanel({
         }
       } else if (action.type === 'query') {
         const center = resolveEntity(action.near_ref)
+        if (center) queryCenter = center.coords
         const radiusKm = action.radius_km ?? 3
         const base = center
           ? findWithinRadius(center.coords, radiusKm, { wards, stations, incidents, wardBoundaryByWardId })
@@ -165,6 +171,7 @@ export default function GeoAiPanel({
           .map((i) => [i.lng as number, i.lat as number] as [number, number]),
       ]
       if (coords.length > 0) onFitResults(coords)
+      else if (queryCenter) onFitResults([queryCenter])
     }
   }
 
@@ -194,6 +201,22 @@ export default function GeoAiPanel({
 
   const unsupported = response?.actions.find((a) => a.type === 'unsupported')
   const queryAction = response?.actions.find((a) => a.type === 'query')
+
+  // Spells out exactly what was searched (radius, threshold, filters) so a
+  // genuine zero-result answer reads as "here's what I checked and found
+  // nothing" rather than "nothing happened" - without this, an accurate
+  // zero looks identical to a broken query.
+  const queryCaption = (() => {
+    if (queryAction?.type !== 'query') return null
+    const near = resolveEntity(queryAction.near_ref)
+    const parts: string[] = [near ? `Within ${queryAction.radius_km ?? 3}km of ${near.name}` : 'Citywide']
+    if (queryAction.pollutant && queryAction.op && queryAction.threshold != null) {
+      parts.push(`${queryAction.pollutant.toUpperCase()} ${queryAction.op} ${queryAction.threshold}`)
+    }
+    if (queryAction.severity) parts.push(`severity: ${queryAction.severity}`)
+    if (queryAction.source_category) parts.push(`source: ${queryAction.source_category.replace(/_/g, ' ')}`)
+    return parts.join(' · ')
+  })()
 
   return (
     <div className="p-4">
@@ -254,6 +277,7 @@ export default function GeoAiPanel({
 
           {queryAction && queryResults && (
             <>
+              {queryCaption && <p className="text-[10px] text-slate-400">{queryCaption}</p>}
               <div className="grid grid-cols-3 gap-2">
                 <Stat value={queryResults.wards.length} label="Wards" />
                 <Stat value={queryResults.stations.length} label="Stations" />
