@@ -56,11 +56,19 @@ export default function ObsTimeSlider({
   }, [isPlaying, onChange])
 
   const togglePlay = () => {
-    if (!isPlaying && value === 'now') {
-      // Starting from the end of the sequence - restart from the oldest
-      // slot so Play always has somewhere to go, matching how a video
-      // "replay" button behaves rather than doing nothing.
-      onChange(PLAYBACK_ORDER[0])
+    if (!isPlaying) {
+      if (value === 'now') {
+        // Starting from the end of the sequence - restart from the oldest
+        // slot so Play always has somewhere to go, matching how a video
+        // "replay" button behaves rather than doing nothing.
+        onChange(PLAYBACK_ORDER[0])
+      }
+      // Raw absolute AQI numbers across ~40+ markers are unreadable frame to
+      // frame - "Change vs Now" shows a colored delta per marker instead, the
+      // only way this animation is actually perceptible. Reverts to Snapshot
+      // automatically once playback reaches Now (MapPage.tsx's existing
+      // obsSlot==='now' effect already does this).
+      onObsViewModeChange('change')
     }
     setIsPlaying((v) => !v)
   }
