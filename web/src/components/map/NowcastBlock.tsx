@@ -36,6 +36,12 @@ export default function NowcastBlock({
         </p>
       ) : (
         <>
+          {freshness === 'delayed' && (
+            <div className="mb-1.5 mt-1 flex items-center gap-1.5 rounded-lg bg-status-warning/10 px-2 py-1 text-[10px] font-semibold text-status-warning">
+              <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-status-warning" aria-hidden />
+              Anchor reading is delayed - this nowcast may not reflect current conditions.
+            </div>
+          )}
           <p className="mt-1 font-semibold text-slate-800">
             {point?.predicted_value != null ? `${Math.round(point.predicted_value)} µg/m³` : 'Unavailable'}
           </p>

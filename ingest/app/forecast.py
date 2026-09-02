@@ -1031,7 +1031,7 @@ def _forecast_ward_pollutant(
 
 
 def _select_nowcast_production_method(
-    ward_id: int, pollutant: str, model_version: str, nowcast_candidates: dict[str, dict]
+    ward_id: int, pollutant: str, nowcast_candidates: dict[str, dict]
 ) -> tuple[str, dict, bool, int]:
     """Decides which candidate's prediction becomes the actual +1h production
     value for this cycle, using the periodic leakage-free backtest
@@ -1053,8 +1053,16 @@ def _select_nowcast_production_method(
         try:
             data_through = pd.Timestamp(backtest["data_through"]).to_pydatetime()
             age_days = (datetime.now(timezone.utc) - data_through).total_seconds() / 86400.0
+            # Compared against the fixed MODEL_VERSION_LGB constant, NOT this
+            # cycle's own resolved result["model_version"] - that field varies
+            # per-cycle/per-ward (diurnal_persistence_v2 whenever a ward falls
+            # back), which has nothing to do with whether the backtest script's
+            # LightGBM evaluation is still valid. Comparing against the
+            # per-cycle value would wrongly invalidate a fresh, correct
+            # backtest on every cycle where the MAIN 6-48h forecast happened
+            # to use the diurnal fallback - an unrelated, incidental condition.
             fresh = (
-                backtest.get("model_version") == model_version
+                backtest.get("model_version") == MODEL_VERSION_LGB
                 and backtest.get("methodology_version") == NOWCAST_METHODOLOGY_VERSION
                 and age_days <= NOWCAST_BACKTEST_REFRESH_DAYS
             )
@@ -1205,7 +1213,7 @@ def run(city_code: str | None = None) -> dict:
                 if nowcast_status == "available":
                     nowcast_method, nowcast_pred, nowcast_backtest_passed, nowcast_backtest_samples = (
                         _select_nowcast_production_method(
-                            result["ward_id"], pollutant, result["model_version"], result["nowcast_candidates"]
+                            result["ward_id"], pollutant, result["nowcast_candidates"]
                         )
                     )
 

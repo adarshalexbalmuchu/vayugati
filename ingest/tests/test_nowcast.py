@@ -160,7 +160,7 @@ def test_selection_falls_back_to_persistence_when_no_backtest_exists(monkeypatch
     monkeypatch.setattr(db, "get_nowcast_backtest_result", lambda ward_id, pollutant: None)
 
     method, pred, passed, samples = forecast._select_nowcast_production_method(
-        1, "pm25", forecast.MODEL_VERSION_LGB, _candidates()
+        1, "pm25", _candidates()
     )
 
     assert method == "persistence"
@@ -187,7 +187,7 @@ def test_selection_uses_the_backtests_own_best_candidate_even_when_its_a_baselin
     )
 
     method, pred, passed, samples = forecast._select_nowcast_production_method(
-        1, "pm25", forecast.MODEL_VERSION_LGB, _candidates()
+        1, "pm25", _candidates()
     )
 
     assert method == "rolling_24h_avg"
@@ -213,7 +213,7 @@ def test_selection_ignores_a_backtest_result_from_a_different_model_version(monk
     )
 
     method, pred, passed, samples = forecast._select_nowcast_production_method(
-        1, "pm25", forecast.MODEL_VERSION_LGB, _candidates()
+        1, "pm25", _candidates()
     )
 
     assert method == "persistence"
@@ -236,7 +236,7 @@ def test_selection_ignores_a_backtest_result_older_than_the_refresh_window(monke
     )
 
     method, pred, passed, samples = forecast._select_nowcast_production_method(
-        1, "pm25", forecast.MODEL_VERSION_LGB, _candidates()
+        1, "pm25", _candidates()
     )
 
     assert method == "persistence"
@@ -261,7 +261,7 @@ def test_selection_never_selects_a_candidate_absent_from_this_cycles_predictions
     )
 
     method, pred, passed, samples = forecast._select_nowcast_production_method(
-        1, "pm25", forecast.MODEL_VERSION_LGB, _candidates()  # no "lightgbm" key this cycle
+        1, "pm25", _candidates()  # no "lightgbm" key this cycle
     )
 
     assert method == "persistence"
