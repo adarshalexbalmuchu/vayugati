@@ -633,6 +633,9 @@ export type Database = {
           max_validated_horizon_hours: number | null
           method: string
           model_version: string
+          nowcast_generation_status: string | null
+          nowcast_target_ts: string | null
+          nowcast_valid_at: string | null
           pollutant: string
           training_period_end: string | null
           training_period_start: string | null
@@ -651,6 +654,9 @@ export type Database = {
           max_validated_horizon_hours?: number | null
           method: string
           model_version: string
+          nowcast_generation_status?: string | null
+          nowcast_target_ts?: string | null
+          nowcast_valid_at?: string | null
           pollutant: string
           training_period_end?: string | null
           training_period_start?: string | null
@@ -669,6 +675,9 @@ export type Database = {
           max_validated_horizon_hours?: number | null
           method?: string
           model_version?: string
+          nowcast_generation_status?: string | null
+          nowcast_target_ts?: string | null
+          nowcast_valid_at?: string | null
           pollutant?: string
           training_period_end?: string | null
           training_period_start?: string | null
@@ -701,9 +710,13 @@ export type Database = {
           generated_at: string
           horizon_ts: string
           id: number
+          is_nowcast_point: boolean
           local_excess: number | null
           lower_bound: number | null
           model_version: string | null
+          nowcast_backtest_passed: boolean
+          nowcast_backtest_samples: number | null
+          nowcast_method: string | null
           pm25_pred: number | null
           pollutant: string
           predicted_value: number | null
@@ -717,9 +730,13 @@ export type Database = {
           generated_at?: string
           horizon_ts: string
           id?: number
+          is_nowcast_point?: boolean
           local_excess?: number | null
           lower_bound?: number | null
           model_version?: string | null
+          nowcast_backtest_passed?: boolean
+          nowcast_backtest_samples?: number | null
+          nowcast_method?: string | null
           pm25_pred?: number | null
           pollutant?: string
           predicted_value?: number | null
@@ -733,9 +750,13 @@ export type Database = {
           generated_at?: string
           horizon_ts?: string
           id?: number
+          is_nowcast_point?: boolean
           local_excess?: number | null
           lower_bound?: number | null
           model_version?: string | null
+          nowcast_backtest_passed?: boolean
+          nowcast_backtest_samples?: number | null
+          nowcast_method?: string | null
           pm25_pred?: number | null
           pollutant?: string
           predicted_value?: number | null

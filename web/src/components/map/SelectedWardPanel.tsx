@@ -4,8 +4,9 @@ import type { Attribution, VayuTraceAttribution, WardForecastSummary, WardSummar
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import { confidenceAtPeak, hotspotStatus, HOTSPOT_STATUS_LABEL, type TimeWindowHours } from '../../lib/overviewRules'
 import type { ActiveTaskDispatch, ForecastRunRow, Incident } from '../../lib/incidents'
-import { MAP_POLLUTANT_LABEL, stationReadingValue, type MapPollutant } from '../../lib/mapRules'
+import { MAP_POLLUTANT_LABEL, nowcastPoint, stationReadingValue, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
 import { Skeleton } from '../ui'
+import NowcastBlock from './NowcastBlock'
 
 const NEXT_ACTION: Record<string, string> = {
   severe: 'Dispatch verification - forecast to cross severe soon.',
@@ -17,6 +18,7 @@ const NEXT_ACTION: Record<string, string> = {
 export default function SelectedWardPanel({
   ward,
   forecast,
+  timeMode,
   pollutant,
   linkedIncidents,
   linkedDispatches,
@@ -30,6 +32,7 @@ export default function SelectedWardPanel({
 }: {
   ward: WardSummary
   forecast: WardForecastSummary | undefined
+  timeMode: MapTimeMode
   pollutant: MapPollutant
   linkedIncidents: Incident[]
   linkedDispatches: ActiveTaskDispatch[]
@@ -155,6 +158,8 @@ export default function SelectedWardPanel({
           <p className="mt-1 text-xs text-slate-400">No forecast validation record yet for this ward.</p>
         )}
       </div>
+
+      <NowcastBlock timeMode={timeMode} point={nowcastPoint(forecast)} heading="+1h ward nowcast" />
 
       <div className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
         <span className="font-semibold">Recommended next action:</span> {NEXT_ACTION[status]}

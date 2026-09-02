@@ -1,5 +1,7 @@
 import { AlertTriangle, MapPin, X } from 'lucide-react'
-import { WARD_DATA_STATUS_LABEL, type WardDataStatus } from '../../lib/mapRules'
+import type { ForecastPoint } from '../../lib/data'
+import { WARD_DATA_STATUS_LABEL, type MapTimeMode, type WardDataStatus } from '../../lib/mapRules'
+import NowcastBlock from './NowcastBlock'
 
 type JurisdictionType = 'mcd' | 'ndmc' | 'cantonment'
 
@@ -47,6 +49,9 @@ export interface WardBoundaryDetail {
   /** Label for the "selected metric" value shown for the station refs
    *  above - e.g. "AQI" or "PM10", matching the Map toolbar's toggle. */
   selectedMetricLabel: string
+  timeMode: MapTimeMode
+  /** Ward-level nowcasting (+1h) - null when unavailable or timeMode isn't '1h'. */
+  nowcastPoint: ForecastPoint | null
 }
 
 function fmtDistance(m: number): string {
@@ -87,7 +92,7 @@ export default function SelectedWardBoundaryPanel({
   detail: WardBoundaryDetail
   onClose: () => void
 }) {
-  const { name, wardNumber, jurisdictionType, dataStatus, directStation, nearestStation, linkedIncidentCount, forecastPeak, forecastPollutantLabel, selectedMetricLabel } = detail
+  const { name, wardNumber, jurisdictionType, dataStatus, directStation, nearestStation, linkedIncidentCount, forecastPeak, forecastPollutantLabel, selectedMetricLabel, timeMode, nowcastPoint } = detail
 
   return (
     <div className="p-4">
@@ -135,6 +140,8 @@ export default function SelectedWardBoundaryPanel({
           </dd>
         </div>
       </dl>
+
+      <NowcastBlock timeMode={timeMode} point={nowcastPoint} heading="+1h ward nowcast" />
 
       {directStation && <StationRefBlock label="Assigned station" station={directStation} metricLabel={selectedMetricLabel} />}
 

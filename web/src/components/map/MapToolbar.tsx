@@ -2,6 +2,7 @@ import { Crosshair, Info } from 'lucide-react'
 import { FRESHNESS_LABEL, type FreshnessClass } from '../../lib/dataQualityRules'
 import { SOURCE_CATEGORY_LABEL, sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
 import { MAP_POLLUTANT_LABEL, markerMeaningLabel, OBS_SLOT_LABEL, type MapPollutant, type MapTimeMode, type ObsSlot, type ObsViewMode } from '../../lib/mapRules'
+import { NOWCAST_FEATURE_ENABLED } from '../../lib/nowcastConfig'
 import ObsTimeSlider from './ObsTimeSlider'
 
 export type MapViewMode = 'pollution' | 'data_quality'
@@ -10,8 +11,13 @@ export type MapViewMode = 'pollution' | 'data_quality'
 export type ToolKind = 'none' | 'measure' | 'buffer' | 'ask'
 
 const POLLUTANTS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2']
+// The '+1h' entry is gated behind NOWCAST_FEATURE_ENABLED - hiding it here
+// is one of two required gates (GeoAiPanel.tsx's executor is the other;
+// hiding this button alone doesn't stop GeoAI from independently emitting
+// time_mode: '1h').
 const TIME_MODES: { key: MapTimeMode; label: string }[] = [
   { key: 'now', label: 'Now' },
+  ...(NOWCAST_FEATURE_ENABLED ? [{ key: '1h' as const, label: '+1h' }] : []),
   { key: '24h', label: '24h forecast' },
   { key: '48h', label: '48h forecast' },
 ]
@@ -121,7 +127,7 @@ export default function MapToolbar({
   const isHistorical = obsSlot !== 'now'
   // Forecast modes are unavailable when viewing historical observations: a
   // future forecast on a past observation baseline makes no sense visually.
-  const forecastDisabledKeys: MapTimeMode[] = (forecastSuppressed || isHistorical) ? ['24h', '48h'] : []
+  const forecastDisabledKeys: MapTimeMode[] = (forecastSuppressed || isHistorical) ? ['1h', '24h', '48h'] : []
   const forecastDisabledTitle = isHistorical
     ? 'Forecast unavailable while viewing historical observations.'
     : 'Unavailable until a successful forecast run completes.'

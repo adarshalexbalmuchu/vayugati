@@ -64,6 +64,24 @@ DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
 # quantile models below cannot be trained (diurnal fallback path).
 UNCERTAINTY_Z = 1.28
 
+# ── ward-level nowcasting (+1h) ──────────────────────────────────────────────
+# A dedicated, independently-validated "next hour" point distinct from the
+# 6/12/24/48h forecast — see docs/data/nowcast-shadow-review.md for the
+# release-gate this schema/pipeline exists to support. HORIZONS_H above is
+# deliberately untouched by any of this: widening it to include 1 would
+# silently change confidence's formula and the holdout-sufficiency gates for
+# the *existing* validated horizons (HORIZONS_H.index(...) is baked into
+# both) — the nowcast point is one specific row already present among the 48
+# `forecasts.horizon_ts` values `future_idx` already produces, not a new
+# horizon added to the validation set.
+NOWCAST_TARGET_HOURS = 1
+NOWCAST_TOLERANCE_MINUTES = 30
+NOWCAST_BACKTEST_WINDOW_DAYS = 30
+MIN_NOWCAST_VALIDATION_SAMPLES = 72  # ~3 days at one backtest-origin/hour, comfortably below the ~700 a 30-day blocked backtest yields
+NOWCAST_BACKTEST_REFRESH_DAYS = 2 * NOWCAST_BACKTEST_WINDOW_DAYS
+NOWCAST_METHODOLOGY_VERSION = "nowcast_backtest_v1"  # bump when nowcast_backtest.py's methodology changes materially
+NOWCAST_CANDIDATE_METHODS = ("lightgbm", "persistence", "diurnal", "same_hour_yesterday", "rolling_24h_avg")
+
 # Wind speed threshold for stagnation index (m/s). Winds below this are
 # "calm" for PM2.5 accumulation purposes.
 # Literature: Guttikunda & Gurjar (2012) Atm. Env.; Navinya et al. (2020)
@@ -656,6 +674,80 @@ def _rolling_average_baseline(hist_local_excess: list[float], n_future: int) -> 
     return np.full(n_future, float(np.mean(window)))
 
 
+def _select_nowcast_point(
+    future_idx: pd.DatetimeIndex, generated_at: datetime, tolerance_minutes: int = NOWCAST_TOLERANCE_MINUTES
+) -> tuple[int, bool]:
+    """Selects the ONE row of `future_idx` (already computed as anchor_ts+1h
+    .. anchor_ts+48h) that best represents "1 hour from generation time" -
+    NOT the same as future_idx[0], which is anchor_ts+1h and can differ from
+    generated_at+1h whenever the anchor reading lags the generation cycle
+    (e.g. anchor 12:00, generated 12:45 -> future_idx[0]=13:00 is only 15
+    minutes ahead of "now", not a genuine 1h-ahead nowcast).
+
+    Decided ONCE here, backend-side - the frontend, shadow logger, and shadow
+    scorer all read the resulting flag rather than each independently
+    recomputing "nearest to now", which could disagree given clock/fetch-time
+    differences.
+
+    Returns (index, tolerance_ok). Only considers points strictly after
+    generated_at (a point at/before generation time is never a valid
+    "+1h from now" candidate - this can happen when the anchor is old enough
+    that anchor_ts+1h has already passed by the time generation runs). Ties
+    broken toward the LATER point: Python's min() keeps the first
+    equal-distance match by default, which would silently prefer undershoot
+    (e.g. 30 min ahead) over overshoot (e.g. 90 min ahead) when both are
+    equidistant from the target - overshoot is the safer tie-break for a
+    forward-looking nowcast. Returns (-1, False) when no point in future_idx
+    is even still in the future relative to generated_at."""
+    target = generated_at + timedelta(hours=NOWCAST_TARGET_HOURS)
+    eligible = [(i, ts) for i, ts in enumerate(future_idx) if ts > generated_at]
+    if not eligible:
+        return -1, False
+    idx, ts = min(eligible, key=lambda pair: (abs((pair[1] - target).total_seconds()), -pair[1].timestamp()))
+    tolerance_ok = abs((ts - target).total_seconds()) <= tolerance_minutes * 60
+    return idx, tolerance_ok
+
+
+def _nowcast_candidate_predictions(
+    hist_local_excess: list[float],
+    future_idx: pd.DatetimeIndex,
+    by_hour: pd.Series,
+    nowcast_idx: int,
+    lgb_point_pred: np.ndarray | None = None,
+    lgb_lower: np.ndarray | None = None,
+    lgb_upper: np.ndarray | None = None,
+) -> dict[str, dict]:
+    """The nowcast local_excess value (and interval, where calibrated) at
+    `nowcast_idx` for every ELIGIBLE candidate method - baselines are always
+    eligible (closed-form, no fitting); LightGBM is eligible only when it was
+    already trained this cycle for the main 6-48h forecast (`lgb_point_pred`
+    passed in, reusing that fit rather than training a redundant extra model
+    purely for the nowcast). NEVER asserts all 5 candidates - callers get
+    back only the methods that are genuinely eligible this cycle (4 when
+    LightGBM wasn't trained, 5 when it was).
+
+    Baseline candidates report lower=upper=None (no calibrated interval
+    exists for them) - callers must not fabricate one; LightGBM reports real
+    q10/q90 bounds when they were computed, else None too."""
+    persistence, diurnal = _baseline_forecast(hist_local_excess, future_idx, by_hour)
+    same_hour_yesterday = _same_hour_yesterday_baseline(hist_local_excess, len(future_idx))
+    rolling_avg = _rolling_average_baseline(hist_local_excess, len(future_idx))
+
+    out: dict[str, dict] = {
+        "persistence": {"value": float(persistence[nowcast_idx]), "lower": None, "upper": None},
+        "diurnal": {"value": float(diurnal[nowcast_idx]), "lower": None, "upper": None},
+        "same_hour_yesterday": {"value": float(same_hour_yesterday[nowcast_idx]), "lower": None, "upper": None},
+        "rolling_24h_avg": {"value": float(rolling_avg[nowcast_idx]), "lower": None, "upper": None},
+    }
+    if lgb_point_pred is not None:
+        out["lightgbm"] = {
+            "value": float(lgb_point_pred[nowcast_idx]),
+            "lower": float(lgb_lower[nowcast_idx]) if lgb_lower is not None else None,
+            "upper": float(lgb_upper[nowcast_idx]) if lgb_upper is not None else None,
+        }
+    return out
+
+
 def _validate(
     w: pd.DataFrame,
     weather: pd.DataFrame,
@@ -889,12 +981,32 @@ def _forecast_ward_pollutant(
     if beats_persistence and max_validated:
         confidence = float(np.clip(0.4 + 0.1 * HORIZONS_H.index(max_validated), 0.4, 0.9))
 
+    generated_at = datetime.now(timezone.utc)
+    nowcast_idx, nowcast_tolerance_ok = _select_nowcast_point(future_idx, generated_at)
+    nowcast_target_ts = generated_at + timedelta(hours=NOWCAST_TARGET_HOURS)
+    nowcast_candidates: dict[str, dict] = {}
+    if nowcast_tolerance_ok:
+        by_hour_nowcast = w["local_excess"].astype(float).groupby(w.index.hour).mean()
+        lgb_point = preds if method == MODEL_VERSION_LGB else None
+        nowcast_candidates = _nowcast_candidate_predictions(
+            excess_hist, future_idx, by_hour_nowcast, nowcast_idx,
+            lgb_point_pred=lgb_point, lgb_lower=preds_q10, lgb_upper=preds_q90,
+        )
+    if nowcast_idx == -1:
+        nowcast_status = "stale_anchor"  # no future_idx point remains ahead of generated_at at all
+    elif not nowcast_tolerance_ok:
+        nowcast_status = "no_point_within_tolerance"
+    elif not nowcast_candidates:
+        nowcast_status = "no_eligible_candidate"
+    else:
+        nowcast_status = "available"
+
     return {
         "ward_id": ward_id,
         "pollutant": pollutant,
         "method": "lightgbm" if method == MODEL_VERSION_LGB else "diurnal_persistence",
         "model_version": method,
-        "generated_at": datetime.now(timezone.utc),
+        "generated_at": generated_at,
         "training_period_start": w.index.min().to_pydatetime(),
         "training_period_end": w.index.max().to_pydatetime(),
         "training_rows": n,
@@ -910,7 +1022,84 @@ def _forecast_ward_pollutant(
         "preds_q90": preds_q90,
         "confidence": confidence,
         "residual_std": residual_std,
+        "nowcast_idx": nowcast_idx,
+        "nowcast_tolerance_ok": nowcast_tolerance_ok,
+        "nowcast_target_ts": nowcast_target_ts,
+        "nowcast_status": nowcast_status,
+        "nowcast_candidates": nowcast_candidates,
     }
+
+
+def _select_nowcast_production_method(
+    ward_id: int, pollutant: str, model_version: str, nowcast_candidates: dict[str, dict]
+) -> tuple[str, dict, bool, int]:
+    """Decides which candidate's prediction becomes the actual +1h production
+    value for this cycle, using the periodic leakage-free backtest
+    (nowcast_backtest_results — computed by ingest/scripts/nowcast_backtest.py,
+    NOT recomputed here) rather than any single-cycle retrospective point.
+
+    "passed" must never collapse to "LightGBM won" - a good baseline that
+    LightGBM fails to beat by DEFAULT_MIN_MAE_IMPROVEMENT_PCT is still a
+    perfectly valid *selected* method, not a reason to fall back to plain
+    persistence. Plain persistence is reserved specifically for "no
+    trustworthy backtest exists at all" (missing, stale, or version-mismatched
+    result), never used to mean "a baseline lost to LightGBM".
+
+    Returns (method_name, prediction_dict, backtest_passed, backtest_samples).
+    """
+    backtest = db.get_nowcast_backtest_result(ward_id, pollutant)
+    fresh = False
+    if backtest is not None:
+        try:
+            data_through = pd.Timestamp(backtest["data_through"]).to_pydatetime()
+            age_days = (datetime.now(timezone.utc) - data_through).total_seconds() / 86400.0
+            fresh = (
+                backtest.get("model_version") == model_version
+                and backtest.get("methodology_version") == NOWCAST_METHODOLOGY_VERSION
+                and age_days <= NOWCAST_BACKTEST_REFRESH_DAYS
+            )
+        except (KeyError, ValueError, TypeError):
+            fresh = False
+
+    if fresh and backtest.get("passed") and backtest.get("best_candidate") in nowcast_candidates:
+        selected = backtest["best_candidate"]
+        return selected, nowcast_candidates[selected], True, int(backtest.get("sample_size") or 0)
+
+    # No fresh, passed backtest result — fall back to persistence, the safe
+    # conservative default. Never described as validated.
+    fallback = nowcast_candidates.get("persistence")
+    if fallback is None:
+        # persistence is always in nowcast_candidates when any candidate is
+        # eligible at all (it's a closed-form baseline, never gated) — this
+        # branch only fires if nowcast_candidates itself is empty, which
+        # run() already guards against via nowcast_status == "available".
+        fallback = {"value": 0.0, "lower": None, "upper": None}
+    return "persistence", fallback, False, 0
+
+
+def _score_pending_nowcast_shadows(hourly_by_pollutant: dict[str, pd.DataFrame]) -> int:
+    """Fills in actual_value for shadow-log rows whose valid_at has passed,
+    using the SAME hourly ward-aggregation (_hourly_ward_pollutant) the rest
+    of this pipeline already uses — never a raw exact-timestamp match, and
+    never attributes a nearby-but-mismatched reading. Rows with no matching
+    hourly bucket are left unscored (correct — not every predicted hour has
+    a real reading, especially for a currently-stale station)."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    pending = db.get_pending_nowcast_shadows(now_iso)
+    scored = 0
+    for row in pending:
+        hourly = hourly_by_pollutant.get(row["pollutant"])
+        if hourly is None or hourly.empty:
+            continue
+        bucket_ts = pd.Timestamp(row["valid_at"]).floor("h")
+        match = hourly[(hourly["ts"] == bucket_ts) & (hourly["ward_id"] == row["ward_id"])]
+        if match.empty:
+            continue
+        actual_value = float(match["value"].iloc[0])
+        scored_at = datetime.now(timezone.utc).isoformat()
+        db.score_nowcast_shadow(row["id"], actual_value, bucket_ts.isoformat(), scored_at)
+        scored += 1
+    return scored
 
 
 def run(city_code: str | None = None) -> dict:
@@ -979,6 +1168,12 @@ def run(city_code: str | None = None) -> dict:
                     summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant})
                     continue
 
+                nowcast_status = result["nowcast_status"]
+                nowcast_idx = result["nowcast_idx"]
+                nowcast_valid_at = (
+                    result["future_idx"][nowcast_idx].isoformat() if nowcast_status == "available" else None
+                )
+
                 run_id = db.insert_forecast_run(
                     {
                         "city_id": city["id"],
@@ -995,16 +1190,50 @@ def run(city_code: str | None = None) -> dict:
                         "validation_metrics": result["validation_metrics"],
                         "max_validated_horizon_hours": result["max_validated_horizon_hours"],
                         "beats_persistence": result["beats_persistence"],
+                        "nowcast_target_ts": result["nowcast_target_ts"].isoformat(),
+                        "nowcast_valid_at": nowcast_valid_at,
+                        "nowcast_generation_status": nowcast_status,
                     }
                 )
+
+                # Part D: which candidate becomes the actual +1h production
+                # value, decided from the periodic leakage-free backtest, not
+                # a single-cycle retrospective point.
+                nowcast_method = nowcast_pred = None
+                nowcast_backtest_passed = False
+                nowcast_backtest_samples = 0
+                if nowcast_status == "available":
+                    nowcast_method, nowcast_pred, nowcast_backtest_passed, nowcast_backtest_samples = (
+                        _select_nowcast_production_method(
+                            result["ward_id"], pollutant, result["model_version"], result["nowcast_candidates"]
+                        )
+                    )
 
                 rows = []
                 # Gaussian fallback Z — only used when quantile models failed
                 _z_fallback = UNCERTAINTY_Z * (result["residual_std"] or 0)
                 has_quantiles = result["preds_q10"] is not None and result["preds_q90"] is not None
                 for i, (t, excess_pred) in enumerate(zip(result["future_idx"], result["preds"])):
+                    is_nowcast_row = nowcast_status == "available" and i == nowcast_idx
+                    if is_nowcast_row:
+                        # Overrides the main 6-48h trajectory's value at this
+                        # one row with whichever method the backtest actually
+                        # selected for +1h specifically — may differ from
+                        # whatever the main forecast used for the whole
+                        # trajectory (Part D).
+                        excess_pred = nowcast_pred["value"]
                     predicted = max(result["latest_baseline"] + float(excess_pred), 0.0)
-                    if has_quantiles:
+                    if is_nowcast_row:
+                        # The nowcast row's bounds come EXCLUSIVELY from
+                        # whichever candidate was actually selected — never
+                        # borrowed from the main forecast's LightGBM/Gaussian
+                        # bounds below, which describe a different method's
+                        # prediction and would misrepresent uncertainty for
+                        # a baseline candidate that has no calibrated
+                        # interval of its own (null stays null, honestly).
+                        lower_bound = round(max(result["latest_baseline"] + nowcast_pred["lower"], 0.0), 1) if nowcast_pred["lower"] is not None else None
+                        upper_bound = round(result["latest_baseline"] + nowcast_pred["upper"], 1) if nowcast_pred["upper"] is not None else None
+                    elif has_quantiles:
                         # Quantile LightGBM bounds (q10 / q90): asymmetric and
                         # heteroscedastic — wider during episodes, narrower in
                         # clean air, matching PM2.5's right-skewed distribution.
@@ -1028,7 +1257,12 @@ def run(city_code: str | None = None) -> dict:
                         "lower_bound": lower_bound,
                         "upper_bound": upper_bound,
                         "forecast_run_id": run_id,
+                        "is_nowcast_point": is_nowcast_row,
                     }
+                    if is_nowcast_row:
+                        row["nowcast_method"] = nowcast_method
+                        row["nowcast_backtest_samples"] = nowcast_backtest_samples
+                        row["nowcast_backtest_passed"] = nowcast_backtest_passed
                     if pollutant == "pm25":
                         # legacy column, kept populated for backward
                         # compatibility with fetchForecast/ForecastChart.
@@ -1036,9 +1270,41 @@ def run(city_code: str | None = None) -> dict:
                     rows.append(row)
                 db.replace_forecasts(result["ward_id"], pollutant, rows)
 
+                # Part C: log every ELIGIBLE candidate's prediction (not just
+                # the one selected for production) so any of them can be
+                # judged later against the same matched real observation —
+                # logging only the winner would be selection bias.
+                if nowcast_status == "available":
+                    shadow_rows = [
+                        {
+                            "forecast_run_id": run_id,
+                            "ward_id": result["ward_id"],
+                            "pollutant": pollutant,
+                            "candidate_method": name,
+                            "predicted_value": round(
+                                max(result["latest_baseline"] + pred["value"], 0.0), 1
+                            ),
+                            "lower_bound": round(max(result["latest_baseline"] + pred["lower"], 0.0), 1) if pred["lower"] is not None else None,
+                            "upper_bound": round(result["latest_baseline"] + pred["upper"], 1) if pred["upper"] is not None else None,
+                            "valid_at": nowcast_valid_at,
+                        }
+                        for name, pred in result["nowcast_candidates"].items()
+                    ]
+                    db.insert_nowcast_shadow_rows(shadow_rows)
+
                 summary["runs"] += 1
                 if result["beats_persistence"]:
                     summary["beats_persistence"] += 1
+
+        # Part C: score shadow predictions whose valid_at has now passed,
+        # once per city (using that city's own freshly-fetched readings —
+        # correct even with multiple cities, since a pending row for a ward
+        # outside this city simply won't match and is left for its own
+        # city's turn or the next hourly cycle).
+        hourly_by_pollutant = {p: _hourly_ward_pollutant(readings, p) for p in cfg["enabled_pollutants"]}
+        scored = _score_pending_nowcast_shadows(hourly_by_pollutant)
+        if scored:
+            log.info("nowcast shadow log: scored %d pending prediction(s) for city %s", scored, city["city_code"])
 
     summary["finished_at"] = datetime.now(timezone.utc).isoformat()
     log.info("forecast done: %s", summary)

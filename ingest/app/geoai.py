@@ -54,7 +54,7 @@ class EntityRef(BaseModel):
 
 class SetTimeAction(BaseModel):
     type: Literal["set_time"]
-    time_mode: Literal["now", "24h", "48h"] | None = None
+    time_mode: Literal["now", "1h", "24h", "48h"] | None = None
     obs_slot: Literal["now", "-3h", "-6h", "-12h", "-24h"] | None = None
 
 
@@ -115,6 +115,8 @@ query.target must match what you're filtering: "wards" or "stations" for \
 pollutant thresholds (aqi/pm25/pm10/no2), "incidents" for severity/source \
 category filters. Incidents do not carry pollutant readings - do not put a \
 pollutant threshold on target "incidents".
+
+Map "next hour", "one hour ahead", "+1h", and "in an hour" to time_mode: "1h".
 
 If the question can't be mapped to this action set, return a single \
 unsupported action with a short, honest reason.

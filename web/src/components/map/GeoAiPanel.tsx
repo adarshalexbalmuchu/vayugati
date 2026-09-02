@@ -5,9 +5,23 @@ import type { Incident } from '../../lib/incidents'
 import type { StationMarker, WardSummary } from '../../lib/data'
 import { type MapPollutant, type MapTimeMode, type ObsSlot } from '../../lib/mapRules'
 import { type Severity, type SourceCategory } from '../../lib/incidentRules'
+import { NOWCAST_FEATURE_ENABLED } from '../../lib/nowcastConfig'
 import { findWithinRadius, matchesThreshold, type RadiusMatch } from '../../lib/spatialQuery'
 import { Stat } from '../ui'
 import type { MapViewMode } from './MapToolbar'
+
+/** Gating must live where the action executes, not just where the toolbar
+ *  button is drawn - hiding "+1h" from MapToolbar.tsx doesn't stop GeoAI
+ *  from independently emitting {type: 'set_time', time_mode: '1h'}. Collapses
+ *  the whole response to a single unsupported action, same pattern the
+ *  backend validator already uses for other invalid combinations. */
+function gateNowcastResponse(response: GeoAiResponse): GeoAiResponse {
+  if (NOWCAST_FEATURE_ENABLED) return response
+  const hasNowcastTimeMode = response.actions.some((a) => a.type === 'set_time' && a.time_mode === '1h')
+  if (!hasNowcastTimeMode) return response
+  const reason = 'The +1h nowcast is still undergoing validation.'
+  return { explanation: reason, actions: [{ type: 'unsupported', reason }] }
+}
 
 const EXAMPLE_QUESTIONS = [
   'Wards near Anand Vihar with AQI over 200',
@@ -189,12 +203,13 @@ export default function GeoAiPanel({
       ...stations.map((s) => ({ type: 'station' as const, id: String(s.id), name: s.name })),
     ]
 
-    const result = await askGeoAi(trimmed, entities)
+    const rawResult = await askGeoAi(trimmed, entities)
     setLoading(false)
-    if (!result) {
+    if (!rawResult) {
       setError("Couldn't reach GeoAI — try again in a moment.")
       return
     }
+    const result = gateNowcastResponse(rawResult)
     setResponse(result)
     executeActions(result.actions)
   }

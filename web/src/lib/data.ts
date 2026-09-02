@@ -563,6 +563,30 @@ export interface ForecastPoint {
    *  below doesn't fetch it - only fetchAllForecasts() (Map/Overview,
    *  multi-pollutant) does. */
   predicted_value?: number | null
+  /** Ward-level nowcasting (+1h). True on at most one row per forecast_run_id
+   *  (forecasts_one_nowcast_point_per_run partial unique index) - the row
+   *  the backend selected as closest to generated_at+1h within tolerance,
+   *  never independently recomputed client-side against Date.now(). */
+  is_nowcast_point: boolean
+  lower_bound: number | null
+  upper_bound: number | null
+  /** Which candidate (lightgbm/persistence/diurnal/same_hour_yesterday/
+   *  rolling_24h_avg) actually produced this row's value - only populated on
+   *  the is_nowcast_point row. */
+  nowcast_method: string | null
+  nowcast_backtest_samples: number | null
+  /** Never collapses to "lightgbm won" - true whenever the periodic backtest
+   *  (ingest/scripts/nowcast_backtest.py) selected ANY candidate, baseline or
+   *  model, with enough samples and a met performance bar. False means the
+   *  persistence fallback is showing, not that no number exists. */
+  nowcast_backtest_passed: boolean | null
+  /** forecast_runs provenance, joined via forecast_run_id - the anchor
+   *  reading's own timestamp (training_period_end), NOT generated_at+1h;
+   *  these two can differ whenever the anchor lags generation. */
+  anchorObservedAt: string | null
+  forecastGeneratedAt: string | null
+  forecastMethod: string | null
+  dataQualityStatus: string | null
 }
 
 /**
@@ -571,15 +595,61 @@ export interface ForecastPoint {
  * ward side by side, so an unscoped query here would silently mix a
  * different pollutant's numbers into what this chart presents as PM2.5.
  */
+/** forecasts row shape as returned by supabase-js with the forecast_runs
+ *  embed - the embed comes back as a nested object keyed by the related
+ *  table name, not flattened, so callers map it into ForecastPoint's flat
+ *  anchorObservedAt/forecastGeneratedAt/forecastMethod/dataQualityStatus. */
+interface _ForecastRow {
+  horizon_ts: string
+  pm25_pred: number | null
+  baseline_pred: number | null
+  local_excess: number | null
+  confidence: number | null
+  model_version: string | null
+  predicted_value?: number | null
+  is_nowcast_point: boolean
+  lower_bound: number | null
+  upper_bound: number | null
+  nowcast_method: string | null
+  nowcast_backtest_samples: number | null
+  nowcast_backtest_passed: boolean | null
+  forecast_runs: { training_period_end: string | null; generated_at: string; method: string; data_quality_status: string } | null
+}
+
+function _mapForecastRow(row: _ForecastRow): ForecastPoint {
+  return {
+    horizon_ts: row.horizon_ts,
+    pm25_pred: row.pm25_pred,
+    baseline_pred: row.baseline_pred,
+    local_excess: row.local_excess,
+    confidence: row.confidence,
+    model_version: row.model_version,
+    predicted_value: row.predicted_value,
+    is_nowcast_point: row.is_nowcast_point,
+    lower_bound: row.lower_bound,
+    upper_bound: row.upper_bound,
+    nowcast_method: row.nowcast_method,
+    nowcast_backtest_samples: row.nowcast_backtest_samples,
+    nowcast_backtest_passed: row.nowcast_backtest_passed,
+    anchorObservedAt: row.forecast_runs?.training_period_end ?? null,
+    forecastGeneratedAt: row.forecast_runs?.generated_at ?? null,
+    forecastMethod: row.forecast_runs?.method ?? null,
+    dataQualityStatus: row.forecast_runs?.data_quality_status ?? null,
+  }
+}
+
+const FORECAST_ROW_SELECT =
+  'horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, is_nowcast_point, lower_bound, upper_bound, nowcast_method, nowcast_backtest_samples, nowcast_backtest_passed, forecast_runs(training_period_end, generated_at, method, data_quality_status)'
+
 export async function fetchForecast(wardId: number): Promise<ForecastPoint[]> {
   const { data } = await supabase
     .from('forecasts')
-    .select('horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version')
+    .select(FORECAST_ROW_SELECT)
     .eq('ward_id', wardId)
     .eq('pollutant', 'pm25')
     .order('horizon_ts')
     .limit(48)
-  return data ?? []
+  return ((data ?? []) as unknown as _ForecastRow[]).map(_mapForecastRow)
 }
 
 // ── wind data (Phase 1I: wind flow layer) ────────────────────────────────────
@@ -676,20 +746,20 @@ export const WHO_AQG_PM25_24H = 15
 export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): Promise<Map<number, WardForecastSummary>> {
   const { data } = await supabase
     .from('forecasts')
-    .select('ward_id, horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, predicted_value')
+    .select(`ward_id, predicted_value, ${FORECAST_ROW_SELECT}`)
     .eq('pollutant', pollutant)
     .gte('horizon_ts', new Date().toISOString())
     .order('horizon_ts')
     .limit(48 * 300)
   const byWard = new Map<number, WardForecastSummary>()
-  for (const row of data ?? []) {
-    const wardId = row.ward_id as number
+  for (const row of (data ?? []) as unknown as (_ForecastRow & { ward_id: number })[]) {
+    const wardId = row.ward_id
     let entry = byWard.get(wardId)
     if (!entry) {
       entry = { wardId, pollutant, points: [], peakPred: null, peakExcess: null, peakTs: null, hoursToSevere: null, hoursToVeryPoor: null, hoursToNaaqs: null }
       byWard.set(wardId, entry)
     }
-    entry.points.push(row as ForecastPoint)
+    entry.points.push(_mapForecastRow(row))
   }
   const now = Date.now()
   for (const entry of byWard.values()) {
@@ -1093,7 +1163,7 @@ export interface GeoAiEntityRef {
 }
 
 export type GeoAiAction =
-  | { type: 'set_time'; time_mode: 'now' | '24h' | '48h' | null; obs_slot: 'now' | '-3h' | '-6h' | '-12h' | '-24h' | null }
+  | { type: 'set_time'; time_mode: 'now' | '1h' | '24h' | '48h' | null; obs_slot: 'now' | '-3h' | '-6h' | '-12h' | '-24h' | null }
   | {
       type: 'set_filters'
       pollutant: 'aqi' | 'pm25' | 'pm10' | 'no2' | null

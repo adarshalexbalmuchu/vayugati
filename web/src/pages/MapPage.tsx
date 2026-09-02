@@ -78,6 +78,7 @@ import {
   isValidDelhiCoordinate,
   MAP_POLLUTANT_LABEL,
   nearestForecastPoint,
+  nowcastPoint,
   nearestStationTo,
   OBS_SLOT_HOURS,
   OBS_SLOT_LABEL,
@@ -484,9 +485,11 @@ export default function MapPage() {
   // logic resolveWardReading uses for ward markers, so a station's forecast
   // number in 24h/48h mode matches what that ward's own marker would show.
   const stationForecastPoint =
-    timeMode !== 'now' && forecastRelevantWardId != null
-      ? nearestForecastPoint(forecasts.get(forecastRelevantWardId), timeMode === '24h' ? 24 : 48)
-      : null
+    timeMode === '1h' && forecastRelevantWardId != null
+      ? nowcastPoint(forecasts.get(forecastRelevantWardId))
+      : timeMode !== 'now' && forecastRelevantWardId != null
+        ? nearestForecastPoint(forecasts.get(forecastRelevantWardId), timeMode === '24h' ? 24 : 48)
+        : null
   const stationForecastValue = stationForecastPoint?.predicted_value ?? stationForecastPoint?.pm25_pred ?? null
 
   const severeWards = useMemo(() => severeWardsWithin(wards, forecasts, 36), [wards, forecasts])
@@ -521,7 +524,7 @@ export default function MapPage() {
               const colorOverride =
                 layers.sourceAttribution && w.dominant_source
                   ? (SOURCE_CATEGORY_HEX[w.dominant_source as SourceCategory] ?? null)
-                  : timeMode !== 'now'
+                  : reading.colorMode === 'status'
                     ? HOTSPOT_STATUS_HEX[reading.status ?? 'no_data']
                     : null
               return {
@@ -1126,8 +1129,10 @@ export default function MapPage() {
       forecastPeak: wardForecast?.peakPred ?? null,
       forecastPollutantLabel: MAP_POLLUTANT_LABEL[forecastPollutant],
       selectedMetricLabel: MAP_POLLUTANT_LABEL[pollutant],
+      timeMode,
+      nowcastPoint: nowcastPoint(wardForecast),
     }
-  }, [selection, wardBoundaries, stationHealth, stations, stationHealthById, incidents, forecasts, pollutant, forecastPollutant])
+  }, [selection, wardBoundaries, stationHealth, stations, stationHealthById, incidents, forecasts, pollutant, forecastPollutant, timeMode])
 
   // Ask the ingest service to pull fresh data from data.gov.in before
   // re-fetching from Supabase. The server enforces a 10-min cooldown so
@@ -1369,6 +1374,7 @@ export default function MapPage() {
                     <SelectedWardPanel
                       ward={selectedWard}
                       forecast={forecasts.get(selectedWard.id)}
+                      timeMode={timeMode}
                       pollutant={pollutant}
                       linkedIncidents={incidents.filter((i) => i.ward_id === selectedWard.id)}
                       linkedDispatches={dispatchPage.rows.filter((d) => d.ward_name === selectedWard.name)}
@@ -1386,6 +1392,7 @@ export default function MapPage() {
                       pollutant={pollutant}
                       timeMode={timeMode}
                       forecastPeak={stationForecastValue}
+                      nowcastPoint={timeMode === '1h' ? stationForecastPoint : null}
                       forecastPollutantLabel={MAP_POLLUTANT_LABEL[forecastPollutant]}
                       latestForecastRun={latestForecastRunState.data}
                       latestForecastRunLoading={latestForecastRunState.loading}

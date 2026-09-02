@@ -128,6 +128,61 @@ def test_historical_time_downgrades_threshold_query(monkeypatch):
     assert "historical" in result.actions[1].reason.lower() or "forecast" in result.actions[1].reason.lower()
 
 
+def test_parses_next_hour_into_1h_time_mode(monkeypatch):
+    """Ward-level nowcasting (+1h): 'in the next hour' must resolve to
+    time_mode="1h", and — since this is a plain display query with no
+    threshold — must NOT be downgraded (spatialQuery.ts's matchesThreshold()
+    was never updated to use the nowcast value, so a THRESHOLD query here
+    would have the same live-data mismatch problem as historical/24h/48h -
+    see test_next_hour_threshold_query_is_still_downgraded below - but a
+    bare display query carries no such risk)."""
+    parsed_output = geoai.GeoAiResponse(
+        explanation="Showing PM2.5 wards near Anand Vihar in the next hour.",
+        actions=[
+            geoai.SetTimeAction(type="set_time", time_mode="1h"),
+            geoai.SetFiltersAction(type="set_filters", pollutant="pm25"),
+            geoai.QueryAction(
+                type="query", target="wards", near_ref=geoai.EntityRef(type="ward", id="ward_1"), radius_km=3
+            ),
+        ],
+    )
+    _patch_anthropic(monkeypatch, parsed_output=parsed_output)
+    entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
+    result = geoai.parse_geo_query("Show PM2.5 wards near Anand Vihar in the next hour", entities)
+
+    assert [a.type for a in result.actions] == ["set_time", "set_filters", "query"]
+    assert result.actions[0].time_mode == "1h"
+
+
+def test_next_hour_threshold_query_is_still_downgraded(monkeypatch):
+    """A threshold query under time_mode="1h" hits the exact same live-data
+    mismatch the historical/24h/48h downgrade already protects against —
+    the frontend's spatial-query matcher filters live ward data regardless
+    of time_mode, so this must be downgraded exactly like the existing
+    obs_slot="-24h" case, not silently exempted just because "1h" sounds
+    forward-looking rather than historical."""
+    parsed_output = geoai.GeoAiResponse(
+        explanation="Showing wards near Anand Vihar with PM2.5 above 200 in the next hour.",
+        actions=[
+            geoai.SetTimeAction(type="set_time", time_mode="1h"),
+            geoai.QueryAction(
+                type="query",
+                target="wards",
+                near_ref=geoai.EntityRef(type="ward", id="ward_1"),
+                radius_km=3,
+                pollutant="pm25",
+                op=">",
+                threshold=200,
+            ),
+        ],
+    )
+    _patch_anthropic(monkeypatch, parsed_output=parsed_output)
+    entities = [{"type": "ward", "id": "ward_1", "name": "Anand Vihar"}]
+    result = geoai.parse_geo_query("wards near Anand Vihar with PM2.5 above 200 in the next hour", entities)
+
+    assert [a.type for a in result.actions] == ["set_time", "unsupported"]
+
+
 def test_historical_time_allows_non_threshold_query():
     """A pure spatial query (no threshold) under a historical time context is
     still fine - it doesn't depend on any pollutant value, only location,

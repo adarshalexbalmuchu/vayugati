@@ -519,6 +519,71 @@ def insert_forecast_run(row: dict) -> int:
     return _with_retry(lambda: client().table("forecast_runs").insert(row).execute().data[0]["id"])
 
 
+# ── ward-level nowcasting (+1h) ──────────────────────────────────────────────
+
+def get_nowcast_backtest_result(ward_id: int, pollutant: str) -> dict | None:
+    """Latest nowcast_backtest_results row for one ward+pollutant, or None if
+    the periodic backtest script (ingest/scripts/nowcast_backtest.py) hasn't
+    run for this pair yet. One row per (ward_id, pollutant) — upserted, not
+    accumulated — so this is always simply the current row, if any."""
+    rows = _with_retry(
+        lambda: client()
+        .table("nowcast_backtest_results")
+        .select("*")
+        .eq("ward_id", ward_id)
+        .eq("pollutant", pollutant)
+        .limit(1)
+        .execute()
+        .data
+    )
+    return rows[0] if rows else None
+
+
+def upsert_nowcast_backtest_result(row: dict) -> None:
+    """Called only by ingest/scripts/nowcast_backtest.py — one row per
+    (ward_id, pollutant), replaced wholesale each time the script runs."""
+    _with_retry(
+        lambda: client().table("nowcast_backtest_results").upsert(row, on_conflict="ward_id,pollutant").execute()
+    )
+
+
+def insert_nowcast_shadow_rows(rows: list[dict]) -> None:
+    """One row per eligible candidate method for one ward+pollutant+cycle.
+    The unique (forecast_run_id, ward_id, pollutant, valid_at, candidate_method)
+    constraint makes a retried run() idempotent rather than duplicating rows —
+    upsert (ignore-duplicates) rather than a plain insert so a retry doesn't error."""
+    if not rows:
+        return
+    _with_retry(
+        lambda: client()
+        .table("nowcast_shadow_log")
+        .upsert(rows, on_conflict="forecast_run_id,ward_id,pollutant,valid_at,candidate_method", ignore_duplicates=True)
+        .execute()
+    )
+
+
+def get_pending_nowcast_shadows(before_iso: str, limit: int = 500) -> list[dict]:
+    """Shadow-log rows whose valid_at has passed and haven't been scored yet."""
+    return _fetch_all(
+        lambda: client()
+        .table("nowcast_shadow_log")
+        .select("id, ward_id, pollutant, valid_at")
+        .lte("valid_at", before_iso)
+        .is_("actual_value", "null")
+        .limit(limit)
+    )
+
+
+def score_nowcast_shadow(row_id: int, actual_value: float, actual_observed_at: str, scored_at: str) -> None:
+    _with_retry(
+        lambda: client()
+        .table("nowcast_shadow_log")
+        .update({"actual_value": actual_value, "actual_observed_at": actual_observed_at, "scored_at": scored_at})
+        .eq("id", row_id)
+        .execute()
+    )
+
+
 def replace_attribution(ward_id: int, row: dict) -> None:
     """Keep one current attribution per ward."""
     _with_retry(lambda: client().table("attributions").delete().eq("ward_id", ward_id).execute())

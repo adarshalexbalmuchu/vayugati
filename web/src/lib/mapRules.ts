@@ -6,9 +6,10 @@
 import { haversineMeters, POLLUTANT_LABEL } from './incidentRules'
 import { hotspotStatus, type HotspotStatus, type TimeWindowHours } from './overviewRules'
 import type { ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
+import type { FreshnessClass } from './dataQualityRules'
 
 export type MapPollutant = 'aqi' | 'pm25' | 'pm10' | 'no2'
-export type MapTimeMode = 'now' | '24h' | '48h'
+export type MapTimeMode = 'now' | '1h' | '24h' | '48h'
 
 /** Historical observation slot — 'now' means live readings; the others scrub
  *  backward through the readings table at the given offset.  Forecast time
@@ -171,6 +172,47 @@ export interface WardReadingResult {
    *  used as an honestly-labelled stand-in - only ever true for AQI (which
    *  forecast.py never computes), never a fabricated AQI forecast. */
   isProxy: boolean
+  /** Ward-level nowcasting (+1h) only - null in every other timeMode.
+   *  Anchor provenance is a nowcast-specific concept: at 24h/48h the model
+   *  has long since stopped leaning on the anchor reading, so a freshness
+   *  label there would be noise, not signal. */
+  anchorFreshness: FreshnessClass | null
+  anchorObservedAt: string | null
+}
+
+// Kept in sync with FRESH_THRESHOLD_MINUTES / DELAYED_STALE_BOUNDARY_MINUTES
+// in dataQualityRules.ts (duplicated, not imported - that module already
+// imports from mapRules.ts, so importing the values back would be circular;
+// only the FreshnessClass TYPE is imported above, which is safe - import
+// type is erased at compile time and never creates a runtime circularity).
+const ANCHOR_FRESH_THRESHOLD_MINUTES = 60
+const ANCHOR_DELAYED_STALE_BOUNDARY_MINUTES = 180
+
+/** Classifies how stale the real reading a nowcast point is anchored to is,
+ *  computed live from the anchor timestamp (not a frozen generation-time
+ *  age) - same fresh/delayed/stale cutoffs stationFreshnessClass() uses, so
+ *  "stale" means the same thing everywhere in this app. `nowMs` is
+ *  injectable for testing; defaults to the real current time. */
+export function anchorFreshnessClass(anchorObservedAt: string | null, nowMs: number = Date.now()): FreshnessClass {
+  if (!anchorObservedAt) return 'no_reading'
+  const observedMs = new Date(anchorObservedAt).getTime()
+  if (!Number.isFinite(observedMs)) return 'unavailable'
+  const ageMinutes = (nowMs - observedMs) / 60_000
+  if (ageMinutes < -5) return 'unavailable'  // future timestamp beyond clock-skew tolerance is not a valid anchor
+  if (ageMinutes < ANCHOR_FRESH_THRESHOLD_MINUTES) return 'fresh'
+  if (ageMinutes < ANCHOR_DELAYED_STALE_BOUNDARY_MINUTES) return 'delayed'
+  return 'stale'
+}
+
+/** The ward's ONE backend-selected +1h nowcast point (forecasts.is_nowcast_point
+ *  = true) - never independently recomputed as "nearest to Date.now()" here.
+ *  The backend already decided which row is "1h from generation time" once,
+ *  correctly anchored to generated_at rather than the (possibly stale)
+ *  anchor reading's own timestamp (see forecast._select_nowcast_point) - the
+ *  frontend, shadow logger, and shadow scorer all read that single decision
+ *  rather than each computing their own answer, which could disagree. */
+export function nowcastPoint(forecast: WardForecastSummary | undefined): ForecastPoint | null {
+  return forecast?.points.find((p) => p.is_nowcast_point) ?? null
 }
 
 /** Marker colour stays AQI-only in "now" mode (there is no established
@@ -195,6 +237,31 @@ export function resolveWardReading(
       aqiForColor: ward.aqi,
       status: null,
       isProxy: false,
+      anchorFreshness: null,
+      anchorObservedAt: null,
+    }
+  }
+
+  if (timeMode === '1h') {
+    // NOT hotspotStatus's 12-48h crossing-risk path - that machinery takes a
+    // closed TimeWindowHours union that doesn't include 1h, and answers a
+    // different question than a single nowcast point ("risk of crossing
+    // within this window" vs. "what's the value right now"). Colours by the
+    // ward's CURRENT AQI bucket instead, matching 'now' mode's colouring.
+    const point = nowcastPoint(forecast)
+    const freshness = anchorFreshnessClass(point?.anchorObservedAt ?? null)
+    const usableAnchor = freshness === 'fresh' || freshness === 'delayed'
+    const isProxy = pollutant === 'aqi'
+    const forecastPollutantLabel = forecast ? MAP_POLLUTANT_LABEL[forecast.pollutant] : POLLUTANT_LABEL.pm25
+    return {
+      value: usableAnchor ? (point?.predicted_value ?? point?.pm25_pred ?? null) : null,
+      unit: isProxy ? `µg/m³ (${forecastPollutantLabel} nowcast, risk signal)` : 'µg/m³ (nowcast)',
+      colorMode: 'aqi',
+      aqiForColor: ward.aqi,
+      status: null,
+      isProxy,
+      anchorFreshness: freshness,
+      anchorObservedAt: point?.anchorObservedAt ?? null,
     }
   }
 
@@ -218,6 +285,8 @@ export function resolveWardReading(
     aqiForColor: null,
     status,
     isProxy,
+    anchorFreshness: null,
+    anchorObservedAt: null,
   }
 }
 
@@ -279,6 +348,17 @@ export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMod
   }
   if (timeMode === 'now') {
     return pollutant === 'aqi' ? 'Markers show current station AQI.' : `Markers show latest station ${MAP_POLLUTANT_LABEL[pollutant]} concentration (µg/m³).`
+  }
+  if (timeMode === '1h') {
+    // Unlike 24h/48h (where colour and number both describe the same
+    // forecast), +1h's colour reflects the CURRENT AQI bucket while the
+    // number is a future predicted concentration - and unlike ward markers,
+    // station markers never respond to timeMode at all (they always show
+    // live/historical readings) - both distinctions need to be explicit here
+    // since this is the only place this mode's meaning is communicated.
+    return pollutant === 'aqi'
+      ? "Ward markers: number shows the predicted PM2.5 concentration 1h from now (µg/m³), used as a risk signal - AQI itself is not forecast; colour still reflects the ward's current AQI category. Station markers are unaffected and continue showing live readings."
+      : `Ward markers: number shows the predicted ${MAP_POLLUTANT_LABEL[pollutant]} concentration 1h from now (µg/m³); colour reflects current AQI. Station markers are unaffected and continue showing live readings.`
   }
   const horizonLabel = timeMode === '24h' ? '24h' : '48h'
   if (pollutant === 'aqi') {

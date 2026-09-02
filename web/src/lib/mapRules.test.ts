@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  anchorFreshnessClass,
   changeMarkerBadge,
   classifyChangeDirection,
   forecastPollutantFor,
@@ -7,6 +8,7 @@ import {
   markerMeaningLabel,
   nearestForecastPoint,
   nearestStationTo,
+  nowcastPoint,
   resolveWardReading,
   stationReadingValue,
   wardDataStatus,
@@ -21,6 +23,16 @@ function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
     local_excess: null,
     confidence: null,
     model_version: null,
+    is_nowcast_point: false,
+    lower_bound: null,
+    upper_bound: null,
+    nowcast_method: null,
+    nowcast_backtest_samples: null,
+    nowcast_backtest_passed: false,
+    anchorObservedAt: null,
+    forecastGeneratedAt: null,
+    forecastMethod: null,
+    dataQualityStatus: null,
     ...overrides,
   }
 }
@@ -69,6 +81,8 @@ describe('resolveWardReading', () => {
       aqiForColor: 180,
       status: null,
       isProxy: false,
+      anchorFreshness: null,
+      anchorObservedAt: null,
     })
     expect(resolveWardReading(ward, 'pm10', 'now', undefined).value).toBe(140)
     expect(resolveWardReading(ward, 'no2', 'now', undefined).value).toBe(30)
@@ -112,6 +126,118 @@ describe('resolveWardReading', () => {
     expect(resolveWardReading(ward, 'pm25', '24h', f).isProxy).toBe(false)
     expect(resolveWardReading(ward, 'pm10', '24h', f).isProxy).toBe(false)
   })
+
+  describe('"1h" mode (ward-level nowcasting)', () => {
+    it('colours by the CURRENT AQI bucket, not a crossing-risk status tier - unlike 24h/48h', () => {
+      const fresh = new Date(Date.now() - 5 * 60_000).toISOString() // 5 min ago
+      const f = forecast({
+        points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: fresh })],
+      })
+      const result = resolveWardReading(ward, 'pm25', '1h', f)
+      expect(result.colorMode).toBe('aqi')
+      expect(result.aqiForColor).toBe(ward.aqi)
+      expect(result.status).toBeNull()
+      expect(result.value).toBe(210)
+      expect(result.anchorFreshness).toBe('fresh')
+    })
+
+    it('suppresses the number for every unusable freshness state, not just stale', () => {
+      const staleTs = new Date(Date.now() - 200 * 60_000).toISOString() // 200 min ago
+      const stale = forecast({ points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: staleTs })] })
+      expect(resolveWardReading(ward, 'pm25', '1h', stale).value).toBeNull()
+      expect(resolveWardReading(ward, 'pm25', '1h', stale).anchorFreshness).toBe('stale')
+
+      const noReading = forecast({ points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: null })] })
+      expect(resolveWardReading(ward, 'pm25', '1h', noReading).value).toBeNull()
+      expect(resolveWardReading(ward, 'pm25', '1h', noReading).anchorFreshness).toBe('no_reading')
+
+      const invalidTs = forecast({ points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: 'not-a-date' })] })
+      expect(resolveWardReading(ward, 'pm25', '1h', invalidTs).value).toBeNull()
+      expect(resolveWardReading(ward, 'pm25', '1h', invalidTs).anchorFreshness).toBe('unavailable')
+    })
+
+    it('shows the value when the anchor is merely delayed, not just when fresh', () => {
+      const delayedTs = new Date(Date.now() - 90 * 60_000).toISOString() // 90 min ago
+      const f = forecast({ points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: delayedTs })] })
+      const result = resolveWardReading(ward, 'pm25', '1h', f)
+      expect(result.value).toBe(210)
+      expect(result.anchorFreshness).toBe('delayed')
+    })
+
+    it('flags AQI as a proxy in 1h mode too, same as 24h/48h', () => {
+      const fresh = new Date().toISOString()
+      const f = forecast({ pollutant: 'pm25', points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210, anchorObservedAt: fresh })] })
+      expect(resolveWardReading(ward, 'aqi', '1h', f).isProxy).toBe(true)
+      expect(resolveWardReading(ward, 'aqi', '1h', f).unit).toMatch(/nowcast/i)
+      expect(resolveWardReading(ward, 'pm25', '1h', f).isProxy).toBe(false)
+    })
+
+    it('returns no_reading with a null value when there is no forecast data at all', () => {
+      const result = resolveWardReading(ward, 'pm25', '1h', undefined)
+      expect(result.value).toBeNull()
+      expect(result.status).toBeNull()
+      expect(result.anchorFreshness).toBe('no_reading')
+    })
+  })
+})
+
+describe('nowcastPoint', () => {
+  it('finds the row flagged is_nowcast_point, ignoring all others', () => {
+    const f = forecast({
+      points: [
+        point({ horizon_ts: hoursFromNow(6), is_nowcast_point: false, predicted_value: 100 }),
+        point({ horizon_ts: hoursFromNow(1), is_nowcast_point: true, predicted_value: 210 }),
+        point({ horizon_ts: hoursFromNow(24), is_nowcast_point: false, predicted_value: 300 }),
+      ],
+    })
+    expect(nowcastPoint(f)?.predicted_value).toBe(210)
+  })
+
+  it('returns null when no row is flagged - never falls back to a "nearest" computation', () => {
+    const f = forecast({ points: [point({ horizon_ts: hoursFromNow(1), is_nowcast_point: false })] })
+    expect(nowcastPoint(f)).toBeNull()
+  })
+
+  it('returns null when there is no forecast at all', () => {
+    expect(nowcastPoint(undefined)).toBeNull()
+  })
+})
+
+describe('anchorFreshnessClass', () => {
+  it('classifies fresh (< 60 min), delayed (60-180 min), and stale (>= 180 min)', () => {
+    const now = Date.parse('2026-09-01T12:00:00Z')
+    expect(anchorFreshnessClass('2026-09-01T11:59:00Z', now)).toBe('fresh') // 1 min ago
+    expect(anchorFreshnessClass('2026-09-01T11:00:00Z', now)).toBe('delayed') // 60 min ago
+    expect(anchorFreshnessClass('2026-09-01T09:00:00Z', now)).toBe('stale') // 180 min ago
+  })
+
+  it('boundary: exactly 60 minutes is delayed, not fresh', () => {
+    const now = Date.parse('2026-09-01T12:00:00Z')
+    expect(anchorFreshnessClass('2026-09-01T11:00:00Z', now)).toBe('delayed')
+  })
+
+  it('boundary: exactly 180 minutes is stale, not delayed', () => {
+    const now = Date.parse('2026-09-01T12:00:00Z')
+    expect(anchorFreshnessClass('2026-09-01T09:00:00Z', now)).toBe('stale')
+  })
+
+  it('returns no_reading for null', () => {
+    expect(anchorFreshnessClass(null)).toBe('no_reading')
+  })
+
+  it('returns unavailable for an unparseable timestamp', () => {
+    expect(anchorFreshnessClass('not-a-real-date')).toBe('unavailable')
+  })
+
+  it('returns unavailable for a timestamp more than 5 minutes in the future (clock skew tolerance)', () => {
+    const now = Date.parse('2026-09-01T12:00:00Z')
+    expect(anchorFreshnessClass('2026-09-01T12:10:00Z', now)).toBe('unavailable')
+  })
+
+  it('tolerates a small future skew within 5 minutes as fresh', () => {
+    const now = Date.parse('2026-09-01T12:00:00Z')
+    expect(anchorFreshnessClass('2026-09-01T12:02:00Z', now)).toBe('fresh')
+  })
 })
 
 describe('forecastPollutantFor', () => {
@@ -147,6 +273,18 @@ describe('markerMeaningLabel', () => {
     const line = markerMeaningLabel('no2', '48h')
     expect(line).toMatch(/no₂|no2/i)
     expect(line).toMatch(/48h/)
+  })
+
+  it('1h mode: states both the number/colour split AND that station markers are unaffected', () => {
+    const line = markerMeaningLabel('pm25', '1h')
+    expect(line).toMatch(/1h from now/i)
+    expect(line).toMatch(/colour/i)
+    expect(line).toMatch(/station markers/i)
+  })
+
+  it('1h mode: AQI case names it a risk signal, same discipline as 24h/48h', () => {
+    const line = markerMeaningLabel('aqi', '1h')
+    expect(line).toMatch(/risk signal/i)
   })
 })
 

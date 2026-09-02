@@ -1,5 +1,6 @@
 import { ArrowUpRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import type { ForecastPoint } from '../../lib/data'
 import { forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import type { ForecastRunRow } from '../../lib/incidents'
 import {
@@ -12,6 +13,7 @@ import {
   type MapTimeMode,
 } from '../../lib/mapRules'
 import { Skeleton } from '../ui'
+import NowcastBlock from './NowcastBlock'
 
 export interface SelectedStation {
   id: number
@@ -58,6 +60,7 @@ export default function SelectedStationPanel({
   pollutant,
   timeMode,
   forecastPeak,
+  nowcastPoint,
   forecastPollutantLabel,
   latestForecastRun,
   latestForecastRunLoading,
@@ -72,6 +75,10 @@ export default function SelectedStationPanel({
    *  forecastPollutantLabel names - null when no forecast data covers this
    *  ward at all (never fabricated). */
   forecastPeak: number | null
+  /** Ward-level nowcasting (+1h) - the linked ward's is_nowcast_point row,
+   *  null when timeMode isn't '1h' or none is available. Never a station's
+   *  own forecast - this is always the linked ward's data. */
+  nowcastPoint: ForecastPoint | null
   forecastPollutantLabel: string
   /** The linked ward's latest forecast_runs row - same table/query
    *  PredictedIncidentPanel.tsx already uses, just surfaced here too. */
@@ -214,14 +221,16 @@ export default function SelectedStationPanel({
               <div className="mt-1 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
                 <p className="font-semibold text-slate-800">{FORECAST_METHOD_LABEL[method]}</p>
                 <p className="mt-0.5">{forecastFallbackStatus(method, latestForecastRun.beats_persistence)}</p>
-                <p className="mt-1 text-slate-500">
-                  {timeMode === 'now' ? 'Latest cycle' : `${timeMode} forecast peak`}:{' '}
-                  {timeMode === 'now'
-                    ? new Date(latestForecastRun.generated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-                    : forecastPeak != null
-                      ? `${Math.round(forecastPeak)} µg/m³ (${forecastPollutantLabel})`
-                      : 'Not available'}
-                </p>
+                {timeMode !== '1h' && (
+                  <p className="mt-1 text-slate-500">
+                    {timeMode === 'now' ? 'Latest cycle' : `${timeMode} forecast peak`}:{' '}
+                    {timeMode === 'now'
+                      ? new Date(latestForecastRun.generated_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+                      : forecastPeak != null
+                        ? `${Math.round(forecastPeak)} µg/m³ (${forecastPollutantLabel})`
+                        : 'Not available'}
+                  </p>
+                )}
               </div>
             )
           })()
@@ -229,6 +238,8 @@ export default function SelectedStationPanel({
           <p className="mt-1 text-xs text-slate-400">No forecast validation record for this station's ward yet.</p>
         )}
       </div>
+
+      <NowcastBlock timeMode={timeMode} point={nowcastPoint} heading="Linked ward +1h nowcast" />
 
       {(station.wardId != null || station.wardName) && (
         <Link

@@ -98,8 +98,8 @@ describe('confidenceAtPeak', () => {
     const f = forecast({
       peakTs: '2026-07-20T10:00:00Z',
       points: [
-        { horizon_ts: '2026-07-20T09:00:00Z', pm25_pred: 100, baseline_pred: 90, local_excess: 10, confidence: 0.5, model_version: 'v1' },
-        { horizon_ts: '2026-07-20T10:00:00Z', pm25_pred: 150, baseline_pred: 100, local_excess: 50, confidence: 0.82, model_version: 'v1' },
+        { horizon_ts: '2026-07-20T09:00:00Z', pm25_pred: 100, baseline_pred: 90, local_excess: 10, confidence: 0.5, model_version: 'v1' , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null},
+        { horizon_ts: '2026-07-20T10:00:00Z', pm25_pred: 150, baseline_pred: 100, local_excess: 50, confidence: 0.82, model_version: 'v1' , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null},
       ],
     })
     expect(confidenceAtPeak(f)).toBe(0.82)
@@ -117,8 +117,8 @@ describe('peakWithinWindow', () => {
   it('only considers points within the selected window, not the whole curve', () => {
     const f = forecast({
       points: [
-        { horizon_ts: hoursFromNow(6), pm25_pred: null, baseline_pred: null, local_excess: 10, confidence: null, model_version: null, predicted_value: 80 },
-        { horizon_ts: hoursFromNow(40), pm25_pred: null, baseline_pred: null, local_excess: 90, confidence: null, model_version: null, predicted_value: 300 },
+        { horizon_ts: hoursFromNow(6), pm25_pred: null, baseline_pred: null, local_excess: 10, confidence: null, model_version: null, predicted_value: 80, is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null },
+        { horizon_ts: hoursFromNow(40), pm25_pred: null, baseline_pred: null, local_excess: 90, confidence: null, model_version: null, predicted_value: 300, is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null },
       ],
     })
     // the 40h point (300) is the highest overall, but outside a 12h window
@@ -129,14 +129,14 @@ describe('peakWithinWindow', () => {
 
   it('falls back to pm25_pred when predicted_value is absent (older rows)', () => {
     const f = forecast({
-      points: [{ horizon_ts: hoursFromNow(6), pm25_pred: 55, baseline_pred: null, local_excess: 5, confidence: null, model_version: null }],
+      points: [{ horizon_ts: hoursFromNow(6), pm25_pred: 55, baseline_pred: null, local_excess: 5, confidence: null, model_version: null , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null}],
     })
     expect(peakWithinWindow(f, 24).value).toBe(55)
   })
 
   it('returns nulls when every point is outside the window', () => {
     const f = forecast({
-      points: [{ horizon_ts: hoursFromNow(40), pm25_pred: 300, baseline_pred: null, local_excess: null, confidence: null, model_version: null }],
+      points: [{ horizon_ts: hoursFromNow(40), pm25_pred: 300, baseline_pred: null, local_excess: null, confidence: null, model_version: null , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null}],
     })
     expect(peakWithinWindow(f, 12)).toEqual({ value: null, excess: null, ts: null })
   })
@@ -227,6 +227,16 @@ describe('wardsNeedingReviewCount', () => {
               local_excess: 15,
               confidence: null,
               model_version: null,
+              is_nowcast_point: false,
+              lower_bound: null,
+              upper_bound: null,
+              nowcast_method: null,
+              nowcast_backtest_samples: null,
+              nowcast_backtest_passed: false,
+              anchorObservedAt: null,
+              forecastGeneratedAt: null,
+              forecastMethod: null,
+              dataQualityStatus: null,
             },
           ],
         }),

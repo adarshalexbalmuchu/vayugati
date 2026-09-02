@@ -325,6 +325,7 @@ class _FakeClient:
         self.forecast_runs: list[dict] = []
         self.forecasts: list[dict] = []
         self.deleted: list[tuple] = []
+        self.nowcast_shadow_log: list[dict] = []
 
 
 def test_run_end_to_end_against_fixed_dataset(monkeypatch):
@@ -368,6 +369,12 @@ def test_run_end_to_end_against_fixed_dataset(monkeypatch):
     # with real credentials — empty history is a normal, handled case (see
     # forecast.py's "empty Series when ... fire_counts table is empty").
     monkeypatch.setattr(forecast.db, "get_fire_counts_history", lambda days=45: [])
+    # nowcasting: no backtest result yet -> falls back to persistence, never
+    # crashes, and the shadow log has nothing pending to score.
+    monkeypatch.setattr(forecast.db, "get_nowcast_backtest_result", lambda ward_id, pollutant: None)
+    monkeypatch.setattr(forecast.db, "insert_nowcast_shadow_rows", lambda rows: fake.nowcast_shadow_log.extend(rows))
+    monkeypatch.setattr(forecast.db, "get_pending_nowcast_shadows", lambda before_iso, limit=500: [])
+    monkeypatch.setattr(forecast.db, "score_nowcast_shadow", lambda *a, **kw: None)
 
     summary = forecast.run(city_code="delhi")
 
@@ -415,6 +422,12 @@ def test_run_skips_a_ward_with_no_readings_without_crashing(monkeypatch):
     monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
     monkeypatch.setattr(forecast.open_meteo, "get_hourly_forecast", lambda lat, lng, hours=48: [])
     monkeypatch.setattr(forecast.db, "get_fire_counts_history", lambda days=45: [])
+    # nowcasting: no backtest result yet -> falls back to persistence, never
+    # crashes, and the shadow log has nothing pending to score.
+    monkeypatch.setattr(forecast.db, "get_nowcast_backtest_result", lambda ward_id, pollutant: None)
+    monkeypatch.setattr(forecast.db, "insert_nowcast_shadow_rows", lambda rows: fake.nowcast_shadow_log.extend(rows))
+    monkeypatch.setattr(forecast.db, "get_pending_nowcast_shadows", lambda before_iso, limit=500: [])
+    monkeypatch.setattr(forecast.db, "score_nowcast_shadow", lambda *a, **kw: None)
 
     summary = forecast.run(city_code="delhi")
 
