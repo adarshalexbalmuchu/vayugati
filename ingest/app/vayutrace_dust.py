@@ -192,6 +192,25 @@ INDIA_SILT_SCALING: float = 15.0
 #   - It ignores post-monsoon silt REPLENISHMENT, which Indian studies
 #     report is genuinely significant (stagnant water and poor drainage
 #     raise silt loads after rain rather than lowering them).
+# MEASURED CAVEAT — the rain correction does NOT help the validation metric,
+# and it is worth understanding why before anyone "fixes" it.
+#
+# Against this deployment's real data (39 wards, 60 days), the precipitation
+# factor on its own correlates with observed LOCAL EXCESS at rho = -0.003,
+# i.e. nothing. It is genuinely active — 16.7% of evaluated hours are fully
+# rain-suppressed — so this is not a wiring bug.
+#
+# The reason is definitional: rain suppresses PM2.5 across the whole city at
+# once, and local excess is ward PM2.5 MINUS the city median for that hour,
+# so a city-wide effect largely cancels out of the target by construction.
+# The correction is still physically right and still belongs here (it makes
+# absolute dust emission correct, and would matter for any absolute-
+# concentration use), but it should not be expected to move within-ward
+# skill against a local-excess target.
+#
+# Applying it per-ward rather than city-wide would not fix this either;
+# Delhi-scale rain is spatially coherent over an hour, so the per-ward
+# values are nearly identical anyway.
 PRECIP_WET_THRESHOLD_MM: float = 0.254   # AP-42's "wet hour" definition (0.01 in)
 PRECIP_CREDIT_FACTOR: float = 0.80       # the 20% credit
 PRECIP_CREDIT_MAX_HOURS: int = 12
