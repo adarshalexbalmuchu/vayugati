@@ -56,21 +56,41 @@ proxy emission inventories will NOT reach the correlations a full CTM does:
 
 HONEST LIMITATIONS OF THIS HARNESS ITSELF
 =========================================
-1. Only ~39 wards have a CPCB station, so validation covers those wards
-   only. The other ~226 wards' outputs remain entirely unvalidated — the
-   kernel produces numbers for them that nothing here checks.
-2. Historical weather coverage is much thinner than readings coverage
-   (~9.7k matched ward-hours out of ~34k reading ward-hours as of Sept
-   2026), so the usable set is smaller than the raw reading count suggests.
-3. Source inventories (OSM roads/industrial) are CURRENT, not historical —
+1. Only ~39 of 265 wards have a CPCB station, so validation can only ever
+   cover those. The other ~226 wards' outputs remain entirely unvalidated —
+   the kernel produces numbers for them that nothing here checks. State
+   this plainly rather than implying whole-city validation.
+
+2. In practice the usable set is smaller still — ~12 wards as of Sept 2026,
+   i.e. ~4.5% of the wards the kernel actually scores. The binding
+   constraint is WEATHER history, not readings:
+       - all 44 stations report healthily (~950 pm25 rows each / 60 days)
+       - but per-ward weather was only extended from the original 13
+         "hotspot" wards to all 265 in Sept 2026 (see ingest.py's
+         boundary-centroid weather fetch), so a 60-day window is dominated
+         by the era when only 13 wards had any weather at all
+       - VC/PBLH specifically postdate an even later migration
+   This is a DATA-HISTORY limitation that resolves itself as the extended
+   ingestion accumulates — not a model limitation. Re-run with a longer
+   window every few weeks; `wards_with_own_rho` in the output is the number
+   to watch. Once it approaches 39, per-ward statistics become meaningful.
+
+3. With ~12 wards the per-ward statistics are UNDERPOWERED. Measured
+   Sept 2026 for the dilution/wind-blend change: median improvement
+   +0.039, 9 of 12 wards improved, but the 95% bootstrap CI was
+   [-0.022, +0.131] — i.e. it crosses zero, so the improvement is
+   directionally consistent and physically motivated but NOT statistically
+   significant at n=12. Do not describe such a result as "proven"; describe
+   it as measured-and-underpowered until the ward count grows.
+4. Source inventories (OSM roads/industrial) are CURRENT, not historical —
    we assume the road network and industrial zones did not change over the
    validation window. Over a few months that is reasonable; over years it
    would not be.
-4. FIRMS fire data is not replayed historically here (fetch_igp_fires is a
+5. FIRMS fire data is not replayed historically here (fetch_igp_fires is a
    live API scoped to recent days), so the fire source type is effectively
    absent from validation. Fire-season performance is therefore NOT
    measured by this harness.
-5. A positive rho confirms the dispersion geometry has real skill. It does
+6. A positive rho confirms the dispersion geometry has real skill. It does
    NOT confirm the source-split fractions, which remain unvalidatable (see
    above).
 
@@ -300,6 +320,10 @@ def run_validation(hours: int, max_hours_sampled: int,
         "hours_evaluated": len(usable_hours),
         "paired_observations": len(paired_score),
         "wards_covered": len(per_ward),
+        # The kernel scores every ward; validation only covers those with a
+        # station AND enough matched weather. Reported so the coverage gap is
+        # impossible to overlook when quoting a rho. See limitations 1-2.
+        "wards_scored_by_kernel": len(wards),
         "spearman_rho_overall": rho,
         "spearman_rho_between_wards": between_rho,
         "wards_with_own_rho": len(finite),
@@ -339,7 +363,11 @@ def main() -> None:
     print(f"  window:                {res['window_hours']}h")
     print(f"  hours evaluated:       {res['hours_evaluated']}")
     print(f"  paired observations:   {res['paired_observations']}")
-    print(f"  wards covered:         {res['wards_covered']}")
+    print(f"  wards covered:         {res['wards_covered']} of "
+          f"{res['wards_scored_by_kernel']} scored by the kernel "
+          f"({res['wards_covered'] / max(res['wards_scored_by_kernel'], 1):.1%})")
+    print(f"  wards w/ own rho:      {res['wards_with_own_rho']} "
+          f"(these drive the verdict; see limitations 1-3)")
     print(f"  sources: {res['source_counts']['industrial']} industrial, "
           f"{res['source_counts']['road']} road cells")
     print("-" * 66)
