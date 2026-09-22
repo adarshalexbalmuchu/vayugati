@@ -442,7 +442,12 @@ class TestRunKernel:
         coordinates into an unused local variable. run_kernel() itself
         (tested directly here) always supported cpcb_stations correctly;
         the bug was purely in estimate_city() never forwarding it — see
-        that function's own updated doc comment."""
+        that function's own updated doc comment.
+
+        Now asserted on `station_proximity` rather than `confidence`: as of
+        the Monte Carlo work, `confidence` means "how tight is the interval
+        on the dominant source", and station distance moved to its own
+        honestly-named field. See run_kernel's own comment there."""
         near_station = {"id": 99, "lat": self._WARD["lat"] + 0.001, "lng": self._WARD["lng"]}
         far_station = {"id": 100, "lat": self._WARD["lat"] + 5.0, "lng": self._WARD["lng"]}
 
@@ -456,7 +461,83 @@ class TestRunKernel:
             industrial_sources=self._IND_SRC, fire_sources=[], road_sources=[],
             cpcb_stations=[far_station],
         )
-        assert near_result[0]["confidence"] > far_result[0]["confidence"]
+        assert near_result[0]["station_proximity"] > far_result[0]["station_proximity"]
+
+    def test_monte_carlo_produces_ordered_intervals(self):
+        """Every source type must get p10 <= p50 <= p90."""
+        r = run_kernel(
+            wards=[self._WARD], weather=self._WEATHER,
+            industrial_sources=self._IND_SRC, fire_sources=[],
+            road_sources=[{"lat": 28.60, "lng": 77.25, "emission_weight": 5,
+                           "source_type": "road"}],
+        )[0]
+        u = r["breakdown_uncertainty"]
+        assert u is not None
+        for stype, band in u.items():
+            assert band["p10"] <= band["p50"] <= band["p90"], f"{stype}: {band}"
+
+    def test_monte_carlo_can_be_disabled(self):
+        """mc_draws=0 must skip the draws entirely and fall back to station
+        proximity for confidence — the pre-uncertainty behaviour."""
+        r = run_kernel(
+            wards=[self._WARD], weather=self._WEATHER,
+            industrial_sources=self._IND_SRC, fire_sources=[], road_sources=[],
+            cpcb_stations=[{"id": 1, "lat": self._WARD["lat"], "lng": self._WARD["lng"]}],
+            mc_draws=0,
+        )[0]
+        assert r["breakdown_uncertainty"] is None
+        assert r["confidence"] == r["station_proximity"]
+
+    def test_monte_carlo_is_reproducible(self):
+        """Same inputs and seed must give identical intervals. Error bars
+        that moved between runs for no reason would be operationally worse
+        than none at all."""
+        kw = dict(
+            wards=[self._WARD], weather=self._WEATHER,
+            industrial_sources=self._IND_SRC, fire_sources=[],
+            road_sources=[{"lat": 28.60, "lng": 77.25, "emission_weight": 5,
+                           "source_type": "road"}],
+        )
+        a = run_kernel(**kw)[0]["breakdown_uncertainty"]
+        b = run_kernel(**kw)[0]["breakdown_uncertainty"]
+        assert a == b
+
+    def test_point_estimate_lies_inside_its_own_interval(self):
+        """The headline breakdown must sit within the Monte Carlo band it is
+        reported alongside — if it did not, the point estimate and the draws
+        would be computing different things, which is exactly the bug
+        sharing _score_ward() between them is meant to prevent.
+
+        Checked on the dominant source only: a near-zero type can sit at a
+        boundary through rounding without indicating any inconsistency."""
+        r = run_kernel(
+            wards=[self._WARD], weather=self._WEATHER,
+            industrial_sources=self._IND_SRC, fire_sources=[],
+            road_sources=[{"lat": 28.60, "lng": 77.25, "emission_weight": 5,
+                           "source_type": "road"}],
+        )[0]
+        u = r["breakdown_uncertainty"]
+        dominant = max(u, key=lambda t: u[t]["p50"])
+        point = r["breakdown"][dominant]
+        band = u[dominant]
+        assert band["p10"] - 0.05 <= point <= band["p90"] + 0.05, (
+            f"point estimate {point} outside MC band {band} for {dominant}"
+        )
+
+    def test_confidence_reflects_interval_width_not_station_distance(self):
+        """Confidence is now a real uncertainty measure. A ward whose
+        dominant-source interval is wide must score lower than one whose
+        interval is tight, regardless of where the nearest station is."""
+        r = run_kernel(
+            wards=[self._WARD], weather=self._WEATHER,
+            industrial_sources=self._IND_SRC, fire_sources=[],
+            road_sources=[{"lat": 28.60, "lng": 77.25, "emission_weight": 5,
+                           "source_type": "road"}],
+        )[0]
+        u = r["breakdown_uncertainty"]
+        dominant = max(u, key=lambda t: u[t]["p50"])
+        spread = u[dominant]["p90"] - u[dominant]["p10"]
+        assert r["confidence"] == pytest.approx(max(0.0, min(1.0, 1.0 - 2.0 * spread)), abs=1e-3)
 
     def test_road_never_collapses_the_breakdown_after_calibration(self):
         """Regression test (Sept 2026): end-to-end via run_kernel(), not just
