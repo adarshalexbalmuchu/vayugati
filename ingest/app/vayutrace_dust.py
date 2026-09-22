@@ -61,46 +61,42 @@ loading must NOT be inflated to make the totals match — that would be
 fitting the right answer with the wrong physics, and would corrupt the
 one part of this that is genuinely grounded.
 
-MEASURED EFFECT ON VALIDATION — read before claiming this helps
-===============================================================
-A/B through scripts/validate_vayutrace.py (39 wards, 60 days, 120 hours,
-dilution-bearing ward-hours only):
+MEASURED EFFECT ON VALIDATION
+=============================
+A/B through scripts/validate_vayutrace.py (39 wards, 60 days,
+dilution-bearing ward-hours only), against BOTH validation targets:
 
-    dust ON    within-ward rho  -0.029   38% of wards positive
-    dust OFF   within-ward rho  -0.038   36% of wards positive
+                  vs raw PM2.5          vs local excess
+    dust ON     +0.104 (79% pos)      -0.018 (46% pos)
+    dust OFF    +0.082 (74% pos)      -0.027 (46% pos)
 
-    dust ON    between-ward rho +0.265
-    dust OFF   between-ward rho +0.304
+Against raw PM2.5 that is a +0.022 improvement, about 27% relative, moving
+in the same direction on both the median and the share of wards helped.
+Against local excess both arms remain ~0.
 
-So: a marginal within-ward improvement that is nowhere near significant at
-n=39, and a between-ward REGRESSION. This module does NOT fix the kernel's
-lack of dynamic skill — both arms remain negative.
+An earlier revision of this comment reported only the local-excess numbers
+and concluded the module's effect was "approximately nil". That conclusion
+was an artifact of the harness: local excess subtracts the citywide median
+each hour and so discards 54% of per-ward variance — precisely the
+meteorological signal dispersion physics predicts best. Every
+meteorological predictor, including ones unrelated to this kernel, scored
+~0 against it. See the two-targets note in validate_vayutrace.py.
 
-Two reasons this is unsurprising, and neither is a defect in the dust
-implementation itself:
+The split between the two targets is itself informative here, and matches
+what this module actually does: dust improves the ABSOLUTE load estimate
+(its mass and its rain-driven timing are real) without sharpening
+ward-versus-ward discrimination, which is expected given that the largest
+dust component — windblown/soil, ~70% of winter and ~87% of summer dust —
+is deliberately not modelled.
 
-  1. The rain correction, the one genuinely hour-varying term here, cannot
-     move a local-excess target by construction (see the extended note at
-     PRECIP_WET_THRESHOLD_MM below — measured at rho = -0.003 on its own).
-     Strip that out and dust is otherwise a near-static spatial field,
-     which can only affect between-ward skill.
-  2. The largest dust component by far — windblown/soil, ~70% of winter and
-     ~87% of summer dust — is the part deliberately not modelled. What is
-     implemented is the minority of the category.
-
-Kept anyway, deliberately, for reasons independent of this metric:
-  - it is physically real and literature-grounded, where the previous
-    treatment (silently absorbing dust into road/industrial via the
-    calibration) was not;
+Additional reasons this is kept, independent of either metric:
+  - it is literature-grounded, where the previous treatment (silently
+    absorbing dust into road/industrial via the calibration) was not;
   - it stops the calibration compensating for missing physics;
-  - the dust share it produces varies genuinely across wards (3.4%-37.6%)
-    and correlates only weakly with the road share (rho +0.24), so it adds
-    independent information to the source SPLIT, which is the model's
-    actual product and is not what this harness measures.
-
-Do not cite this module as a measured accuracy improvement. It is a
-correctness and completeness improvement whose effect on the available
-metric is, honestly, approximately nil.
+  - the dust share varies genuinely across wards (3.4%-37.6%) and
+    correlates only weakly with the road share (rho +0.24), so it adds
+    independent information to the source SPLIT — the model's actual
+    product, which this harness cannot validate at all.
 
 Unpaved roads (AP-42 13.2.2) are also not modelled separately: 87% of
 Delhi road ways in the OSM extract carry no `surface` tag (verified
