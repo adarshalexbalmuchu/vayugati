@@ -75,22 +75,50 @@ HONEST LIMITATIONS OF THIS HARNESS ITSELF
    window every few weeks; `wards_with_own_rho` in the output is the number
    to watch. Once it approaches 39, per-ward statistics become meaningful.
 
-3. With ~12 wards the per-ward statistics are UNDERPOWERED. Measured
-   Sept 2026 for the dilution/wind-blend change: median improvement
-   +0.039, 9 of 12 wards improved, but the 95% bootstrap CI was
-   [-0.022, +0.131] — i.e. it crosses zero, so the improvement is
-   directionally consistent and physically motivated but NOT statistically
-   significant at n=12. Do not describe such a result as "proven"; describe
-   it as measured-and-underpowered until the ward count grows.
-4. Source inventories (OSM roads/industrial) are CURRENT, not historical —
+3. SMALL SAMPLES HERE ARE ACTIVELY MISLEADING — a worked example.
+   The dilution change first measured +0.107 within-ward on n=12 wards,
+   with a 95% bootstrap CI of [-0.022, +0.131] that already crossed zero.
+   After ERA5 backfill lifted the sample to n=39, the same change measured
+   -0.060. The apparent improvement was a small-sample artifact, exactly as
+   the wide CI warned. Never treat a result from ~12 wards as established;
+   re-run after any change to data coverage.
+
+4. THE MODEL HAS A DOMAIN OF VALIDITY, and it is narrower than "all wards".
+   Splitting the n=39 result on IDENTICAL ERA5 weather (so this is not a
+   data-provenance artifact):
+
+       original 13 "hotspot" wards   median rho  +0.052   58% positive
+       the other 26 station wards    median rho  -0.047   22% positive
+
+   Those 13 wards have ~1.7x the local-source strength (static
+   emission-weight x distance-decay geometry) of the others. That is the
+   population a LOCAL dispersion model should work for, and the only one
+   where it currently does.
+
+   The physical reading is coherent and worth stating plainly: where local
+   sources dominate, modelling local dispersion predicts variation; where
+   they do not, ward PM2.5 is driven mostly by regional background and
+   secondary chemistry, neither of which this kernel models at all (see
+   the dust/secondary gaps in its known-limitations list). This is a real
+   limit of a primary-emission transport model, not a tuning failure.
+
+   Consequence for interpretation: a single citywide median rho understates
+   performance where the model applies and overstates it where it does not.
+   Prefer reporting the split.
+5. Source inventories (OSM roads/industrial) are CURRENT, not historical —
    we assume the road network and industrial zones did not change over the
    validation window. Over a few months that is reasonable; over years it
    would not be.
-5. FIRMS fire data is not replayed historically here (fetch_igp_fires is a
+6. Weather history is largely ERA5 REANALYSIS, not observation (see
+   scripts/backfill_weather_history.py). Checked directly: across-ward
+   spread of VC is essentially identical between live and ERA5 rows
+   (CV 0.399 vs 0.401), so ERA5 does not flatten the spatial signal — but
+   it remains a ~9-31 km model reconstruction, coarser than a ward.
+7. FIRMS fire data is not replayed historically here (fetch_igp_fires is a
    live API scoped to recent days), so the fire source type is effectively
    absent from validation. Fire-season performance is therefore NOT
    measured by this harness.
-6. A positive rho confirms the dispersion geometry has real skill. It does
+8. A positive rho confirms the dispersion geometry has real skill. It does
    NOT confirm the source-split fractions, which remain unvalidatable (see
    above).
 
@@ -306,6 +334,25 @@ def run_validation(hours: int, max_hours_sampled: int,
     #                  requires the wind/sigma physics to be right)
     # Only the second tests the kernel's meteorology. Reporting the pooled
     # number alone would credit the model for skill it has not demonstrated.
+    # Split by local-source strength — see limitation 4. A ward whose static
+    # emission geometry is strong is one where a LOCAL dispersion model can
+    # plausibly work; a weak-source ward is dominated by regional background
+    # and secondary chemistry, which this kernel does not model. Reporting a
+    # single citywide median hides both facts.
+    strength = {}
+    for wid, pairs in per_ward.items():
+        if len(pairs) >= 20:
+            strength[wid] = statistics.fmean([p[0] for p in pairs])
+    split_rho: dict[str, float] = {}
+    if len(strength) >= 6:
+        ordered = sorted(strength, key=lambda w: strength[w], reverse=True)
+        half = len(ordered) // 2
+        for label, group in (("strong_source_wards", ordered[:half]),
+                             ("weak_source_wards", ordered[half:])):
+            vals = [ward_rhos[w] for w in group if w in ward_rhos and ward_rhos[w] == ward_rhos[w]]
+            split_rho[label] = statistics.median(vals) if vals else float("nan")
+            split_rho[f"{label}_n"] = len(vals)
+
     ward_means = [
         (statistics.fmean([p[0] for p in pairs]), statistics.fmean([p[1] for p in pairs]))
         for pairs in per_ward.values()
@@ -326,6 +373,7 @@ def run_validation(hours: int, max_hours_sampled: int,
         "wards_scored_by_kernel": len(wards),
         "spearman_rho_overall": rho,
         "spearman_rho_between_wards": between_rho,
+        **split_rho,
         "wards_with_own_rho": len(finite),
         "per_ward_rho_median": statistics.median(finite) if finite else float("nan"),
         "per_ward_rho_positive_fraction": (
@@ -383,6 +431,13 @@ def main() -> None:
     print(f"    (the real test of the wind/sigma physics)")
     print(f"    wards with enough data: {res['wards_with_own_rho']}, "
           f"{res['per_ward_rho_positive_fraction']:.0%} positive")
+    if "strong_source_wards" in res:
+        print()
+        print("  WITHIN-ward, split by local-source strength (limitation 4):")
+        print(f"    strong-source wards: {res['strong_source_wards']:+.4f} "
+              f"(n={res['strong_source_wards_n']})  <- where a local model can work")
+        print(f"    weak-source wards:   {res['weak_source_wards']:+.4f} "
+              f"(n={res['weak_source_wards_n']})  <- regional/secondary dominated")
     print("-" * 66)
     # The verdict is driven by WITHIN-ward skill, deliberately. That is the
     # claim the kernel's meteorology actually makes, and the one a change to
