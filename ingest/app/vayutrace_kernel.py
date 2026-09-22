@@ -252,32 +252,38 @@ VC_REFERENCE_M2S: float = 3000.0
 # and about as low as Delhi gets.
 VC_FLOOR_M2S: float = 200.0
 
-# How much the (noisy, measurably harmful) directional wind term still
-# counts, versus pure isotropic dispersion.
+# How much the directional wind term counts, versus pure isotropic
+# dispersion.
 #
-# 0.0 = ignore wind direction entirely (best measured rho, but discards a
-#       physically real effect that a better wind field would capture)
-# 1.0 = previous behaviour (measured rho -0.054)
+#   0.0 = ignore wind direction entirely
+#   1.0 = full cos(dTheta) directional weighting (the original behaviour)
 #
-# Measured directly by sweeping this parameter through the validation
-# harness (same 150 hours, same 12 wards, dilution-bearing ward-hours only):
+# MEASUREMENT HISTORY — read this before changing the value.
+#
+# First swept at n=12 wards, which appeared decisive and monotonic:
 #     blend = 0.00  ->  within-ward rho  +0.107
 #     blend = 0.25  ->  within-ward rho  +0.006
 #     blend = 1.00  ->  within-ward rho  -0.008
 #
-# Monotonic: every increase in directional weighting makes the model
-# measurably worse. An intermediate "compromise" value was tried first
-# (0.25, on the reasoning that upwind sources physically do matter) and the
-# data rejected it — it scored barely better than the original.
+# Re-swept at n=39 wards after the ERA5 weather backfill
+# (scripts/backfill_weather_history.py) lifted validation coverage from
+# ~12 wards / 4.7k paired observations to 39 wards / 29.2k:
+#     blend = 0.00  ->  within-ward rho  -0.060   (31% of wards positive)
+#     blend = 1.00  ->  within-ward rho  -0.055   (31% of wards positive)
 #
-# Set to 0.0 on the evidence. This does NOT mean wind direction is
-# physically irrelevant; it means a SINGLE RECEPTOR-POINT wind reading is
-# too poor a proxy for transport along a multi-km path to add information
-# (gap 6 in the model's known-limitations list), and the noise it injects
-# exceeds the signal it carries. The blended-factor machinery is kept
-# rather than ripped out precisely so this can be re-tested the moment a
-# spatially-resolved wind field exists — at which point this should be
-# swept again rather than assumed.
+# The two settings are INDISTINGUISHABLE at the larger sample. The apparent
+# monotonic harm at n=12 did not replicate — it was a small-sample artifact,
+# the same way the dilution "improvement" was (see the VC block above).
+#
+# Kept at 0.0, but on physical reasoning rather than a measured win: a
+# single receptor-point wind reading is a poor proxy for transport along a
+# multi-km path (gap 6 in the model's known-limitations list), so the
+# simpler isotropic form is preferred when the data cannot distinguish
+# them. Do NOT cite this as a measured improvement.
+#
+# The blending machinery is deliberately retained so this can be re-swept
+# once a spatially-resolved wind field exists, at which point the
+# directional term should be expected to earn its place.
 WIND_DIRECTION_BLEND: float = 0.0
 
 # -- Regional fire transport model constants --

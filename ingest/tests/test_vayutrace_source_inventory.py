@@ -259,21 +259,21 @@ class TestRunKernel:
 
         This test previously asserted unconditionally that an upwind source
         outweighs a downwind one. That assertion was RETIRED (Sept 2026)
-        because it encoded an assumption the data disproved: sweeping
-        WIND_DIRECTION_BLEND through the validation harness
-        (scripts/validate_vayutrace.py) against ~5,300 matched ward-hours of
-        real CPCB readings showed the directional term makes the kernel
-        monotonically WORSE at predicting when a ward actually deteriorates:
+        because the production default became WIND_DIRECTION_BLEND=0.0,
+        under which upwind and downwind sources are weighted identically.
 
-            blend = 0.00  ->  within-ward Spearman rho  +0.107
-            blend = 0.25  ->  within-ward Spearman rho  +0.006
-            blend = 1.00  ->  within-ward Spearman rho  -0.008
+        On the evidence for that default, note the correction: an initial
+        sweep at n=12 wards suggested the directional term was monotonically
+        harmful (+0.107 / +0.006 / -0.008 for blend 0.00 / 0.25 / 1.00), but
+        re-sweeping at n=39 wards after the ERA5 weather backfill found the
+        settings INDISTINGUISHABLE (-0.060 vs -0.055). The default is 0.0 on
+        physical reasoning — a single receptor-point wind reading is a poor
+        transport proxy — not on a measured win. See WIND_DIRECTION_BLEND's
+        own comment in vayutrace_kernel.py.
 
-        so the production default is now 0.0 and upwind/downwind sources are
-        weighted identically. The machinery is retained for a future
-        spatially-resolved wind field, so this test now verifies the
-        MECHANISM still works when enabled, rather than asserting a
-        production behaviour that measurement rejected.
+        The machinery is retained for a future spatially-resolved wind
+        field, so this test verifies the MECHANISM still works when enabled,
+        rather than asserting a production behaviour either way.
 
         NW wind (from_dir=315°) → blows toward SE. Ward at 28.63, 77.21.
         upwind_src (NW of ward) is aligned; downwind_src (SE) is not.
