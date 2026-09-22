@@ -261,6 +261,38 @@ MIN_SOURCES: int = 1
 # Chosen as a round central value of observed Delhi VC, not fitted.
 VC_REFERENCE_M2S: float = 3000.0
 
+# DISABLED BY DEFAULT — the dilution term measurably HURTS the kernel.
+#
+# Set True only to re-test it; do not enable in production without new
+# evidence. Full sweep against 39 wards / 60 days, raw-PM2.5 target
+# (the target that can actually see meteorological skill — see
+# scripts/validate_vayutrace.py's two-targets note):
+#
+#     dilution OFF              raw +0.198   100% of wards positive
+#     dilution ON, floor=200    raw +0.039    62%
+#     dilution ON, floor=50     raw +0.019    64%
+#     dilution ON, floor=10     raw +0.017    64%
+#
+# Monotonic, replicated at two sample sizes, and the effect is large: the
+# term roughly halves-to-tenths the kernel's skill and knocks a third of
+# wards from positive to negative. Correcting VC_FLOOR_M2S (which had been
+# clipping 36% of real data) made it WORSE, not better, which ruled out
+# the floor as the explanation.
+#
+# Why it fails, most likely: applying VC as a single per-ward multiplier
+# double-counts dispersion that the Gaussian sigma already represents,
+# while contributing a factor that varies mostly in TIME and almost not at
+# all between wards — so it injects citywide temporal noise into a score
+# whose job is spatial discrimination.
+#
+# Note this is not a claim that ventilation is physically irrelevant; it
+# plainly is not. It is a claim that THIS formulation of it is wrong. A
+# correct treatment would more likely modulate the effective sigma (a
+# shallow, stagnant boundary layer should make plumes tighter and stronger
+# near-source) rather than uniformly rescale the summed result. That is a
+# real avenue, and the machinery below is retained for it.
+DILUTION_ENABLED: bool = False
+
 # Floor on VC before division, guarding against divide-by-zero and against
 # a single near-zero VC reading producing an absurd concentration spike
 # during a total-calm hour.
@@ -826,6 +858,8 @@ def dilution_factor(
     ward with missing weather degrades to pure geometry rather than being
     dropped or silently assigned someone else's conditions.
     """
+    if not DILUTION_ENABLED:
+        return 1.0
     vc = ventilation_coefficient
     if vc is None and boundary_layer_height is not None and wind_speed_ms is not None:
         vc = float(boundary_layer_height) * float(wind_speed_ms)

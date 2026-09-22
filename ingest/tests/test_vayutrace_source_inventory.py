@@ -36,6 +36,21 @@ from app.vayutrace_kernel import (
 )
 
 
+@pytest.fixture
+def dilution_on():
+    """Temporarily enable the dilution term.
+
+    It ships DISABLED (see DILUTION_ENABLED in vayutrace_kernel.py — it
+    measurably hurt the kernel), but the machinery is retained for a future
+    sigma-modulating reformulation, so its mechanics still need testing."""
+    original = vayutrace_kernel.DILUTION_ENABLED
+    vayutrace_kernel.DILUTION_ENABLED = True
+    try:
+        yield
+    finally:
+        vayutrace_kernel.DILUTION_ENABLED = original
+
+
 # ── Industrial zones ──────────────────────────────────────────────────────────
 
 class TestIndustrialZones:
@@ -310,9 +325,23 @@ class TestRunKernel:
         finally:
             vayutrace_kernel.WIND_DIRECTION_BLEND = original
 
-    def test_dilution_scales_local_score_but_not_breakdown_fractions(self):
+    def test_dilution_is_disabled_by_default(self):
+        """Regression test (Sept 2026): the dilution term measurably HURT the
+        kernel (raw rho +0.198 off vs +0.017 on, monotonic across every floor
+        value tried, replicated at two sample sizes), so it ships disabled.
+        See DILUTION_ENABLED's own comment for the evidence and for why the
+        machinery is retained rather than deleted."""
+        assert vayutrace_kernel.DILUTION_ENABLED is False
+        # With the flag off the factor must be an exact no-op regardless of
+        # how stagnant the input claims to be.
+        assert vayutrace_kernel.dilution_factor(1.0) == 1.0
+        assert vayutrace_kernel.dilution_factor(50_000.0) == 1.0
+
+    def test_dilution_scales_local_score_but_not_breakdown_fractions(self, dilution_on):
         """Dilution acts on the whole local air parcel, so it must change the
-        magnitude (local_score) without redistributing the source split."""
+        magnitude (local_score) without redistributing the source split.
+
+        Tests the MECHANISM, which is retained but disabled by default."""
         src_a = {"lat": 28.70, "lng": 77.14, "emission_weight": 2, "source_type": "industrial"}
         src_b = {"lat": 28.56, "lng": 77.28, "emission_weight": 2, "source_type": "road"}
 
@@ -331,7 +360,7 @@ class TestRunKernel:
             r_vent["breakdown"]["industrial"], abs=1e-6
         )
 
-    def test_dilution_factor_is_noop_without_meteorology(self):
+    def test_dilution_factor_is_noop_without_meteorology(self, dilution_on):
         """A ward with no usable weather must degrade to pure geometry
         (factor 1.0), never be dropped or given fabricated conditions."""
         assert vayutrace_kernel.dilution_factor(None) == 1.0
@@ -339,14 +368,14 @@ class TestRunKernel:
         assert vayutrace_kernel.dilution_factor(0) == 1.0          # non-positive
         assert vayutrace_kernel.dilution_factor(float("nan")) == 1.0
 
-    def test_dilution_factor_recomputes_vc_from_pblh_and_wind(self):
+    def test_dilution_factor_recomputes_vc_from_pblh_and_wind(self, dilution_on):
         """VC is PBLH x wind_speed; when VC is absent but both parts are
         present the factor must still be computed, not skipped."""
         direct = vayutrace_kernel.dilution_factor(2000.0)
         derived = vayutrace_kernel.dilution_factor(None, 1000.0, 2.0)  # 1000*2 = 2000
         assert direct == pytest.approx(derived)
 
-    def test_dilution_factor_is_floored_against_absurd_calm_spikes(self):
+    def test_dilution_factor_is_floored_against_absurd_calm_spikes(self, dilution_on):
         """A near-zero VC must not produce an unbounded concentration."""
         floored = vayutrace_kernel.dilution_factor(0.001)
         expected = vayutrace_kernel.VC_REFERENCE_M2S / vayutrace_kernel.VC_FLOOR_M2S
@@ -367,7 +396,7 @@ class TestRunKernel:
             "ward-hours; it should guard division, not truncate the signal"
         )
 
-    def test_dilution_factor_preserves_variation_across_the_real_vc_range(self):
+    def test_dilution_factor_preserves_variation_across_the_real_vc_range(self, dilution_on):
         """Distinct VC values across the observed range must map to distinct
         dilution factors — the failure mode of a too-high floor is that they
         silently collapse to one value."""
