@@ -17,21 +17,41 @@ def client() -> Client:
 
 
 def get_wards() -> dict[str, dict]:
-    """wards.name -> {id, lat, lng}"""
-    rows = client().table("wards").select("id, name, lat, lng").execute().data
+    """wards.name -> {id, lat, lng, boundary}.
+
+    `boundary` added Sept 2026 alongside get_wards_with_city()'s own same
+    change — see that function's doc comment. ingest.py's weather-fetch
+    step uses it to compute a boundary-centroid receptor point for the 252
+    of 265 wards with no captured lat/lng, instead of skipping them."""
+    rows = client().table("wards").select("id, name, lat, lng, boundary").execute().data
     return {r["name"]: r for r in rows}
 
 
 def get_wards_with_city() -> list[dict]:
-    """[{id, name, lat, lng, city_id}, ...] — for per-city forecasting/detection loops."""
-    return client().table("wards").select("id, name, lat, lng, city_id").execute().data
+    """[{id, name, lat, lng, city_id, boundary}, ...] — for per-city
+    forecasting/detection loops.
+
+    `boundary` (GeoJSON Polygon/MultiPolygon, null for most rows) added
+    Sept 2026 so vayutrace_kernel.run_kernel()'s boundary_bbox_center()
+    fallback can compute a receptor point for the 252 of 265 wards that
+    have no captured lat/lng — confirmed live this session that every one
+    of those 252 has a real boundary. Callers that don't need it (the
+    original use before this change) simply ignore the extra key; nothing
+    existing reads `boundary` today except vayutrace_kernel.py."""
+    return client().table("wards").select("id, name, lat, lng, city_id, boundary").execute().data
 
 
 def get_hotspot_wards() -> list[dict]:
-    """[{id, name, lat, lng}, ...] for the monitored hotspot set only (same
-    `is_hotspot=true` scope the frontend's fetchAllWardsAqi() uses) - for
-    context layers that should score against the same ward set the rest of
-    the app already treats as "the wards that matter" (transit_activity.py)."""
+    """[{id, name, lat, lng}, ...] for the ORIGINAL 13 is_hotspot=true wards
+    only. Deprecated for scoring/context-layer use (Sept 2026) — its doc
+    comment used to claim this "same scope fetchAllWardsAqi() uses," but
+    that function was itself extended to all 265 wards; this function
+    wasn't updated to match, and was the last caller (run_transit() in
+    main.py) still silently restricted to the 13. Fixed by switching that
+    caller to get_wards_with_city() (all 265, with `boundary` for the
+    centroid fallback) instead. Kept only in case a genuinely
+    hotspot-scoped query is needed again later — not currently called
+    anywhere."""
     return client().table("wards").select("id, name, lat, lng").eq("is_hotspot", True).execute().data
 
 
@@ -151,6 +171,27 @@ def upsert_weather(row: dict) -> None:
     _with_retry(lambda: client().table("weather").upsert(row, on_conflict="ward_id,ts").execute())
 
 
+def bulk_upsert_weather(rows: list[dict], chunk: int = 500) -> int:
+    """Chunked upsert for weather rows, returning the number written.
+
+    Added Sept 2026 for the ERA5 history backfill
+    (scripts/backfill_weather_history.py), which writes on the order of
+    40k+ rows — one HTTP round-trip per row via upsert_weather() above
+    would take hours. Mirrors bulk_upsert_readings()'s existing contract:
+    same on_conflict key, same retry wrapper, chunked to stay under
+    PostgREST's request-size limits.
+    """
+    written = 0
+    for i in range(0, len(rows), chunk):
+        batch = rows[i:i + chunk]
+        _with_retry(
+            lambda b=batch: client().table("weather")
+            .upsert(b, on_conflict="ward_id,ts").execute()
+        )
+        written += len(batch)
+    return written
+
+
 # ── history reads (for forecast + attribution) ───────────────────────────────
 
 def _is_transient_network_error(exc: Exception) -> bool:
@@ -222,11 +263,24 @@ def _fetch_all(query_factory, page_size: int = 1000) -> list[dict]:
 
 
 def get_readings_history(hours: int = 24 * 30) -> list[dict]:
-    """Flattened readings joined to their ward: [{ts, ward_id, pm25, pm10, no2, aqi}].
+    """Flattened readings joined to their ward:
+    [{ts, ward_id, pm25, pm10, no2, so2, co, o3, aqi}].
 
     no2 was added in Phase 8 (unified forecasting, plan §1's "keep NO2 as
     optional/supporting") — additive to the returned dict, so the existing
     attribution.py caller (which only reads pm25/wind_dir) is unaffected.
+
+    so2/co/o3 added Sept 2026 so forecast.py could stop hardcoding
+    DEFAULT_ENABLED_POLLUTANTS to just (pm25, pm10, no2) — this was the
+    actual reason AQI/SO2/CO/O3 had no forecast of their own and silently
+    fell back to displaying PM2.5's curve labelled "(proxy)" everywhere in
+    the frontend (see forecastPollutantFor() in web/src/lib/mapRules.ts):
+    the readings.so2/co/o3 columns, the forecast_runs/forecasts CHECK
+    constraints (pollutant IN (..., 'so2','co','o3')), and the anomaly-
+    detection SQL all already supported these three pollutants — the
+    Python forecasting pipeline was simply never given the readings data
+    to train against. Confirmed live this session: ~50-61k non-null rows
+    each for so2/co/o3, comparable in volume to pm25/no2, not sparse.
 
     station_id → ward_id is resolved in Python from a single small stations
     query rather than via a PostgREST embedded join on every paginated row —
@@ -244,7 +298,7 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     rows = _fetch_all(
         lambda: client()
         .table("readings")
-        .select("ts, station_id, pm25, pm10, no2, aqi")
+        .select("ts, station_id, pm25, pm10, no2, so2, co, o3, aqi")
         .gte("ts", cutoff)
         .order("ts")
     )
@@ -260,6 +314,9 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
                 "pm25": r["pm25"],
                 "pm10": r["pm10"],
                 "no2": r["no2"],
+                "so2": r["so2"],
+                "co": r["co"],
+                "o3": r["o3"],
                 "aqi": r["aqi"],
             }
         )
@@ -398,9 +455,16 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
                     bucket.setdefault(col, []).append(float(v))
             co = r.get("co")
             if co is not None:
-                source = r.get("ingest_source") or "openaq"
-                co_mg = float(co) if source == "cpcb" else float(co) / 1000.0
-                bucket.setdefault("co", []).append(co_mg)
+                # readings.co is stored in mg/m³ for every ingest_source
+                # (bug fix, Sept 2026: _ingest_station_openaq() in ingest.py
+                # used to store the OpenAQ path's raw µg/m³ figure instead
+                # of the mg/m³ value it separately computed for its own AQI
+                # calc; this line's `source != "cpcb" → /1000` branch was
+                # compensating for that here, which — now that the value is
+                # stored correctly at ingest time — would silently
+                # over-divide it again. See latest_readings.py's matching
+                # fix for the full history.)
+                bucket.setdefault("co", []).append(float(co))
 
         # ── Step 2: mean within each clock-hour (one float per hour) ─────────
         # sorted() ensures the hourly_means list is time-ordered (required by
