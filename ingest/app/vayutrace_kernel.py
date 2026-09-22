@@ -263,10 +263,23 @@ VC_REFERENCE_M2S: float = 3000.0
 
 # Floor on VC before division, guarding against divide-by-zero and against
 # a single near-zero VC reading producing an absurd concentration spike
-# during a total-calm hour. 200 m^2/s corresponds to roughly a 200 m
-# boundary layer with 1 m/s wind — genuinely stagnant, but physically real
-# and about as low as Delhi gets.
-VC_FLOOR_M2S: float = 200.0
+# during a total-calm hour.
+#
+# WARNING — this constant was set to 200.0 on the reasoning that it is
+# "about as low as Delhi gets", which was simply wrong, and it silently
+# crippled the dilution term for an entire development cycle.
+#
+# Measured against 48,904 real ward-hours: VC spans p1=4, p5=18, p25=111,
+# median=388, p75=1187, p95=3076 m^2/s. 36.3% of all hours fall BELOW 200,
+# so the floor collapsed more than a third of the data onto a single
+# constant (the resulting dilution factor was pinned at its 15.0 ceiling
+# for everything from p75 upward). Nighttime boundary layers over Delhi
+# genuinely do collapse to a few tens of metres, and ERA5 reproduces that;
+# it is real signal, not noise to be clipped.
+#
+# The floor's job is only to stop a division blowing up, so it should sit
+# well below the real distribution rather than inside it.
+VC_FLOOR_M2S: float = 10.0
 
 # How much the directional wind term counts, versus pure isotropic
 # dispersion.

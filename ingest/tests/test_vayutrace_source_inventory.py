@@ -352,6 +352,33 @@ class TestRunKernel:
         expected = vayutrace_kernel.VC_REFERENCE_M2S / vayutrace_kernel.VC_FLOOR_M2S
         assert floored == pytest.approx(expected)
 
+    def test_dilution_floor_sits_below_the_real_vc_distribution(self):
+        """Regression test (Sept 2026): VC_FLOOR_M2S was 200.0, which sat
+        INSIDE the real distribution — 36.3% of 48,904 measured ward-hours
+        fell below it, so more than a third of the data was clipped to a
+        single constant and the dilution term lost most of its variation.
+
+        Measured percentiles of real VC (m^2/s): p1=4, p5=18, p25=111,
+        median=388, p75=1187, p95=3076. The floor is a divide-by-zero
+        guard, so it must sit below roughly the 5th percentile rather than
+        inside the bulk of the distribution."""
+        assert vayutrace_kernel.VC_FLOOR_M2S <= 20.0, (
+            "VC_FLOOR_M2S is high enough to clip a meaningful share of real "
+            "ward-hours; it should guard division, not truncate the signal"
+        )
+
+    def test_dilution_factor_preserves_variation_across_the_real_vc_range(self):
+        """Distinct VC values across the observed range must map to distinct
+        dilution factors — the failure mode of a too-high floor is that they
+        silently collapse to one value."""
+        factors = [
+            vayutrace_kernel.dilution_factor(vc)
+            for vc in (18.0, 111.0, 388.0, 1187.0, 3076.0)  # p5..p95 of real data
+        ]
+        assert len(set(factors)) == len(factors)
+        # Monotonic: more ventilation must mean less concentration.
+        assert factors == sorted(factors, reverse=True)
+
     def test_wards_with_null_coordinates_are_skipped_not_crashed(self):
         """Regression test (Sept 2026): every fixture ward above always has
         real lat/lng, so this exact bug — run_kernel() crashing with
