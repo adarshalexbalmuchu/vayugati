@@ -184,6 +184,22 @@ DEFAULT_SIGMA_KM: float = SIGMA_SUMMER_KM  # backward-compat default
 SIGMA_ROAD_KM: float = 1.0     # all seasons — highly local
 SIGMA_FIRE_KM: float = 30.0    # all seasons — local fires, extended for Haryana range
 
+#   dust      — Resuspended road dust and construction dust are mechanically
+#               generated at ground level and are markedly coarser than
+#               combustion aerosol, so they deposit close to source. Even
+#               the PM2.5 fraction modelled here (AP-42 k factor) originates
+#               from a coarse-dominated size distribution and behaves more
+#               locally than a buoyant stack plume.
+#
+#               Set slightly wider than roads (1 km) because construction
+#               sites are area sources rather than line sources, but well
+#               inside the industrial seasonal sigma (5-7 km). This ordering
+#               — road < dust < industrial < fire — is the physically
+#               defensible part; the specific 1.5 km is an engineering
+#               choice, not a calibrated value, and is a natural candidate
+#               for the validation harness to sweep.
+SIGMA_DUST_KM: float = 1.5
+
 # Non-fire base regional transport fractions (city-level background).
 # These represent Haryana industry, UP/Rajasthan dust, secondary aerosol from
 # regional precursors — everything that is NOT the IGP fire transport component
@@ -957,6 +973,7 @@ def run_kernel(
     sigma_km: float = DEFAULT_SIGMA_KM,
     month: int | None = None,
     regional_fire_sources: list[dict] | None = None,
+    dust_sources: list[dict] | None = None,
 ) -> list[dict]:
     """Compute estimated source contributions for every ward.
 
@@ -1009,6 +1026,12 @@ def run_kernel(
     for s in road_sources:
         all_sources.append({**s, "source_type": "road",
                              "_ew": float(s.get("emission_weight", 1))})
+    # Dust (AP-42 road resuspension + WRAP construction) — see
+    # vayutrace_dust.py, including why windblown/soil dust is deliberately
+    # absent. Optional so existing callers and tests are unaffected.
+    for s in (dust_sources or []):
+        all_sources.append({**s, "source_type": "dust",
+                             "_ew": float(s.get("emission_weight", 0))})
 
     _calibrate_road_industrial_scale(all_sources, wards, month, effective_sigma)
 
@@ -1097,16 +1120,19 @@ def run_kernel(
         # segment 10 km away correctly adds almost nothing regardless of
         # how many such distant segments exist — no separate "crowding
         # out" protection is needed once summation is used correctly.
-        acc: dict[str, list[float]] = {"industrial": [], "road": [], "fire": []}
+        acc: dict[str, list[float]] = {"industrial": [], "road": [], "fire": [], "dust": []}
 
         for s in all_sources:
             dist = _haversine_km(wlat, wlng, s["lat"], s["lng"])
             bearing = _bearing_deg(s["lat"], s["lng"], wlat, wlng)
             wf = _blended_wind_factor(bearing, wind_dir, wind_speed)
             stype = s["source_type"]
-            # Per-type sigma: roads are hyperlocal, fires are regional.
+            # Per-type sigma: roads are hyperlocal, dust deposits near
+            # source, fires are regional, industrial is seasonal.
             if stype == "road":
                 sigma = SIGMA_ROAD_KM
+            elif stype == "dust":
+                sigma = SIGMA_DUST_KM
             elif stype == "fire":
                 sigma = SIGMA_FIRE_KM
             else:
@@ -1254,6 +1280,37 @@ def estimate_city(
     industrial = load_delhi_industrial_zones()
     roads      = load_delhi_roads()
 
+    # Dust sources (Sept 2026) — AP-42 13.2.1 road resuspension + WRAP
+    # construction-area dust. See vayutrace_dust.py for the emission
+    # factors, and for why windblown/soil dust (the LARGEST dust
+    # sub-category per ARAI/TERI 2018) is deliberately not modelled.
+    #
+    # The precipitation correction is applied city-wide here using the
+    # median of the current per-ward precipitation, rather than per ward.
+    # Rain is spatially coherent at Delhi's scale over an hour, and a
+    # per-source precipitation factor would require rebuilding the whole
+    # dust inventory per ward — 9,200 sources x 265 wards per hour — for a
+    # refinement finer than AP-42's own binary wet/dry resolution.
+    from .vayutrace_dust import (  # noqa: PLC0415
+        build_construction_dust_sources,
+        build_road_dust_sources,
+        precipitation_factor,
+    )
+    from .vayutrace_osm_construction import load_delhi_construction_sites  # noqa: PLC0415
+
+    precips = [
+        float(m["precipitation"])
+        for m in (weather_by_ward or {}).values()
+        if m.get("precipitation") is not None
+    ]
+    city_precip = sorted(precips)[len(precips) // 2] if precips else None
+    precip_f = precipitation_factor(city_precip)
+
+    dust = (
+        build_road_dust_sources(roads, precip_factor=precip_f)
+        + build_construction_dust_sources(load_delhi_construction_sites())
+    )
+
     # Fetch the full IGP airshed (Punjab, Haryana, UP, Rajasthan) and split
     # into local fires (< 50 km, Gaussian kernel) and regional fires (≥ 50 km,
     # travel-time transport index).
@@ -1263,9 +1320,11 @@ def estimate_city(
 
     log.info(
         "vayutrace_kernel estimate_city: month=%d sigma=%s km, "
-        "%d industrial, %d local fires, %d regional IGP fires, %d road segments",
+        "%d industrial, %d local fires, %d regional IGP fires, %d road segments, "
+        "%d dust sources (precip factor %.2f)",
         month, seasonal_sigma_km(month),
         len(industrial), len(local_fires), len(regional_fires), len(roads),
+        len(dust), precip_f,
     )
 
     return run_kernel(
@@ -1278,4 +1337,5 @@ def estimate_city(
         sigma_km=sigma_km,
         month=month,
         regional_fire_sources=regional_fires,
+        dust_sources=dust,
     )

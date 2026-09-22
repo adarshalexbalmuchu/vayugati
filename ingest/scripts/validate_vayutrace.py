@@ -232,6 +232,10 @@ def build_observations(hours: int) -> tuple[dict, dict]:
             # and report the OLD behaviour's score.
             "boundary_layer_height": w.get("boundary_layer_height"),
             "ventilation_coefficient": w.get("ventilation_coefficient"),
+            # Drives the dust module's AP-42 precipitation correction. Same
+            # forwarding trap as PBLH/VC above: omit it and the harness
+            # silently validates a no-rain model.
+            "precipitation": w.get("precipitation"),
         }
         prev = wx[hk].get(wid)
         # A ward-hour can have several weather rows (the 15-min ingest cycle
@@ -249,15 +253,28 @@ def build_observations(hours: int) -> tuple[dict, dict]:
 
 
 def run_validation(hours: int, max_hours_sampled: int,
-                   require_dilution: bool = False) -> dict:
+                   require_dilution: bool = False,
+                   include_dust: bool = True) -> dict:
     wards = db.get_wards_with_city()
     stations = db.get_stations_with_coords()
 
+    from app.vayutrace_dust import (
+        build_construction_dust_sources,
+        build_road_dust_sources,
+        precipitation_factor,
+    )
+    from app.vayutrace_osm_construction import load_delhi_construction_sites
     from app.vayutrace_osm_industrial import load_delhi_industrial_zones
     from app.vayutrace_osm_roads import load_delhi_roads
 
     industrial = load_delhi_industrial_zones()
     roads = load_delhi_roads()
+    # Construction dust is static; road dust varies hourly with rain, so it
+    # is rebuilt per hour inside the loop below.
+    construction_dust = (
+        build_construction_dust_sources(load_delhi_construction_sites())
+        if include_dust else []
+    )
     if not industrial and not roads:
         raise SystemExit(
             "No emission sources loaded — is OSM_PBF_PATH set and the .pbf present?\n"
@@ -289,15 +306,31 @@ def run_validation(hours: int, max_hours_sampled: int,
         if not weather_this_hour:
             continue
         month = int(hk[5:7])
+        dust: list[dict] = []
+        if include_dust:
+            # Rebuild road dust each hour so the AP-42 precipitation
+            # correction genuinely varies — that hour-to-hour signal is the
+            # main reason dust might help within-ward skill at all.
+            precips = [
+                float(m["precipitation"])
+                for m in weather_this_hour.values()
+                if m.get("precipitation") is not None
+            ]
+            city_precip = sorted(precips)[len(precips) // 2] if precips else None
+            dust = build_road_dust_sources(
+                roads, precip_factor=precipitation_factor(city_precip)
+            ) + construction_dust
+
         results = run_kernel(
             wards=wards,
             weather=weather_this_hour,
             industrial_sources=industrial,
-            fire_sources=[],           # see limitation 4 in module docstring
+            fire_sources=[],           # see limitation 7 in module docstring
             road_sources=roads,
             cpcb_stations=stations,
             month=month,
             regional_fire_sources=[],
+            dust_sources=dust,
         )
         for r in results:
             key = (r["ward_id"], hk)
