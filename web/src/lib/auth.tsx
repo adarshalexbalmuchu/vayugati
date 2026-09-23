@@ -70,15 +70,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  // Bug fix (Sept 2026): Supabase's client auto-refreshes the access token
+  // on a timer AND re-validates on tab focus/visibility — both fire
+  // onAuthStateChange with a brand-new `session` object even when it's the
+  // SAME signed-in user, just a refreshed token. This effect used to depend
+  // on `session` itself, so every such event (i.e. every tab switch back to
+  // this app) re-ran fetchProfile() and flipped `loading` true→false again,
+  // which every consumer of useAuth() sees as "reload" — this was the cause
+  // of the whole app appearing to refresh whenever the tab regained focus.
+  // Depending on the stable user id instead means a token refresh for the
+  // same user is a no-op here; only an actual sign-in/sign-out/different-
+  // user event (a real id change) re-fetches the profile.
+  const userId = session?.user.id ?? null
   useEffect(() => {
     let cancelled = false
-    if (!session) {
+    if (!userId) {
       setProfile(null)
       setLoading(false)
       return
     }
     setLoading(true)
-    fetchProfile(session.user.id)
+    fetchProfile(userId)
       .then((p) => {
         if (!cancelled) setProfile(p)
       })
@@ -88,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [session])
+  }, [userId])
 
   const signOut = async () => {
     await supabase.auth.signOut()

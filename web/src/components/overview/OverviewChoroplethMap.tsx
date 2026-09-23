@@ -1,9 +1,13 @@
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from 'geojson'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Maximize2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import CityKpiRow from './CityKpiRow'
+import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
-import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
+import { fetchAllWardBoundaries, fetchWindField, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
 
 const DELHI_CENTER: [number, number] = [77.209, 28.6139]
@@ -21,9 +25,53 @@ const LINE   = 'ov-ward-line'
 const CSRC   = 'ov-ward-centers'
 const CIRCLE = 'ov-ward-circle'
 
+// Wind field — small arrows spread across the city (Sept 2026 addition) so
+// a viewer can visually check whether the AQI pattern lines up with the
+// wind axis, a real spatial-correlation question. See fetchWindField's own
+// doc comment for why this is several real per-location readings, not one
+// fabricated "city wind" value.
 type WardFeatureProps = { id: number; name: string; aqi: number | null; isMonitored: boolean }
 type WardGeoJSON = FeatureCollection<Polygon | MultiPolygon, WardFeatureProps>
 type CenterGeoJSON = FeatureCollection<Point, WardFeatureProps>
+const WIND_SRC = 'ov-wind'
+const WIND_LAYER = 'ov-wind-arrows'
+const WIND_IMAGE_ID = 'ov-wind-arrow-img'
+type WindFeatureProps = { wardName: string; windSpeed: number; windDir: number }
+type WindGeoJSON = FeatureCollection<Point, WindFeatureProps>
+
+/** Same small arrow glyph MapView.tsx's own wind layer uses (copied rather
+ *  than imported — that file is a large, page-specific component and this
+ *  map intentionally stays self-contained, matching how every other
+ *  Overview map layer here is defined locally rather than shared). */
+function createWindArrowImage(): ImageData {
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return new ImageData(size, size)
+  const cx = size / 2
+  const tip = 4
+  const baseY = size - 6
+  const hw = 6
+  ctx.clearRect(0, 0, size, size)
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'
+  ctx.shadowBlur = 3
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = 'rgba(30, 100, 220, 0.92)'
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(cx, tip)
+  ctx.lineTo(cx + hw, baseY)
+  ctx.lineTo(cx, baseY - 5)
+  ctx.lineTo(cx - hw, baseY)
+  ctx.closePath()
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.stroke()
+  return ctx.getImageData(0, 0, size, size)
+}
 
 const AQI_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   'step',
@@ -46,17 +94,54 @@ const LEGEND_ITEMS = [
   { label: 'Severe',       color: '#af2d24' },
 ]
 
+/** Bounding-box centre of a polygon/multipolygon — good enough for a flyTo
+ *  target (doesn't need to be a true area centroid). Only 13 of ~250 wards
+ *  have a real captured lat/lng point (see WardBoundary's own doc comment in
+ *  lib/data.ts); this is the honest fallback for the rest, computed from
+ *  geometry that's already fetched and rendered rather than fabricating a
+ *  coordinate or silently doing nothing on click. */
+function boundingBoxCenter(geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon): [number, number] | null {
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+  const rings = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
+  for (const polygon of rings) {
+    for (const ring of polygon) {
+      for (const [lng, lat] of ring) {
+        if (lng < minLng) minLng = lng
+        if (lng > maxLng) maxLng = lng
+        if (lat < minLat) minLat = lat
+        if (lat > maxLat) maxLat = lat
+      }
+    }
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null
+  return [(minLng + maxLng) / 2, (minLat + maxLat) / 2]
+}
+
 export default function OverviewChoroplethMap({
   wards,
   selectedWardId,
   onSelectWard,
   latestReadingsByWard,
+  reviewCount,
+  openReportCount,
+  coverage,
+  latestReadingAgeMinutes,
+  onWardsFlaggedClick,
 }: {
   wards: WardSummary[]
   selectedWardId: number | null
   onSelectWard: (wardId: number | null) => void
   latestReadingsByWard?: Map<number, LatestReadingReconciliation>
+  /** The 4 city KPIs, rendered as a glass bar over the bottom of the map
+   *  (Sept 2026 — moved off the page header). Same props CityKpiRow has
+   *  always taken; passed straight through from HotspotsRiskTable. */
+  reviewCount: number
+  openReportCount: number
+  coverage: { fresh: number; total: number } | null
+  latestReadingAgeMinutes?: number | null
+  onWardsFlaggedClick?: () => void
 }) {
+  const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -82,12 +167,33 @@ export default function OverviewChoroplethMap({
     })
   }, [])
 
+  // Wind field — fetched once here (not threaded down as a prop from
+  // CommandView/HotspotsRiskTable) since no other component needs it; same
+  // pattern as the boundaries fetch above. Refreshed every 15 minutes,
+  // matching the ingest service's own weather-fetch cadence — no point
+  // polling faster than the underlying data can change.
+  const [windField, setWindField] = useState<Awaited<ReturnType<typeof fetchWindField>>>([])
+  useEffect(() => {
+    let cancelled = false
+    const load = () => fetchWindField().then((w) => { if (!cancelled) setWindField(w) })
+    load()
+    const id = setInterval(load, 15 * 60 * 1000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
+
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
 
   // Stable ward ref for flyTo — avoids re-triggering selection effect on every poll.
   const wardsForFlyRef = useRef(wards)
   useEffect(() => { wardsForFlyRef.current = wards }, [wards])
+  // Same pattern for boundaries — needed by the flyTo fallback below (most
+  // wards have no wards.lat/lng; see boundariesForFlyRef's use site).
+  const boundariesForFlyRef = useRef(boundaries)
+  useEffect(() => { boundariesForFlyRef.current = boundaries }, [boundaries])
 
   // Polygon GeoJSON — real ward boundaries, colored by AQI where monitored.
   // `wards` (the fetchAllWardsAqi() result) now covers every ward with an
@@ -115,10 +221,17 @@ export default function OverviewChoroplethMap({
             preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
               ? preferred.cpcbAqi
               : (ward?.aqi ?? preferred?.openaqAqi ?? null)
+          // Bug fix (Sept 2026): `ward != null` used to BE the monitored
+          // signal, back when fetchAllWardsAqi() only returned monitored
+          // wards (so mere presence in `wards` meant monitored). That
+          // function now returns every ward (so VayuTrace attribution -
+          // which needs no station - is reachable everywhere); presence
+          // alone no longer implies monitored, so this must check the
+          // explicit isMonitored field instead.
           return {
             type: 'Feature',
             id: b.id,
-            properties: { id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward != null },
+            properties: { id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward?.isMonitored ?? false },
             geometry: b.geometry,
           }
         }),
@@ -132,8 +245,16 @@ export default function OverviewChoroplethMap({
   const boundaryWardIds = useMemo(() => new Set(boundaries.map(b => b.id)), [boundaries])
   const centersGeoJSON = useMemo<CenterGeoJSON>(() => ({
     type: 'FeatureCollection',
+    // Bug fix (Sept 2026): `wards` used to contain ONLY monitored wards, so
+    // `w.lat != null && w.lng != null` (a real captured point) was itself
+    // sufficient to imply monitored — hardcoding isMonitored: true below
+    // was safe. Now that fetchAllWardsAqi() returns every ward, that's no
+    // longer true (confirmed live: Mayapuri, id 12, has a real point but
+    // is NOT monitored) — filter on the explicit isMonitored field too, or
+    // this circle layer would wrongly render an unmonitored ward as if it
+    // had a live reading.
     features: !boundariesLoaded ? [] : wards
-      .filter(w => w.lat != null && w.lng != null && !boundaryWardIds.has(w.id))
+      .filter(w => w.isMonitored && w.lat != null && w.lng != null && !boundaryWardIds.has(w.id))
       .map((w): Feature<Point, WardFeatureProps> => {
         const preferred = latestReadingsByWard?.get(w.id)
         const aqi =
@@ -148,6 +269,17 @@ export default function OverviewChoroplethMap({
         }
       }),
   }), [wards, latestReadingsByWard, boundaryWardIds, boundariesLoaded])
+
+  const windGeoJSON = useMemo<WindGeoJSON>(() => ({
+    type: 'FeatureCollection',
+    features: windField
+      .filter((w) => w.windSpeed != null && w.windDir != null)
+      .map((w): Feature<Point, WindFeatureProps> => ({
+        type: 'Feature',
+        properties: { wardName: w.wardName, windSpeed: w.windSpeed as number, windDir: w.windDir as number },
+        geometry: { type: 'Point', coordinates: [w.lng, w.lat] },
+      })),
+  }), [windField])
 
   // Mount the map once.
   useEffect(() => {
@@ -253,6 +385,37 @@ export default function OverviewChoroplethMap({
           ] as maplibregl.ExpressionSpecification,
         },
       })
+
+      // ── Wind field layer (spatial-correlation view, Sept 2026) ─────────────
+      if (!map.hasImage(WIND_IMAGE_ID)) {
+        map.addImage(WIND_IMAGE_ID, createWindArrowImage())
+      }
+      map.addSource(WIND_SRC, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] } as WindGeoJSON,
+      })
+      map.addLayer({
+        id: WIND_LAYER,
+        type: 'symbol',
+        source: WIND_SRC,
+        layout: {
+          'icon-image': WIND_IMAGE_ID,
+          // wind_dir is the direction wind comes FROM (meteorological
+          // convention) — rotate 180° so the arrow points the direction the
+          // air is actually moving toward, matching MapView.tsx's own wind
+          // layer convention.
+          'icon-rotate': ['%', ['+', ['to-number', ['get', 'windDir']], 180], 360] as maplibregl.ExpressionSpecification,
+          'icon-rotation-alignment': 'map',
+          'icon-size': ['interpolate', ['linear'], ['to-number', ['get', 'windSpeed']],
+            0, 0.4,
+            5, 0.55,
+            15, 0.8,
+            25, 1.0,
+          ] as maplibregl.ExpressionSpecification,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      })
     }
 
     if (map.isStyleLoaded()) addLayers()
@@ -353,39 +516,35 @@ export default function OverviewChoroplethMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Fit map to monitored wards once when data first loads.
-  const hasFittedRef = useRef(false)
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || hasFittedRef.current || wards.length === 0) return
+  // Previously: fit map to monitored wards' bounding box once on first
+  // load. Removed (Sept 2026, direct request) — that fit zoomed in tighter
+  // (up to zoom 11) than DELHI_ZOOM's own 9.6, so the page always opened
+  // cropped to just the monitored-ward cluster instead of showing the full
+  // NCR context (Bahadurgarh–Ghaziabad–Noida–Gurugram–Faridabad) the fixed
+  // center/zoom below is tuned for. The map now simply opens at
+  // DELHI_CENTER/DELHI_ZOOM and stays there — a viewer can always zoom in
+  // themselves if they want a tighter view.
 
-    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
-    for (const w of wards) {
-      if (w.lng == null || w.lat == null) continue
-      if (w.lng < minLng) minLng = w.lng
-      if (w.lng > maxLng) maxLng = w.lng
-      if (w.lat < minLat) minLat = w.lat
-      if (w.lat > maxLat) maxLat = w.lat
-    }
-    if (!isFinite(minLng)) return
-
-    const doFit = () => {
-      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 48, maxZoom: 11, duration: 800 })
-      hasFittedRef.current = true
-    }
-    if (mapReadyRef.current) doFit()
-    else map.once('load', doFit)
-  }, [wards])
-
-  // Fly to selected ward centroid on selection change.
+  // Fly to selected ward on selection change. Prefers the ward's own
+  // captured lat/lng when it has one; falls back to its boundary polygon's
+  // bounding-box centre otherwise — only 13 of ~250 wards have a real point,
+  // so without this fallback flyTo silently did nothing for the other ~237
+  // (the bug reported Sept 2026: "works but only for a few").
   useEffect(() => {
     const map = mapRef.current
     if (!map || selectedWardId === null) return
     const ward = wardsForFlyRef.current.find(w => w.id === selectedWardId)
-    if (!ward || ward.lng == null || ward.lat == null) return
+    const boundary = boundariesForFlyRef.current.find(b => b.id === selectedWardId)
+    const center: [number, number] | null =
+      ward?.lng != null && ward?.lat != null
+        ? [ward.lng, ward.lat]
+        : boundary
+        ? boundingBoxCenter(boundary.geometry)
+        : null
+    if (!center) return
 
     const doFly = () => {
-      map.flyTo({ center: [ward.lng!, ward.lat!], zoom: Math.max(map.getZoom(), 11.5), duration: 500 })
+      map.flyTo({ center, zoom: Math.max(map.getZoom(), 11.5), duration: 500 })
     }
     if (mapReadyRef.current) doFly()
     else map.once('load', doFly)
@@ -414,6 +573,18 @@ export default function OverviewChoroplethMap({
     if (mapReadyRef.current) apply()
     else map.once('load', apply)
   }, [centersGeoJSON])
+
+  // Push updated wind field GeoJSON.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const apply = () => {
+      const src = map.getSource(WIND_SRC) as maplibregl.GeoJSONSource | undefined
+      if (src) src.setData(windGeoJSON)
+    }
+    if (mapReadyRef.current) apply()
+    else map.once('load', apply)
+  }, [windGeoJSON])
 
   // Sync selected feature state on both sources.
   useEffect(() => {
@@ -446,20 +617,86 @@ export default function OverviewChoroplethMap({
         </div>
       )}
 
-      {/* Compact AQI legend — bottom-right, clear of zoom controls */}
-      <div className="absolute bottom-10 right-14 z-10 rounded-lg border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-sm backdrop-blur-sm">
-        <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">AQI</p>
-        <div className="space-y-[3px]">
-          {LEGEND_ITEMS.map((l) => (
-            <div key={l.label} className="flex items-center gap-1.5">
-              <span
-                className="h-2.5 w-3 flex-shrink-0 rounded-[2px]"
-                style={{ backgroundColor: l.color }}
-              />
-              <span className="text-[9px] font-medium text-slate-600">{l.label}</span>
+      {/* Ward summary card removed (Sept 2026, 3rd pass) — its AQI number,
+          NAQI label, and ward name were the exact same three facts already
+          shown as the left list's top row and the right detail panel's own
+          hero, per direct feedback that it was "repetitive, everything" on
+          top of those two. The default-worst-ward click-to-select shortcut
+          this card also provided is not lost: the worst ward is already the
+          left list's top row (also clickable) whenever nothing is selected. */}
+
+      {/* Open full Map page (Sept 2026) — top-right, above the AQI legend.
+          This Overview map is a compact preview (no time-mode scrubber, no
+          GeoAI, no source-attribution tools); clicking here takes a viewer
+          who wants the full toolset straight to /map instead of leaving them
+          to find it via the side nav. */}
+      <button
+        type="button"
+        onClick={() => navigate('/map')}
+        title="Open full map"
+        aria-label="Open full map"
+        className="focus-ring absolute right-2 top-2 z-10 rounded-lg border border-slate-200/80 bg-white/90 p-1.5 text-slate-500 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-accent-600"
+      >
+        <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+      </button>
+
+      {/* Compact AQI legend — sits below the fullscreen button, top-right,
+          clear of the hovered-ward badge (top-left) and the zoom controls
+          (bottom-right). Same real liquid-glass <GlassSurface> as the KPI
+          bar below and the Map page toolbar (Sept 2026), replacing the
+          earlier flat bg-white/90 + backdrop-blur-sm approximation. */}
+      <div className="absolute right-2 top-10 z-10">
+        <GlassSurface radiusClassName="rounded-lg" className="px-2 py-1.5">
+          <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-500">AQI</p>
+          <div className="space-y-[3px]">
+            {LEGEND_ITEMS.map((l) => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-3 flex-shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: l.color }}
+                />
+                <span className="text-[9px] font-medium text-slate-700">{l.label}</span>
+              </div>
+            ))}
+          </div>
+          {/* Wind field caption (Sept 2026) — a small note explaining the blue
+              arrows, not a full legend (only one glyph/colour to explain,
+              unlike the 6-band AQI scale above). Point count is real, not
+              decorative — makes clear this is a sample of real readings
+              spread across the city, not a single fabricated "city wind". */}
+          {windGeoJSON.features.length > 0 && (
+            <div className="mt-2 flex items-center gap-1.5 border-t border-slate-900/10 pt-1.5">
+              <span className="text-xs leading-none text-[rgba(30,100,220,0.92)]">➤</span>
+              <span className="text-[9px] font-medium text-slate-600">
+                Wind · {windGeoJSON.features.length} points
+              </span>
             </div>
-          ))}
-        </div>
+          )}
+        </GlassSurface>
+      </div>
+
+      {/* City KPI bar — real Apple-style "liquid glass" (Sept 2026, 2nd
+          pass): the first pass here was a flat translucent+blur
+          approximation, same as the Map page toolbar's own first pass,
+          which was rejected there as not the actual effect — swapped to
+          the same <GlassSurface> (SVG turbulence/displacement filter that
+          actually warps the map behind it) used there now, for
+          consistency. pr-14-equivalent spacing (right-14 below) still
+          clears MapLibre's own zoom control, bottom-right in this corner.
+          CityKpiRow's compact variant text colours are unchanged — dark
+          text reads correctly here since this map (unlike the Map page's
+          default dark basemap) uses the light 'terrain' style. */}
+      <div className="absolute bottom-2 left-2 right-14 z-10">
+        <GlassSurface radiusClassName="rounded-xl" className="flex items-stretch justify-between gap-1 px-1 py-1">
+          <CityKpiRow
+            reviewCount={reviewCount}
+            openReportCount={openReportCount}
+            coverage={coverage}
+            latestReadingAgeMinutes={latestReadingAgeMinutes}
+            onWardsFlaggedClick={onWardsFlaggedClick}
+            compact
+          />
+        </GlassSurface>
       </div>
     </div>
   )

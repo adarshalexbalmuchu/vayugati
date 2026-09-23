@@ -392,34 +392,40 @@ export type Database = {
       attributions: {
         Row: {
           breakdown: Json | null
+          breakdown_uncertainty: Json | null
           confidence: number | null
           direction: string | null
           id: number
           method: string | null
           regional_fire_index: number | null
           regional_fraction_prior: number | null
+          station_proximity: number | null
           ts: string
           ward_id: number
         }
         Insert: {
           breakdown?: Json | null
+          breakdown_uncertainty?: Json | null
           confidence?: number | null
           direction?: string | null
           id?: number
           method?: string | null
           regional_fire_index?: number | null
           regional_fraction_prior?: number | null
+          station_proximity?: number | null
           ts?: string
           ward_id: number
         }
         Update: {
           breakdown?: Json | null
+          breakdown_uncertainty?: Json | null
           confidence?: number | null
           direction?: string | null
           id?: number
           method?: string | null
           regional_fire_index?: number | null
           regional_fraction_prior?: number | null
+          station_proximity?: number | null
           ts?: string
           ward_id?: number
         }

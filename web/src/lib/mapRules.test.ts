@@ -9,11 +9,35 @@ import {
   nearestForecastPoint,
   nearestStationTo,
   nowcastPoint,
+  pollutantHasForecast,
   resolveWardReading,
   stationReadingValue,
   wardDataStatus,
+  wardPollutantValue,
 } from './mapRules'
-import type { ForecastPoint, StationMarker, WardForecastSummary } from './data'
+import type { ForecastPoint, StationMarker, WardForecastSummary, WardSummary } from './data'
+
+function ward(overrides: Partial<WardSummary> = {}): WardSummary {
+  return {
+    id: 1,
+    name: 'Ward 1',
+    dominant_source: null,
+    lat: null,
+    lng: null,
+    aqi: null,
+    pm25: null,
+    pm10: null,
+    no2: null,
+    so2: null,
+    co: null,
+    o3: null,
+    ts: null,
+    station_name: null,
+    station_agency: null,
+    isMonitored: true,
+    ...overrides,
+  }
+}
 
 function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
   return {
@@ -33,6 +57,8 @@ function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
     forecastGeneratedAt: null,
     forecastMethod: null,
     dataQualityStatus: null,
+    maxValidatedHorizonHours: null,
+    beatsPersistence: null,
     ...overrides,
   }
 }
@@ -241,14 +267,36 @@ describe('anchorFreshnessClass', () => {
 })
 
 describe('forecastPollutantFor', () => {
-  it('maps aqi to pm25 (the only pollutant forecast.py never computes)', () => {
+  it('maps aqi to pm25 (the only pollutant forecast.py never computes - a composite index)', () => {
     expect(forecastPollutantFor('aqi')).toBe('pm25')
   })
 
-  it('passes every other pollutant through unchanged - forecast.py forecasts all three', () => {
+  it('passes every other pollutant through unchanged - forecast.py forecasts all six', () => {
+    // Sept 2026: so2/co/o3 used to also fall back to pm25 here (a gap in
+    // forecast.py's enabled-pollutants list, not a real data limit - see
+    // this function's own updated comment) - now forecast.py trains on
+    // them too, so every non-aqi pollutant passes through as itself.
     expect(forecastPollutantFor('pm25')).toBe('pm25')
     expect(forecastPollutantFor('pm10')).toBe('pm10')
     expect(forecastPollutantFor('no2')).toBe('no2')
+    expect(forecastPollutantFor('so2')).toBe('so2')
+    expect(forecastPollutantFor('co')).toBe('co')
+    expect(forecastPollutantFor('o3')).toBe('o3')
+  })
+})
+
+describe('pollutantHasForecast', () => {
+  it('is false only for aqi', () => {
+    expect(pollutantHasForecast('aqi')).toBe(false)
+  })
+
+  it('is true for every concentration pollutant, including so2/co/o3', () => {
+    expect(pollutantHasForecast('pm25')).toBe(true)
+    expect(pollutantHasForecast('pm10')).toBe(true)
+    expect(pollutantHasForecast('no2')).toBe(true)
+    expect(pollutantHasForecast('so2')).toBe(true)
+    expect(pollutantHasForecast('co')).toBe(true)
+    expect(pollutantHasForecast('o3')).toBe(true)
   })
 })
 
@@ -290,7 +338,7 @@ describe('markerMeaningLabel', () => {
 
 describe('nearestStationTo', () => {
   function station(overrides: Partial<StationMarker> = {}): StationMarker {
-    return { id: 1, name: 'Test station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, ...overrides }
+    return { id: 1, name: 'Test station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, so2: null, co: null, o3: null, ...overrides }
   }
 
   it('returns null when the origin coordinate is missing', () => {
@@ -541,5 +589,37 @@ describe('wardDataStatus', () => {
 
   it('is no_station_data when neither is available - never a 4th guessed state', () => {
     expect(wardDataStatus(false, false)).toBe('no_station_data')
+  })
+})
+
+describe('wardPollutantValue', () => {
+  // Regression coverage (Sept 2026): HotspotsRiskTable's row ranking used to
+  // always sort by ward.aqi regardless of which of the 7 pollutant tabs was
+  // selected — clicking PM2.5/SO2/CO/etc. changed what value was DISPLAYED
+  // per row but never re-sorted the table by it. This helper is the shared
+  // pollutant->field mapping both CurrentReadingBadge's display and the
+  // table's ranking now use, so they can never independently drift.
+  const w = ward({ aqi: 184, pm25: 88, pm10: 154, no2: 25, so2: 9, co: 0.066, o3: 38 })
+
+  it('maps each of the 7 pollutants to its own field, not a shared fallback', () => {
+    expect(wardPollutantValue(w, 'aqi')).toBe(184)
+    expect(wardPollutantValue(w, 'pm25')).toBe(88)
+    expect(wardPollutantValue(w, 'pm10')).toBe(154)
+    expect(wardPollutantValue(w, 'no2')).toBe(25)
+    expect(wardPollutantValue(w, 'so2')).toBe(9)
+    expect(wardPollutantValue(w, 'co')).toBe(0.066)
+    expect(wardPollutantValue(w, 'o3')).toBe(38)
+  })
+
+  it('never falls through SO2/CO/O3 to NO2 (the exact bug CurrentReadingBadge itself was fixed for)', () => {
+    const distinct = ward({ no2: 25, so2: 999, co: 999, o3: 999 })
+    expect(wardPollutantValue(distinct, 'so2')).toBe(999)
+    expect(wardPollutantValue(distinct, 'co')).toBe(999)
+    expect(wardPollutantValue(distinct, 'o3')).toBe(999)
+  })
+
+  it('returns null, not 0 or undefined, when a ward has no reading for that pollutant', () => {
+    const noReadings = ward()
+    expect(wardPollutantValue(noReadings, 'co')).toBeNull()
   })
 })

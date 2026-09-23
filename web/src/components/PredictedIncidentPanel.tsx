@@ -7,6 +7,7 @@ import {
   FORECAST_METHOD_LABEL,
   POLLUTANT_LABEL,
   PREDICTION_METHOD_LABEL,
+  confidenceTierLabel,
   describeTriggeredRule,
   forecastFallbackStatus,
   isHorizonValidated,
@@ -255,7 +256,16 @@ export default function PredictedIncidentPanel({ detail, onRefresh }: { detail: 
                 : '-'}
           </Fact>
           <Fact label="Threshold used">{fmt(latest?.threshold_used ?? null)}</Fact>
-          <Fact label="Data confidence">{latest?.confidence != null ? `${Math.round(latest.confidence * 100)}%` : '-'}</Fact>
+          {/* Was a raw "{confidence * 100}%" — that field is a hand-picked
+              tier marker, not a calibrated probability (see
+              confidenceTierLabel's own doc comment), and reads exactly like
+              a real "70% chance" figure to anyone unfamiliar with how it's
+              computed. Replaced Sept 2026 with the honest, unambiguous
+              version derived from the same real fields (max_validated_horizon_hours/
+              beats_persistence) the "Validated up to" row below already uses. */}
+          <Fact label="Forecast confidence">
+            {run ? confidenceTierLabel(run.max_validated_horizon_hours, run.beats_persistence) : '-'}
+          </Fact>
           <Fact label="Sensor">
             {latest?.sensor_quality ?? '-'}
             {sensorQualityCaveat(latest?.sensor_quality ?? null) && (

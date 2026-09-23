@@ -469,7 +469,23 @@ export default function MapView({
       style: styleUrl ?? FALLBACK_STYLE,
       center: center ?? DELHI_CENTER,
       zoom,
+      // Default attribution control renders its text inline, always
+      // expanded, at full size — reads as a stray label next to the info
+      // button rather than attribution. `compact: true` collapses it to
+      // just the (i) button *once toggled*, but MapLibre's own
+      // _updateCompact() adds the 'maplibregl-compact-show' class (the
+      // EXPANDED state) the very first time the control is created,
+      // regardless of the `compact` option — `compact: true` only changes
+      // whether it's ALLOWED to collapse, not its starting state. That's
+      // why the credit text kept showing fully expanded on load even with
+      // this option set. Fixed below by stripping that class right after
+      // the control mounts, so it starts collapsed to just the (i) button
+      // and only expands on an explicit click.
+      attributionControl: false,
     })
+    const attribution = new maplibregl.AttributionControl({ compact: true })
+    map.addControl(attribution)
+    ;(attribution as unknown as { _container?: HTMLElement })._container?.classList.remove('maplibregl-compact-show')
     // Reset here, not just at useRef's initial value: React StrictMode
     // (dev only) double-invokes effects on mount - mount, cleanup, mount
     // again - and this ref survives that cycle since it belongs to the
@@ -511,7 +527,17 @@ export default function MapView({
     canvas.addEventListener('webglcontextlost', onContextLost)
     canvas.addEventListener('webglcontextrestored', onContextRestored)
 
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
+    // Bug fix (Sept 2026): was 'top-right', which was safe back when the
+    // toolbar sat in normal flex flow above the map (pushing it down, so
+    // 'top-right' meant the top of the now-shorter map area, well clear of
+    // the toolbar). The toolbar has since moved to an absolutely-positioned
+    // floating pill over the FULL-HEIGHT map — 'top-right' for this control
+    // now collides with that pill's own top-right corner, showing as a
+    // stray white box cut into the pill. 'bottom-right' matches
+    // ScaleControl below; MapLibre stacks same-corner controls vertically
+    // rather than overlapping them, so the two coexist the same way they
+    // already do on the Overview map's zoom control (also bottom-right).
+    map.addControl(new maplibregl.NavigationControl(), 'bottom-right')
     if (showScaleBar) map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right')
     if (onHoverCoordinates) {
       map.on('mousemove', (e) => onHoverCoordinates({ lng: e.lngLat.lng, lat: e.lngLat.lat }))
@@ -597,7 +623,16 @@ export default function MapView({
       map.addSource(INCIDENT_SOURCE_ID, {
         type: 'geojson',
         data: data ?? emptyCollection,
-        cluster: true,
+        // Clustering disabled (Sept 2026, direct request) — the grey
+        // numbered cluster circles read as ambiguous/confusable with AQI
+        // reading badges at a glance. Every incident now renders as its own
+        // individual diamond (INCIDENT_POINT_LAYER below) regardless of how
+        // many share a neighbourhood; INCIDENT_CLUSTER_LAYER/
+        // INCIDENT_CLUSTER_COUNT_LAYER and the spiderfy-on-cluster-click
+        // logic further down are kept (not deleted) since their filters
+        // (`has point_count`) simply never match with clustering off — no
+        // functional loss, just permanently inert until re-enabled.
+        cluster: false,
         clusterMaxZoom: INCIDENT_CLUSTER_MAX_ZOOM,
         clusterRadius: INCIDENT_CLUSTER_RADIUS,
         // Aggregate properties across cluster members for tooltip + styling.

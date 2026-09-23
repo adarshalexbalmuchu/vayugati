@@ -9,8 +9,8 @@ export interface NearbyMatch {
 /** Right-panel results for the two GIS analysis tools (measure/buffer),
  *  rendered in place of the marker-selection panels while a tool is active
  *  — same panel slot, same header/close-button convention as
- *  SelectedWardPanel.tsx, same Stat-tile grid convention as
- *  SpatialSummaryPanel.tsx for the buffer counts. */
+ *  SelectedWardPanel.tsx, same Stat-tile grid convention used for the
+ *  buffer counts below. */
 export default function ToolResultsPanel({
   mode,
   measurePointCount,

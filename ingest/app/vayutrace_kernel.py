@@ -309,6 +309,48 @@ MC_DEFAULT_DRAWS: int = 16
 #   fire   FRP is a real satellite measurement, so this is the best
 #          constrained of the four — but the FRP-to-emission conversion is
 #          still a literature proxy.
+# WHY THE RESULTING BANDS ARE SO WIDE, and why narrowing them here would
+# be dishonest.
+#
+# Measured contribution to the final interval (40 real wards, 32 draws):
+#     all three sources of uncertainty      median band 0.431
+#     emission weight alone                 median band 0.431
+#     sigma + wind direction alone          median band 0.044
+# i.e. emission-weight uncertainty causes essentially ALL of it. The
+# dispersion physics is not what makes the answer vague; the inventory is.
+#
+# What these sigmas assert, as 95% multiplicative ranges:
+#     road       0.70 -> 0.25x .. 3.9x nominal
+#     industrial 0.60 -> 0.31x .. 3.2x
+#     dust       0.80 -> 0.21x .. 4.8x
+#     fire       0.40 -> 0.46x .. 2.2x
+#
+# Those look alarming until checked against what the inputs actually are.
+# EPA states that using DEFAULT silt loadings — which is exactly what this
+# does, having no local measurement — yields "only an order-of-magnitude
+# estimate" and drops the emission factor's quality rating two letters.
+# Indian road silt is separately cited at 25-30x developed-nation values
+# with large scatter (Katiyar et al. 2024, 259 locations / 32 cities).
+# Industrial weight is polygon area times a hand-assigned subtype
+# multiplier with no stack measurement anywhere in the chain. Against that,
+# a factor-of-4 span is not pessimistic; it is arguably generous.
+#
+# Tightening these to get a prettier interval was considered and rejected.
+# The relationship is direct and was measured:
+#     sigmas as below          -> +-22 percentage points
+#     halved                   -> +-11
+#     quartered                -> +-6
+# A +-6 band would require asserting road emissions are known to within
+# about +-20%, which contradicts the cited sources. That is choosing the
+# answer and back-filling the error bars.
+#
+# THE CORRECT WAY TO NARROW THESE IS TO FIX THE INPUTS, not the sigmas:
+#   - real Delhi silt-loading measurements (Katiyar et al.'s per-road-type
+#     table would alone justify roughly halving `road` and `dust`)
+#   - any traffic-count data at all, replacing road class as an ADT proxy
+#   - CPCB CEMS data for the formally-registered industrial estates
+# Each of those is a real, obtainable input, and each would shrink the
+# band on evidence rather than by assertion.
 MC_EMISSION_LOGSIGMA: dict[str, float] = {
     "road":       0.70,
     "industrial": 0.60,

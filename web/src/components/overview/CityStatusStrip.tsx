@@ -26,7 +26,7 @@ export default function CityStatusStrip({
   worstWard,
   reviewCount,
   severeInWindowCount,
-  openIncidents,
+  openReportCount,
   windowHours,
 }: {
   worstWard: { name: string; aqi: number | null } | null
@@ -34,7 +34,7 @@ export default function CityStatusStrip({
   reviewCount: number
   /** Wards forecast to hit severe within the selected window (from severeWardsWithin). */
   severeInWindowCount: number
-  openIncidents: number
+  openReportCount: number
   windowHours: TimeWindowHours
 }) {
   const level = worstWard ? aqiLevel(worstWard.aqi) : null
@@ -80,9 +80,9 @@ export default function CityStatusStrip({
       <Divider />
 
       <Stat
-        value={openIncidents}
+        value={openReportCount}
         label="incidents open"
-        color={openIncidents > 0 ? 'text-slate-800' : 'text-slate-400'}
+        color={openReportCount > 0 ? 'text-slate-800' : 'text-slate-400'}
       />
     </div>
   )

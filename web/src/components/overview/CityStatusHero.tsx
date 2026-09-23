@@ -25,6 +25,7 @@ export default function CityStatusHero({
   readingAgeMinutes,
   forecastLabel = 'PM₂.₅',
   forecastSuppressed = false,
+  compact = false,
 }: {
   aqi: number | null
   wardName: string | null
@@ -37,6 +38,10 @@ export default function CityStatusHero({
    *  is suppressed — it would reflect the absence of forecast data, not an
    *  evaluated result, and would contradict the "Forecast unavailable" banner. */
   forecastSuppressed?: boolean
+  /** Single-line variant for the merged header row: ward name + AQI level
+   *  inline, everything else (label, trend, forecast peak, reading age)
+   *  dropped — there's no vertical room for a 5-line stack in a 56px bar. */
+  compact?: boolean
 }) {
   const level = aqiLevel(aqi)
   const ts = trend ? TREND_STYLE[trend] : null
@@ -47,6 +52,24 @@ export default function CityStatusHero({
     trend === 'severe' ? 'Severe imminent' :
     trend === 'stable' ? (forecastSuppressed ? null : 'Stable') :
     trend === 'stale'  ? 'Stale reading' : null
+
+  if (compact) {
+    return (
+      <div className="flex min-w-0 items-baseline gap-2 py-0.5">
+        <span
+          className="truncate text-sm font-bold leading-normal text-slate-900"
+          title={wardName ? formatWardName(wardName) : undefined}
+        >
+          {wardName ? formatWardName(wardName) : '—'}
+        </span>
+        {aqi !== null && (
+          <span className="flex-shrink-0 text-xs font-semibold leading-normal" style={{ color: level.hex }}>
+            {level.label}
+          </span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-w-0 flex-col gap-0.5">

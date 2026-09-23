@@ -5,7 +5,11 @@ import type { VayuTraceAttribution } from './data'
 function attribution(overrides: Partial<VayuTraceAttribution> = {}): VayuTraceAttribution {
   return {
     breakdown: { industrial: 0.34, road: 0.33, fire: 0.33, unknown: 0 },
+    // Defaults to absent, matching rows written before the Monte Carlo
+    // work — actionability scoring must not require the bands.
+    breakdown_uncertainty: null,
     confidence: 0.5,
+    station_proximity: 0.5,
     regional_fraction_prior: 0.35,
     regional_fire_index: 0,
     ts: new Date().toISOString(),

@@ -77,7 +77,7 @@ function healthRow(overrides: Partial<StationHealthRow> = {}): StationHealthRow 
 }
 
 function station(overrides: Partial<StationMarker> = {}): StationMarker {
-  return { id: 1, name: 'Test Station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, ...overrides }
+  return { id: 1, name: 'Test Station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, so2: null, co: null, o3: null, ...overrides }
 }
 
 // ── stationFreshnessClass ────────────────────────────────────────────────────

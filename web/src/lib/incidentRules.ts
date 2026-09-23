@@ -1397,6 +1397,36 @@ export const FORECAST_METHOD_LABEL: Record<ForecastMethod, string> = {
   diurnal_persistence: 'Seasonal/hourly baseline (fallback)',
 }
 
+/**
+ * "Data confidence" was being shown to users as a raw percentage derived
+ * from `latest.confidence` (e.g. "70%") — but per ingest/app/forecast.py
+ * (`confidence = np.clip(0.4 + 0.1 * HORIZONS_H.index(max_validated), 0.4,
+ * 0.9)`), that field is a hand-picked tier marker, NOT a calibrated
+ * statistical probability, and — worse — when the forecast is a baseline
+ * fallback it defaults to a flat 0.5 that is indistinguishable, as a raw
+ * number, from "validated to 12h" (which also produces exactly 0.5). Showing
+ * "70%" invites reading it the way a weather forecast's "70% chance of rain"
+ * is read (a real, calibrated probability), which this number has never
+ * been, and the 0.5 collision means deriving a label from the float alone
+ * cannot be made unambiguous even with better thresholds.
+ *
+ * Fix: derive the label from `max_validated_horizon_hours` /
+ * `beats_persistence` instead — real, unambiguous fields the ingest
+ * pipeline already stores and PredictedIncidentPanel.tsx already fetches
+ * for its own "Validated up to" row, rather than reverse-engineering a tier
+ * from the confidence float. Added Sept 2026 after a literature review
+ * flagged the percentage as presenting more statistical certainty than the
+ * underlying number supports. */
+export function confidenceTierLabel(
+  maxValidatedHorizonHours: number | null,
+  beatsPersistence: boolean,
+): string {
+  if (beatsPersistence && maxValidatedHorizonHours != null) {
+    return `Validated to ${maxValidatedHorizonHours}h`
+  }
+  return 'Not statistically validated (baseline estimate)'
+}
+
 export type ForecastDataQualityStatus = 'ok' | 'insufficient_data' | 'stale_inputs'
 export const FORECAST_DATA_QUALITY_LABEL: Record<ForecastDataQualityStatus, string> = {
   ok: 'Data quality OK',

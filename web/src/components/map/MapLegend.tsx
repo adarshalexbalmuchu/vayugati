@@ -85,6 +85,9 @@ export default function MapLegend({
   aqiExtrusionOn = false,
   forecastSuppressed = false,
   obsViewMode = 'snapshot',
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   viewMode?: MapViewMode
   sourceAttributionOn: boolean
@@ -97,26 +100,50 @@ export default function MapLegend({
   aqiExtrusionOn?: boolean
   forecastSuppressed?: boolean
   obsViewMode?: ObsViewMode
+  /** Controlled open state (Sept 2026 addition) — same pattern as
+   *  MapLayerControl's own `open`/`onOpenChange`, for a caller (MapPage's
+   *  header-embedded trigger button) driving this from outside. Falls back
+   *  to internal state when omitted. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Skip this component's own trigger button (the caller renders its own
+   *  elsewhere, e.g. the header) — the always-visible closed-state mini-key
+   *  (change-direction arrows / freshness dots) still renders based on the
+   *  controlled `open` value, just without the clickable header row. */
+  hideTrigger?: boolean
 }) {
   const isChangeMode = viewMode === 'pollution' && obsViewMode === 'change'
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
   const [infoOpen, setInfoOpen] = useState(false)
+
+  // Bug fix (Sept 2026): with hideTrigger set, this component has nothing
+  // to render at all when the panel is closed AND neither closed-state
+  // mini-key applies (the normal pollution/snapshot view) — without this
+  // guard it still returned its outer bordered/shadowed wrapper div with
+  // literally empty content, showing as a blank white box floating on the
+  // map for no reason.
+  const hasClosedStateMiniContent = isChangeMode || viewMode === 'data_quality'
+  if (hideTrigger && !open && !hasClosedStateMiniContent) return null
 
   return (
     <div className="w-52 rounded-lg border border-slate-200 bg-white shadow-card">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="focus-ring flex w-full items-center gap-1.5 px-1.5 py-1"
-      >
-        <ListTree className="h-3 w-3 text-accent-600" strokeWidth={2} aria-hidden />
-        <p className="flex-1 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Legend</p>
-        {open ? (
-          <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden />
-        ) : (
-          <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
-        )}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="focus-ring flex w-full items-center gap-1.5 px-1.5 py-1"
+        >
+          <ListTree className="h-3 w-3 text-accent-600" strokeWidth={2} aria-hidden />
+          <p className="flex-1 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Legend</p>
+          {open ? (
+            <ChevronDown className="h-3 w-3 text-slate-400" aria-hidden />
+          ) : (
+            <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden />
+          )}
+        </button>
+      )}
 
       {/* Compact always-visible key for change mode */}
       {isChangeMode && !open && (

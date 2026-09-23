@@ -9,6 +9,7 @@ function MetricCard({
   sub,
   valueColor = 'text-slate-900',
   onClick,
+  compact = false,
 }: {
   /** Small status dot colour — signals severity without needing an icon set. */
   tone: string
@@ -18,8 +19,35 @@ function MetricCard({
   sub?: React.ReactNode
   valueColor?: string
   onClick?: () => void
+  /** Single-line "label value" variant for the merged header row — no room
+   *  for the stacked label/value/sub block there. Drops `sub` entirely. */
+  compact?: boolean
 }) {
   const Comp = onClick ? 'button' : 'div'
+
+  if (compact) {
+    // Deliberately calmer than the full card: no status dot (redundant with
+    // the coloured value right next to it — two signals for one fact), label
+    // always neutral slate so only the value itself carries colour, and a
+    // normal-weight value so a healthy/quiet state doesn't read as loud as a
+    // degraded one. Colour is still the only thing that changes between
+    // states — nothing here gets *more* decorated when something's wrong,
+    // it just goes from slate to amber/red.
+    return (
+      <Comp
+        type={onClick ? 'button' : undefined}
+        onClick={onClick}
+        title={label}
+        className={`flex h-full flex-shrink-0 items-baseline gap-1.5 whitespace-nowrap px-3 text-xs transition ${
+          onClick ? 'focus-ring cursor-pointer hover:bg-slate-50' : ''
+        }`}
+      >
+        <span className="text-slate-400">{label}</span>
+        <span className={`font-semibold tabular-nums ${valueColor}`}>{value}</span>
+      </Comp>
+    )
+  }
+
   return (
     <Comp
       type={onClick ? 'button' : undefined}
@@ -57,13 +85,14 @@ function formatAge(minutes: number): string {
 
 export default function CityKpiRow({
   reviewCount,
-  openIncidents,
+  openReportCount,
   coverage,
   latestReadingAgeMinutes,
   onWardsFlaggedClick,
+  compact = false,
 }: {
   reviewCount: number
-  openIncidents: number
+  openReportCount: number
   /** null while the accuracy fetch hasn't settled */
   coverage: { fresh: number; total: number } | null
   /** Age of the most recently updated ward reading — used to show a
@@ -72,6 +101,9 @@ export default function CityKpiRow({
   /** Scrolls the ranked ward table into view — only wired up when there's
    *  actually something flagged to jump to. */
   onWardsFlaggedClick?: () => void
+  /** Single-line "label value" cells for the merged header row — see
+   *  MetricCard's own compact variant. */
+  compact?: boolean
 }) {
   const { readingConfirmedFresh, forecastConfirmedFresh, healthLoaded, health } = useIngestHealth()
   const navigate = useNavigate()
@@ -133,15 +165,27 @@ export default function CityKpiRow({
         sub={forecastRunFailed ? 'Forecast required' : undefined}
         valueColor={forecastRunFailed ? 'text-slate-400' : reviewCount > 0 ? 'text-status-warning' : 'text-slate-400'}
         onClick={onWardsFlaggedClick}
+        compact={compact}
       />
       <MetricCard
-        tone={openIncidents > 0 ? 'bg-status-warning' : 'bg-slate-300'}
-        label="Incidents open"
-        value={openIncidents}
+        tone={openReportCount > 0 ? 'bg-status-warning' : 'bg-slate-300'}
+        // Was mislabeled "Incidents open" (Sept 2026 fix) — this value is
+        // fetchGatiMetrics().openCount, computed from the `reports` table
+        // (citizen submissions), not the separate `incidents` table
+        // /incidents shows. Three-way mismatch found during a Map-page
+        // review: the label implied `incidents`, the number was `reports`,
+        // and the click-through went to /incidents anyway — a viewer
+        // clicking this card landed on a page showing a different count
+        // than the one they just clicked. Relabeled to say what it actually
+        // counts, and the click-through now goes to /citizens (CitizensView,
+        // the real reports-table page) instead.
+        label="Reports open"
+        value={openReportCount}
         // Neutral dark for 0 — green implies a positive outcome; zero open
-        // incidents during AQI 322 may mean no response was initiated yet.
-        valueColor={openIncidents > 0 ? 'text-status-warning' : 'text-slate-900'}
-        onClick={() => navigate('/incidents')}
+        // reports during AQI 322 may mean no response was initiated yet.
+        valueColor={openReportCount > 0 ? 'text-status-warning' : 'text-slate-900'}
+        onClick={() => navigate('/citizens')}
+        compact={compact}
       />
       <MetricCard
         tone={forecastRunFailed ? 'bg-status-warning' : coverage ? 'bg-accent-500' : 'bg-slate-300'}
@@ -149,6 +193,7 @@ export default function CityKpiRow({
         value={forecastValue}
         valueColor={forecastColor}
         onClick={() => navigate('/analytics')}
+        compact={compact}
       />
       <MetricCard
         tone={!healthLoaded ? 'bg-slate-300' : freshnessDegraded ? 'bg-status-warning' : 'bg-status-success'}
@@ -157,6 +202,7 @@ export default function CityKpiRow({
         sub={freshnessSub}
         valueColor={freshnessColor}
         onClick={() => navigate('/sensors')}
+        compact={compact}
       />
     </>
   )

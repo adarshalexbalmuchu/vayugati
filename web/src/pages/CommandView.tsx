@@ -1,11 +1,8 @@
 import { useRef, useState } from 'react'
-import { ChevronRight, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
-import { Card, ErrorState, Skeleton, StaleBadge } from '../components/ui'
+import { Card, ErrorState, Skeleton } from '../components/ui'
 import PriorityAlertsPanel from '../components/overview/PriorityAlertsPanel'
-import { CityAqiGauge } from '../components/overview/CityAqiGauge'
-import CityStatusHero from '../components/overview/CityStatusHero'
-import CityKpiRow from '../components/overview/CityKpiRow'
 import HotspotsRiskTable from '../components/overview/HotspotsRiskTable'
 import {
   fetchAllForecasts,
@@ -17,8 +14,6 @@ import {
 import { forecastPollutantFor, type MapPollutant } from '../lib/mapRules'
 import { useIngestHealth } from '../contexts/IngestHealthContext'
 import {
-  hotspotStatus,
-  peakWithinWindow,
   severeWardsWithin,
   wardsNeedingReview,
   type TimeWindowHours,
@@ -32,10 +27,20 @@ import { useAsync } from '../lib/useAsync'
  * components/overview/*. Every KPI here comes from a function that already
  * existed elsewhere in the app (Tasks/Sensors/Analytics) — this page adds no
  * new data source, only a single ranked, cross-referenced read of them.
+ *
+ * The hero (gauge + worst ward + KPIs) is merged into AppShell's header row,
+ * alongside Refresh — not a separate card in the page body. That means the
+ * loading/error/success branching below has to produce both the header's
+ * content (`heroContent`) and the body's content (`body`), since headerContent
+ * is set once when <AppShell> is rendered, not re-derived per branch.
  */
 export default function CommandView() {
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
-  const [windowHours, setWindowHours] = useState<TimeWindowHours>(24)
+  // No longer user-changeable (the 12h/24h/36h/48h picker was removed — dead
+  // UI while the forecast pipeline isn't producing results) but still a real
+  // input to the trend/severity calculations below, so it stays as a fixed
+  // 24h default rather than disappearing outright.
+  const windowHours: TimeWindowHours = 24
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
   const { healthLoaded, readingConfirmedFresh, forecastConfirmedFresh } = useIngestHealth()
   const riskTableRef = useRef<HTMLDivElement | null>(null)
@@ -68,231 +73,168 @@ export default function CommandView() {
     cacheKey: 'command:latest-readings',
   })
 
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={() => {
+        state.refresh()
+        forecastsState.refresh()
+        latestReadingsState.refresh()
+      }}
+      disabled={state.refreshing}
+      // Matches the glass account pill next to it in the header (Sept
+      // 2026) — was a flat white-bordered button, a visibly different
+      // design language from the translucent GlassSurface header it sits
+      // in and the pill beside it.
+      className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-white/60 bg-white/40 px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm transition hover:bg-white/60 disabled:opacity-50"
+    >
+      <RefreshCw className={`h-3.5 w-3.5 ${state.refreshing ? 'animate-spin' : ''}`} aria-hidden />
+      Refresh
+    </button>
+  )
+
+  // heroContent removed (Sept 2026, 2nd pass) — the worst-ward gauge used
+  // to live in AppShell's header row; per direct request it moved onto the
+  // Overview map itself (OverviewChoroplethMap's top-left card, which now
+  // shows the worst ward by default and the selected ward once one is
+  // picked — one card, two possible contents, instead of a separate
+  // always-on header widget). This page no longer passes headerContent to
+  // AppShell at all, so it falls back to the default "Vayu Gati" brand text.
+  let body: React.ReactNode = null
+
+  if (state.loading || forecastsState.loading) {
+    body = (
+      <div className="flex min-h-0 flex-1 flex-col gap-2 bg-sky-50 p-3">
+        <Skeleton className="min-h-0 flex-1 rounded-xl" />
+      </div>
+    )
+  } else if (state.error) {
+    body = (
+      <div className="flex min-h-0 flex-1 flex-col gap-2 bg-sky-50 p-3">
+        <Card>
+          <ErrorState message={state.error} onRetry={() => state.refresh()} />
+        </Card>
+      </div>
+    )
+  } else if (state.data) {
+    const [wards, metrics, accuracy] = state.data
+    const rawForecasts = forecastsState.data ?? new Map()
+    const latestReadingsByWard = new Map(
+      (latestReadingsState.data ?? [])
+        .filter((r) => r.wardId != null)
+        .map((r) => [r.wardId as number, r]),
+    )
+    // When CPCB data is available for a ward, sort by CPCB AQI so the
+    // hero's "worst ward" matches what the table shows, not the OpenAQ
+    // 24h-average stored in wards.aqi.
+    const getEffectiveAqi = (ward: (typeof wards)[0]) => {
+      const p = latestReadingsByWard.get(ward.id)
+      // Fall through: CPCB fresh → ward.aqi (OpenAQ 24h) → openaqAqi
+      // (raw reading, always populated even when compute_ward_aqi returns
+      // null for stale wards — keeps sort order meaningful during outages)
+      return p?.sourceUsed === 'cpcb' && p.cpcbAqi != null
+        ? p.cpcbAqi
+        : (ward.aqi ?? p?.openaqAqi ?? null)
+    }
+    // Bug fix (Sept 2026): `wards` now includes every ward (fetchAllWardsAqi()
+    // was extended so VayuTrace attribution, which needs no station, is
+    // reachable everywhere) — this ranked risk table's whole purpose is
+    // "hotspots among monitored wards", so it filters to isMonitored here
+    // rather than list ~226 unmonitored wards with nothing to rank.
+    const sortedWards = wards.filter((w) => w.isMonitored).sort((a, b) => {
+      const aqiA = getEffectiveAqi(a)
+      const aqiB = getEffectiveAqi(b)
+      if (aqiA === null && aqiB === null) return 0
+      if (aqiA === null) return 1
+      if (aqiB === null) return -1
+      return aqiB - aqiA
+    })
+    // Suppress derived outputs unless health has loaded AND confirmed fresh.
+    // healthLoaded gates the initial-load window (avoids a flash where
+    // data renders for ~8s looking degraded before the health check settles).
+    // After that window closes, only confirmed-ok lifts suppression —
+    // health=null (endpoint unreachable) is treated as "unknown" and keeps
+    // outputs suppressed, not as "ok" (which would rebuild the original bug:
+    // Wazirpur showing "230 · Likely source: industrial" with full confidence
+    // despite 9-day staleness simply because the health check timed out).
+    const suppressReading = healthLoaded && !readingConfirmedFresh
+    const suppressForecast = healthLoaded && !forecastConfirmedFresh
+    const displayWards = suppressReading
+      ? sortedWards.map((w) => ({ ...w, dominant_source: null as string | null }))
+      : sortedWards
+    const forecasts = suppressForecast ? new Map() : rawForecasts
+    const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
+    const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
+
+    // Most-recent ward reading across all wards — used by CityKpiRow to
+    // show a concrete age alongside the pipeline freshness status.
+    // Suppressed when readings are flagged degraded (suppressReading=true).
+    const latestReadingTs = suppressReading ? null : sortedWards
+      .flatMap((w) => (w.ts ? [w.ts] : []))
+      .reduce<string | null>((best, ts) => (!best || ts > best ? ts : best), null)
+    const latestReadingAgeMinutes = latestReadingTs
+      ? (Date.now() - new Date(latestReadingTs).getTime()) / 60_000
+      : null
+
+    const coverageProp = accuracy.coverage.totalPairs > 0
+      ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
+      : null
+
+    body = (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        {/* Priority alerts — compact banner, shown only when wards are flagged */}
+        {severeAlerts.length > 0 && (
+          <div className="shrink-0 max-h-[96px] overflow-hidden border-b border-slate-100 px-3 pt-3">
+            <PriorityAlertsPanel
+              alerts={severeAlerts}
+              windowHours={windowHours}
+              selectedWardId={selectedWardId}
+              onSelectWard={setSelectedWardId}
+            />
+          </div>
+        )}
+
+        {/* Ward risk table — flush, fills all remaining space edge-to-edge */}
+        <div
+          ref={riskTableRef}
+          className={`min-h-0 flex-1 transition-shadow duration-700 ${
+            flaggedPulse ? 'ring-2 ring-inset ring-accent-400' : 'ring-0 ring-transparent'
+          }`}
+        >
+          <HotspotsRiskTable
+            wards={displayWards}
+            forecasts={forecasts}
+            pollutant={pollutant}
+            onPollutantChange={setPollutant}
+            windowHours={windowHours}
+            selectedWardId={selectedWardId}
+            onSelectWard={setSelectedWardId}
+            latestReadingsByWard={latestReadingsByWard}
+            forecastSuppressed={suppressForecast}
+            reviewCount={reviewWards.length}
+            openReportCount={metrics.openCount}
+            coverage={coverageProp}
+            latestReadingAgeMinutes={latestReadingAgeMinutes}
+            onWardsFlaggedClick={reviewWards.length > 0 ? jumpToRiskTable : undefined}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <AppShell
       subtitle="Overview"
       headerContent={
-        <div className="flex flex-1 flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900">Delhi City Pack</h1>
-              {state.stale && <StaleBadge />}
-            </div>
-            <p className="mt-0.5 text-xs font-medium text-slate-500">
-              Live readings · forecast · incidents
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              state.refresh()
-              forecastsState.refresh()
-              latestReadingsState.refresh()
-            }}
-            disabled={state.refreshing}
-            className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${state.refreshing ? 'animate-spin' : ''}`} aria-hidden />
-            Refresh
-          </button>
+        // Sept 2026, 2nd pass: the worst-ward gauge (heroContent) moved
+        // onto the map itself (OverviewChoroplethMap's top-left card) — see
+        // that component's own doc comment. Only Refresh is left here now.
+        <div className="flex flex-1 items-center justify-end">
+          {refreshButton}
         </div>
       }
     >
-      <div className="flex h-full flex-col overflow-hidden bg-sky-50 gap-2 p-3">
-        {state.loading || forecastsState.loading ? (
-          <>
-            <Skeleton className="h-[122px] shrink-0 rounded-xl" />
-            <Skeleton className="min-h-0 flex-1 rounded-xl" />
-          </>
-        ) : state.error ? (
-          <Card>
-            <ErrorState message={state.error} onRetry={() => state.refresh()} />
-          </Card>
-        ) : (
-          state.data &&
-          (() => {
-            const [wards, metrics, accuracy] = state.data
-            const rawForecasts = forecastsState.data ?? new Map()
-            const latestReadingsByWard = new Map(
-              (latestReadingsState.data ?? [])
-                .filter((r) => r.wardId != null)
-                .map((r) => [r.wardId as number, r]),
-            )
-            // When CPCB data is available for a ward, sort by CPCB AQI so the
-            // hero's "worst ward" matches what the table shows, not the OpenAQ
-            // 24h-average stored in wards.aqi.
-            const getEffectiveAqi = (ward: (typeof wards)[0]) => {
-              const p = latestReadingsByWard.get(ward.id)
-              // Fall through: CPCB fresh → ward.aqi (OpenAQ 24h) → openaqAqi
-              // (raw reading, always populated even when compute_ward_aqi returns
-              // null for stale wards — keeps sort order meaningful during outages)
-              return p?.sourceUsed === 'cpcb' && p.cpcbAqi != null
-                ? p.cpcbAqi
-                : (ward.aqi ?? p?.openaqAqi ?? null)
-            }
-            const sortedWards = [...wards].sort((a, b) => {
-              const aqiA = getEffectiveAqi(a)
-              const aqiB = getEffectiveAqi(b)
-              if (aqiA === null && aqiB === null) return 0
-              if (aqiA === null) return 1
-              if (aqiB === null) return -1
-              return aqiB - aqiA
-            })
-            // Suppress derived outputs unless health has loaded AND confirmed fresh.
-            // healthLoaded gates the initial-load window (avoids a flash where
-            // data renders for ~8s looking degraded before the health check settles).
-            // After that window closes, only confirmed-ok lifts suppression —
-            // health=null (endpoint unreachable) is treated as "unknown" and keeps
-            // outputs suppressed, not as "ok" (which would rebuild the original bug:
-            // Wazirpur showing "230 · Likely source: industrial" with full confidence
-            // despite 9-day staleness simply because the health check timed out).
-            const suppressReading = healthLoaded && !readingConfirmedFresh
-            const suppressForecast = healthLoaded && !forecastConfirmedFresh
-            const displayWards = suppressReading
-              ? sortedWards.map((w) => ({ ...w, dominant_source: null as string | null }))
-              : sortedWards
-            const forecasts = suppressForecast ? new Map() : rawForecasts
-            const severeAlerts = severeWardsWithin(wards, forecasts, windowHours)
-            const reviewWards = wardsNeedingReview(wards, forecasts, windowHours)
-
-            // Trend status for the worst ward — same hotspotStatus() the table uses
-            // per row, computed once here for the hero, not duplicated.
-            const worstWard = displayWards[0] ?? null
-            const worstForecast = worstWard ? forecasts.get(worstWard.id) : null
-            const worstWindowed = worstForecast ? peakWithinWindow(worstForecast, windowHours) : null
-            // Hero shows CPCB-preferred AQI when available, matching the table — prevents
-            // the gauge showing 500 (OpenAQ 24h average) while the table shows 277 (CPCB live).
-            const worstPreferred = worstWard ? latestReadingsByWard.get(worstWard.id) : undefined
-            // ward.ts is null when compute_ward_aqi skips stale wards; fall back
-            // to the ISO timestamp from the reconciliation row.
-            // cpcbLastUpdate is in DD-MM-YYYY HH:MM:SS (unparseable by JS) — excluded.
-            const worstTs = worstWard?.ts ?? worstPreferred?.openaqLastUpdate ?? null
-            const worstReadingAge = (() => {
-              if (!worstTs) return null
-              const ms = Date.now() - new Date(worstTs).getTime()
-              return isNaN(ms) ? null : ms / 60_000
-            })()
-            const worstDisplayAqi = (worstPreferred?.sourceUsed === 'cpcb' && worstPreferred.cpcbAqi != null)
-              ? worstPreferred.cpcbAqi
-              : (worstWard?.aqi ?? worstPreferred?.openaqAqi ?? null)
-            const worstTrend = worstWard
-              ? hotspotStatus(
-                  {
-                    hoursToSevere: worstForecast?.hoursToSevere ?? null,
-                    hoursToVeryPoor: worstForecast?.hoursToVeryPoor ?? null,
-                    peakExcess: worstWindowed?.excess ?? null,
-                    aqi: worstDisplayAqi,
-                    readingAgeMinutes: worstReadingAge,
-                  },
-                  windowHours,
-                )
-              : null
-
-            // Most-recent ward reading across all wards — used by CityKpiRow to
-            // show a concrete age alongside the pipeline freshness status.
-            // Suppressed when readings are flagged degraded (suppressReading=true).
-            const latestReadingTs = suppressReading ? null : sortedWards
-              .flatMap((w) => (w.ts ? [w.ts] : []))
-              .reduce<string | null>((best, ts) => (!best || ts > best ? ts : best), null)
-            const latestReadingAgeMinutes = latestReadingTs
-              ? (Date.now() - new Date(latestReadingTs).getTime()) / 60_000
-              : null
-
-            const coverageProp = accuracy.coverage.totalPairs > 0
-              ? { fresh: accuracy.coverage.freshCount, total: accuracy.coverage.totalPairs }
-              : null
-
-            // Label for the forecast pollutant shown in the hero intel panel.
-            // Tracks the pollutant toggle so the label stays honest when the
-            // user switches from the default AQI/PM2.5 proxy to PM10 or NO2.
-            const forecastLabel =
-              forecastPollutant === 'pm25' ? 'PM₂.₅' :
-              forecastPollutant === 'pm10' ? 'PM₁₀' : 'NO₂'
-
-            return (
-              <>
-                {/* Hero — one shared grid so every cell shares the same
-                    border, divider, and row height. The spotlight cell gets
-                    extra width (1.6fr vs 1fr) — ward names run much longer
-                    than KPI values and were truncating hard at equal widths. */}
-                <div className="shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-card">
-                  <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-[1.6fr_1fr_1fr_1fr_1fr] sm:divide-y-0">
-                    <button
-                      type="button"
-                      onClick={() => worstWard && setSelectedWardId(worstWard.id)}
-                      disabled={!worstWard}
-                      className="focus-ring group flex h-full w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
-                    >
-                      <CityAqiGauge aqi={worstDisplayAqi} size={80} />
-                      <div className="min-w-0 flex-1">
-                        <CityStatusHero
-                          aqi={worstDisplayAqi}
-                          wardName={worstWard?.name ?? null}
-                          trend={worstTrend}
-                          source={worstWard?.dominant_source ?? null}
-                          forecastPeak={worstWindowed?.value ?? null}
-                          readingAgeMinutes={worstReadingAge}
-                          forecastLabel={forecastLabel}
-                          forecastSuppressed={suppressForecast}
-                        />
-                      </div>
-                      {worstWard && (
-                        <ChevronRight
-                          className="ml-1 h-3.5 w-3.5 flex-shrink-0 self-center text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent-500"
-                          aria-hidden
-                        />
-                      )}
-                    </button>
-
-                    <CityKpiRow
-                      reviewCount={reviewWards.length}
-                      openIncidents={metrics.openCount}
-                      coverage={coverageProp}
-                      latestReadingAgeMinutes={latestReadingAgeMinutes}
-                      onWardsFlaggedClick={reviewWards.length > 0 ? jumpToRiskTable : undefined}
-                    />
-                  </div>
-                </div>
-
-                {/* Priority alerts — compact banner, shown only when wards are flagged */}
-                {severeAlerts.length > 0 && (
-                  <div className="shrink-0 max-h-[96px] overflow-hidden">
-                    <PriorityAlertsPanel
-                      alerts={severeAlerts}
-                      windowHours={windowHours}
-                      selectedWardId={selectedWardId}
-                      onSelectWard={setSelectedWardId}
-                    />
-                  </div>
-                )}
-
-                {/* Ward risk table — grows to fill all remaining vertical space */}
-                <div
-                  ref={riskTableRef}
-                  className={`min-h-0 flex-1 rounded-xl transition-shadow duration-700 ${
-                    flaggedPulse ? 'ring-2 ring-accent-400' : 'ring-0 ring-transparent'
-                  }`}
-                >
-                  <HotspotsRiskTable
-                    wards={displayWards}
-                    forecasts={forecasts}
-                    pollutant={pollutant}
-                    onPollutantChange={setPollutant}
-                    windowHours={windowHours}
-                    onWindowHoursChange={setWindowHours}
-                    selectedWardId={selectedWardId}
-                    onSelectWard={setSelectedWardId}
-                    latestReadingsByWard={latestReadingsByWard}
-                    forecastSuppressed={suppressForecast}
-                  />
-                </div>
-
-              </>
-            )
-          })()
-        )}
-      </div>
+      <div className="flex h-full flex-col overflow-hidden">{body}</div>
     </AppShell>
   )
 }
