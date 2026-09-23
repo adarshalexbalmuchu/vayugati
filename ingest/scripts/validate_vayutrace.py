@@ -444,6 +444,12 @@ def run_validation(hours: int, max_hours_sampled: int,
             month=month,
             regional_fire_sources=[],
             dust_sources=dust,
+            # Validation scores `local_score` only and discards the
+            # uncertainty bands, so computing them here is pure waste — it
+            # was making every run ~16x slower than it needed to be (a
+            # 60-hour run took 45+ minutes instead of a few). The bands
+            # still ship in production; they are just not needed to rank.
+            mc_draws=0,
         )
         for r in results:
             key = (r["ward_id"], hk)
