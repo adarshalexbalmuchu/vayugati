@@ -112,7 +112,7 @@ def _met_row(m, h):
 
 
 def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, n_folds=None,
-        modulation=True, verbose=True, seed=0):
+        modulation=True, verbose=True, seed=0, raster=False):
     """group_km : monitors closer than this are held out together (2 = new site,
                   ~15 = a whole new city with all its monitors).
     net_km     : the network mean uses monitors within this radius (None = all).
@@ -133,6 +133,18 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
     _, fnames, X = static_features(pos, bbox=_feature_bbox(sites))   # rows follow sorted(pos) == sid
     fi = {nm: i for i, nm in enumerate(fnames)}
     logX = np.log1p(X)
+    if raster:
+        from scripts.species import raster_features as RF
+        first = min(min(good[s]) for s in sid); last = max(max(good[s]) for s in sid)
+        months = sorted({datetime.utcfromtimestamp(h * 3600).strftime("%Y%m")
+                         for h in range(first, last + 1, 24 * 15)})
+        rnames, RX = RF.features([pos[s] for s in sid], months, f"{species}_{region or 'ncr'}_{n}")
+        ri = {nm: i for i, nm in enumerate(rnames)}
+        sat = np.log(np.clip(RX[:, ri["trop_no2"]], 1, None))
+        if np.isnan(sat).any():
+            sat = np.where(np.isnan(sat), np.nanmean(sat), sat)
+        RZ = np.column_stack([sat, np.log1p(RX[:, ri["pop_s1.0"]]), np.log1p(RX[:, ri["pop_s4.0"]]),
+                              np.nan_to_num(RX[:, ri["built_s0.5"]], nan=0.0)])
 
     hours = sorted({h for s in sid for h in good[s]})
     hidx = {h: i for i, h in enumerate(hours)}
@@ -224,6 +236,14 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
         sz = StandardScaler().fit(Z[T])
         r3 = RidgeCV(alphas=np.logspace(-2, 3, 30)).fit(sz.transform(Z[T]), y)
         preds["roads+industry+construction"] = r3.predict(sz.transform(Z))
+        if raster:
+            a1, b1 = np.polyfit(RZ[T, 0], y, 1)
+            preds["satellite NO2 only"] = a1 * RZ[:, 0] + b1
+            L = np.column_stack([xp, RZ])          # roads, satellite, pop 1km, pop 4km, built 0.5km
+            sl = StandardScaler().fit(L[T])
+            rl = RidgeCV(alphas=np.logspace(-2, 3, 30)).fit(sl.transform(L[T]), y)
+            preds["LUR: roads+sat+pop+built"] = rl.predict(sl.transform(L))
+            preds["LUR + IDW residual"] = preds["LUR: roads+sat+pop+built"] + idw(y - rl.predict(sl.transform(L[T])))
 
         if modulation:
             rows = [(i, np.flatnonzero(ok[i])) for i in T]
@@ -323,6 +343,7 @@ if __name__ == "__main__":
     ap.add_argument("--min-net", type=int, default=MIN_NET)
     ap.add_argument("--folds", type=int, default=None)
     ap.add_argument("--no-modulation", action="store_true")
+    ap.add_argument("--raster", action="store_true", help="add satellite NO2 / population / built-up features")
     a = ap.parse_args()
     run(a.species, region=a.region, group_km=a.group_km, net_km=a.net_km, min_net=a.min_net,
-        n_folds=a.folds, modulation=not a.no_modulation)
+        n_folds=a.folds, modulation=not a.no_modulation, raster=a.raster)

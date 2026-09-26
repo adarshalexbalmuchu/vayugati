@@ -53,7 +53,8 @@ OPENAQ_PPB_LABEL_IS_UGM3 = {"no2": True}
 
 _RATE_LOCK = threading.Lock()
 _CALLS: list[float] = []
-MAX_PER_MIN = 50  # OpenAQ allows 60/min per key; leave headroom for the live ingest
+MAX_PER_MIN = 25  # OpenAQ allows 60/min per key, SHARED with the live ingest service: at 50/min its
+# OpenAQ fallback (the only data source during a CPCB outage) hit 429s, Sept 2026
 
 
 def _get(path: str, params: dict) -> dict:
@@ -151,7 +152,13 @@ def _sensor_hours(sensor_id: int, date_from: str, date_to: str) -> dict[str, flo
     out: dict[str, float] = {}
     # Locations keep retired sensors in their list (R K Puram's ug/m3 NO2
     # sensor ended in 2018), so only walk the part of the window the sensor lived.
-    first, last = _sensor_span(sensor_id)
+    try:
+        first, last = _sensor_span(sensor_id)
+    except httpx.HTTPStatusError as e:
+        # One sensor's persistent 5xx must not kill a 200-site pull. Not
+        # cached, so the next run retries it.
+        print("  sensor %s skipped: HTTP %s" % (sensor_id, e.response.status_code), flush=True)
+        return {}
     if first and first <= date_to and last >= date_from:
         a = datetime.fromisoformat(max(first, date_from))
         end = datetime.fromisoformat(min(last, date_to)) + timedelta(days=1)
@@ -160,9 +167,13 @@ def _sensor_hours(sensor_id: int, date_from: str, date_to: str) -> dict[str, flo
             b = min(a + timedelta(days=30), end)
             windows.append((a, b))
             a = b
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            for part in ex.map(lambda w: _chunk(sensor_id, *w), windows):
-                out.update(part)
+        try:
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                for part in ex.map(lambda w: _chunk(sensor_id, *w), windows):
+                    out.update(part)
+        except httpx.HTTPStatusError as e:
+            print("  sensor %s skipped: HTTP %s" % (sensor_id, e.response.status_code), flush=True)
+            return {}
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_bytes(pickle.dumps(out))
     return out
@@ -189,7 +200,9 @@ def pull_obs(sites, species, date_from, date_to, log=print) -> dict[tuple[int, s
         both = [k for k in ug if k in ppb and ppb[k] > 0 and ug[k] > 0]
         ratio = sorted(ug[k] / ppb[k] for k in both)[len(both) // 2] if both else None
         s["ug_ppb_ratio"] = ratio
-        if OPENAQ_PPB_LABEL_IS_UGM3.get(species):
+        if not ppb:
+            factor = None
+        elif OPENAQ_PPB_LABEL_IS_UGM3.get(species):
             factor = 1.0
         else:
             factor = PPB_TO_UGM3[species]
