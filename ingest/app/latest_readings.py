@@ -113,17 +113,17 @@ def reconcile_latest(
 
         cpcb_aqi = None
         if cpcb_usable:
-            # Prefer the AQI already stored in our readings table. The stored
-            # value is the 24h-average AQI written by _recompute_24h_aqi() in
-            # ingest.py — it averages 24h of hourly DB readings and matches
-            # CPCB's official portal methodology.
+            # Prefer the AQI already stored in our readings table: for CPCB
+            # rows it is computed from CPCB's own 24h-average concentrations
+            # (data_gov_cpcb converts the feed's sub-indices back to them).
             if (openaq_entry
                     and openaq_entry.get("ingest_source") == "cpcb"
                     and openaq_entry.get("aqi") is not None):
                 cpcb_aqi = openaq_entry["aqi"]
             else:
-                # Fallback: compute from raw avg_value (no recent CPCB reading
-                # in the 2h DB window — e.g. ingest not yet run this cycle).
+                # Fallback: compute from the feed's avg (already converted from
+                # sub-index to concentration by data_gov_cpcb.group_by_station)
+                # when there's no recent CPCB reading in the 2h DB window.
                 pollutants = cpcb_entry["pollutants"]
                 co_data = pollutants.get("co") or {}
                 co_val = co_data.get("avg")
@@ -145,9 +145,19 @@ def reconcile_latest(
         # when an ingest cycle failed before writing the AQI patch. Compute it
         # from stored concentrations so the last-known value is never blank.
         if openaq_aqi is None and openaq_entry:
-            co_raw = openaq_entry.get("co")
-            source = openaq_entry.get("ingest_source") or "openaq"
-            co_mg = co_raw if source == "cpcb" else (co_raw / 1000.0 if co_raw is not None else None)
+            # readings.co is stored in mg/m³ regardless of ingest_source
+            # (bug fix, Sept 2026: _ingest_station_openaq() in ingest.py used
+            # to write the OpenAQ path's raw µg/m³ value straight into
+            # readings.co instead of the already-converted mg/m³ figure it
+            # computed for its own AQI calc — this line's since-removed
+            # `/ 1000.0 if source != "cpcb"` branch was compensating for
+            # that upstream bug here, at read time, rather than the value
+            # actually being stored correctly. Now that ingest.py stores
+            # mg/m³ consistently for every source, this must pass co_raw
+            # through unconverted — re-dividing by 1000 here would silently
+            # halve-then-halve-again (net /1000 on an already-correct
+            # mg/m³ value), pegging OpenAQ-sourced CO readings at ~0.
+            co_mg = openaq_entry.get("co")
             openaq_aqi = aqi.compute_aqi(
                 openaq_entry.get("pm25"),
                 openaq_entry.get("pm10"),

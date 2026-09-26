@@ -85,6 +85,43 @@ NH3_BREAKPOINTS = [
 ]
 
 
+SUB_INDEX_BREAKPOINTS: dict[str, list[tuple]] = {
+    "pm25": PM25_BREAKPOINTS,
+    "pm10": PM10_BREAKPOINTS,
+    "no2": NO2_BREAKPOINTS,
+    "so2": SO2_BREAKPOINTS,
+    "o3": O3_BREAKPOINTS,
+    "co": CO_BREAKPOINTS_MG,
+    "nh3": NH3_BREAKPOINTS,
+}
+
+
+def concentration_from_sub_index(pollutant: str, index: float | None) -> float | None:
+    """Inverse of _sub_index: a CPCB AQI sub-index -> the concentration it
+    stands for (ug/m3; mg/m3 for CO), by the same piecewise-linear breakpoints.
+
+    Why this exists: data.gov.in's real-time feed publishes each pollutant's
+    SUB-INDEX in avg_value/min_value/max_value, not a concentration. Measured
+    Sept 2026 against OpenAQ's hourly archive for the same Delhi stations:
+    the feed equals the NAQI sub-index of the trailing-24h mean concentration
+    (NO2: ratio 1.25 below 80 ug/m3 falling to 1.14 at 130-180, exactly the
+    breakpoint slopes; PM2.5: 1.67 below 60, 2.0 at 60-90; corr 0.98-0.99).
+
+    Sub-indices are published as integers, so a recovered concentration is
+    exact to within half an index step of its bucket (e.g. +/-0.4 ug/m3 for
+    NO2 below 80). Returns None for an unknown pollutant or missing value.
+    """
+    bps = SUB_INDEX_BREAKPOINTS.get(pollutant)
+    if bps is None or index is None:
+        return None
+    if index <= 0:
+        return 0.0
+    for c_lo, c_hi, i_lo, i_hi in bps:
+        if index <= i_hi:
+            return c_lo + (index - i_lo) * (c_hi - c_lo) / (i_hi - i_lo)
+    return float(bps[-1][1])  # index above 500 -> top of the scale
+
+
 def co_ug_to_mg(value: float) -> float:
     """Convert CO from µg/m³ to mg/m³ before passing to compute_aqi."""
     return value / 1000.0

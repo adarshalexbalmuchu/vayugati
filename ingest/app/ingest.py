@@ -153,17 +153,19 @@ def _ingest_from_cpcb(
             continue
 
         pollutants = entry.get("pollutants") or {}
-        row: dict = {"station_id": sid, "ts": ts_hour, "ingest_source": "cpcb"}
+        row: dict = {"station_id": sid, "ts": ts_hour, "ingest_source": "cpcb",
+                     "value_basis": "naqi_window"}
         for col in ("pm25", "pm10", "no2", "so2", "co", "o3", "nh3"):
             val = (pollutants.get(col) or {}).get("avg")
             if val is not None and val >= 0:
                 row[col] = val
 
-        if len(row) <= 2:
-            continue  # only station_id + ts, no pollutant data — nothing to write
+        if len(row) <= 4:
+            continue  # only the key + provenance fields, no pollutant data — nothing to write
 
-        # CO from CPCB data.gov.in is in mg/m³ (pollutant_unit = "MG/M3");
-        # convert to mg/m³ defensively in case a rare record comes through as µg/m³.
+        # data_gov_cpcb.group_by_station() has already turned the feed's
+        # sub-indices into concentrations, with CO in mg/m³ (unit "MG/M3");
+        # the ug->mg branch below stays only as a guard for a future feed change.
         # NOTE: We intentionally write raw CO (mg/m³) into readings.co — NOT µg/m³.
         # get_24h_avg_concentrations() knows this and passes co directly as co_mg.
         co_raw = pollutants.get("co") or {}
@@ -195,8 +197,9 @@ def _ingest_from_cpcb(
             row.pop("co")
         co_mg = row.get("co")   # refresh after possible drop
 
-        # Snapshot AQI (current hour only) — stored initially, overwritten below
-        # by the 24h-average AQI which matches CPCB's official methodology.
+        # These concentrations are CPCB's own AQI-window averages (24h; 8h for
+        # CO/O3), so the AQI computed from them IS CPCB's AQI — no further
+        # averaging (see run(): CPCB rows are not passed to _recompute_24h_aqi).
         computed_aqi = aqi.compute_aqi(
             row.get("pm25"), row.get("pm10"),
             no2=row.get("no2"), so2=row.get("so2"),
@@ -233,9 +236,10 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
     WHY THIS IS NECESSARY
     ─────────────────────
     CPCB's AQI breakpoints are calibrated for 24h time-averaged concentrations.
-    The data.gov.in API's avg_value is a short-period snapshot (15 min–1 h),
-    NOT a 24h average. Computing AQI from the snapshot produces values 1.5–3×
-    higher than the CPCB portal's figure for the same station and time.
+    OpenAQ's latest values are hourly, so their AQI must come from a 24h
+    average. This is used for the OpenAQ path only: CPCB/data.gov.in values
+    are already 24h averages (published as sub-indices, converted in
+    data_gov_cpcb), and averaging them again was a bug until Sept 2026.
 
     WHAT get_24h_avg_concentrations() NOW DOES (corrected methodology)
     ───────────────────────────────────────────────────────────────────
@@ -313,7 +317,8 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
 
     latest_ts: str | None = None
     for ts, values in by_hour.items():
-        row = {"station_id": station_id, "ts": ts, "ingest_source": "openaq", **values}
+        row = {"station_id": station_id, "ts": ts, "ingest_source": "openaq",
+               "value_basis": "hourly", **values}
         # OpenAQ delivers CO in µg/m³; convert before passing to compute_aqi
         # which expects mg/m³. Omitting this makes CO=1000 µg/m³ read as
         # 1000 mg/m³ and peg AQI at 500 for every OpenAQ-sourced station.
@@ -384,13 +389,14 @@ def run() -> dict:
     summary["cpcb_unmatched_stations"] = cpcb_unmatched
     summary["errors"].extend(cpcb_errors)
 
-    # CPCB path: recompute AQI from the 24h rolling average of concentrations.
-    # data.gov.in's avg_value is a short-window snapshot (hourly or few-hour),
-    # not the 24h average that CPCB's official portal uses. Computing AQI from
-    # the raw snapshot produces values 1.5–3× higher than the CPCB website.
-    # _recompute_24h_aqi() averages the last 24 hourly DB readings per station
-    # and overwrites the just-written AQI with the corrected value.
-    summary["aqi_patched"] = _recompute_24h_aqi(cpcb_station_ts)
+    # CPCB path: NO 24h recompute. data.gov.in's values were long assumed to
+    # be short-window snapshots, and this step averaged 24h of them. They are
+    # in fact sub-indices OF the trailing-24h mean (Sept 2026 finding, see
+    # aqi.concentration_from_sub_index), so the recompute averaged an average
+    # of index values read as concentrations: the stored AQI was in the wrong
+    # category for ~45% of rows from 2026-08-11 until this fix. The AQI written
+    # with each CPCB row above is already CPCB's own.
+    summary["aqi_patched"] = 0
 
     # ── OpenAQ fallback ───────────────────────────────────────────────────────
     # Only runs when OPENAQ_API_KEY is set. Iterates over stations that have an
