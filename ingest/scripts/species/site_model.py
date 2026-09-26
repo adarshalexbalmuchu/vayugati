@@ -140,7 +140,14 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
                          for h in range(first, last + 1, 24 * 15)})
         rnames, RX = RF.features([pos[s] for s in sid], months, f"{species}_{region or 'ncr'}_{n}")
         ri = {nm: i for i, nm in enumerate(rnames)}
-        sat = np.log(np.clip(RX[:, ri["trop_no2"]], 1, None))
+        if species in ("pm25", "pm10"):
+            # Particles: MAIAC aerosol optical depth is the satellite analogue
+            # of TROPOMI NO2 for gases (mean over all valid sampled days).
+            aod = RF.maiac_at([pos[s] for s in sid])
+            log("MAIAC AOD available at %d/%d sites" % (np.isfinite(aod[:, 0]).sum(), n))
+            sat = np.log(np.clip(aod[:, 0], 0.01, None))
+        else:
+            sat = np.log(np.clip(RX[:, ri["trop_no2"]], 1, None))
         if np.isnan(sat).any():
             sat = np.where(np.isnan(sat), np.nanmean(sat), sat)
         RZ = np.column_stack([sat, np.log1p(RX[:, ri["pop_s1.0"]]), np.log1p(RX[:, ri["pop_s4.0"]]),
@@ -238,7 +245,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
         preds["roads+industry+construction"] = r3.predict(sz.transform(Z))
         if raster:
             a1, b1 = np.polyfit(RZ[T, 0], y, 1)
-            preds["satellite NO2 only"] = a1 * RZ[:, 0] + b1
+            preds["satellite only (NO2 column / AOD)"] = a1 * RZ[:, 0] + b1
             L = np.column_stack([xp, RZ])          # roads, satellite, pop 1km, pop 4km, built 0.5km
             sl = StandardScaler().fit(L[T])
             rl = RidgeCV(alphas=np.logspace(-2, 3, 30)).fit(sl.transform(L[T]), y)

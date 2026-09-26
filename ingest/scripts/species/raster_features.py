@@ -137,6 +137,32 @@ def built_at(points, px=300) -> np.ndarray:
     return out
 
 
+def maiac_at(points, max_km: float = 1.0) -> np.ndarray:
+    """MAIAC AOD per point from maiac.py's output: [mean over all valid
+    days, mean over winter (Nov-Feb), number of valid days]. A point is
+    matched to the nearest sampled point within max_km (the pull stores
+    monitor sites by coordinate); NaN when none is close or no day was valid."""
+    f = RASTERS / "maiac_points.pkl"
+    out = np.full((len(points), 3), np.nan)
+    if not f.exists():
+        return out
+    st = pickle.loads(f.read_bytes())
+    src = np.array(st["points"])
+    vals: dict[int, list[tuple[str, float]]] = {}
+    for (k, day), v in st["aod"].items():
+        vals.setdefault(k, []).append((day, v))
+    for i, (lat, lng) in enumerate(points):
+        d = np.hypot((src[:, 0] - lat) * 110.574, (src[:, 1] - lng) * 111.320 * math.cos(math.radians(lat)))
+        j = int(np.argmin(d))
+        if d[j] > max_km or j not in vals:
+            continue
+        days = vals[j]
+        allv = [v for _, v in days]
+        win = [v for day, v in days if int(day[5:7]) in (11, 12, 1, 2)]
+        out[i] = [np.mean(allv), np.mean(win) if win else np.nan, len(allv)]
+    return out
+
+
 def features(points: list[tuple[float, float]], months: list[str], cache_key: str):
     """-> (names, X) for the given points, cached by cache_key."""
     f = ROOT / "species_cache" / f"raster_{cache_key}.pkl"

@@ -47,8 +47,16 @@ PPB_TO_UGM3 = {"no2": 1.88, "so2": 2.62, "o3": 1.96, "co": 1.145}
 # median 1.25 -- far nearer 1.0 (same unit) than 1.88 (true ppb). The
 # uniform 25% gap is unexplained: absolute NO2 levels carry that
 # uncertainty; ratios, ranks and correlations do not depend on it.
-# Any other species must be checked the same way before it is trusted.
-OPENAQ_PPB_LABEL_IS_UGM3 = {"no2": True}
+#
+# Extended to every gas (Sept 2026), after correcting the CPCB rows: OpenAQ
+# hourly values averaged over CPCB's window match CPCB at 7 stations,
+# ~5k station-hours each. NO2, SO2: 24h mean, ratio 1.00, corr 0.997 / 0.999.
+# O3: 8h mean, 1.00, 0.994. CO: 8h mean, 1.01, 0.991, with the "ppb"-labelled
+# CO series in mg/m3.
+OPENAQ_PPB_LABEL_IS_UGM3 = {"no2": True, "so2": True, "o3": True}
+# The "ppb"-labelled CO series is CPCB's native mg/m3: x1000 gives ug/m3,
+# the unit every species in this pipeline is stored in.
+OPENAQ_PPB_LABEL_FACTOR = {"co": 1000.0}
 
 
 _RATE_LOCK = threading.Lock()
@@ -204,6 +212,8 @@ def pull_obs(sites, species, date_from, date_to, log=print) -> dict[tuple[int, s
             factor = None
         elif OPENAQ_PPB_LABEL_IS_UGM3.get(species):
             factor = 1.0
+        elif species in OPENAQ_PPB_LABEL_FACTOR:
+            factor = OPENAQ_PPB_LABEL_FACTOR[species]
         else:
             factor = PPB_TO_UGM3[species]
             log("  WARNING: %s ppb->ug/m3 conversion unverified against CPCB" % species)
