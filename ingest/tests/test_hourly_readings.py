@@ -91,3 +91,16 @@ def test_upsert_batches_by_column_set_so_nothing_is_nulled(monkeypatch):
     assert len(sent) == 2
     for batch in sent:
         assert len({tuple(r) for r in batch}) == 1   # one column set per request
+
+
+def test_paced_retries_once_on_network_error(monkeypatch):
+    import httpx
+    monkeypatch.setattr(hr, "SECONDS_PER_CALL", 0)
+    monkeypatch.setattr(hr.time, "sleep", lambda s: None)
+    calls = []
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ConnectError("tls reset")
+        return "ok"
+    assert hr._paced(flaky) == "ok" and len(calls) == 2

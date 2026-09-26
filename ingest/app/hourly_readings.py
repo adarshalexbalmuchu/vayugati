@@ -41,13 +41,19 @@ def _co_mg(value: float, unit: str | None) -> float:
 
 
 def _paced(fn, *args):
-    """One OpenAQ call, paced, with a single back-off retry on 429/5xx."""
+    """One OpenAQ call, paced, with a single back-off retry on 429/5xx or a
+    network-level failure (a TLS handshake reset was seen in the first live run)."""
     for attempt in range(2):
         time.sleep(SECONDS_PER_CALL)
         try:
             return fn(*args)
         except httpx.HTTPStatusError as e:
             if attempt == 0 and (e.response.status_code == 429 or e.response.status_code >= 500):
+                time.sleep(30)
+                continue
+            raise
+        except httpx.TransportError:
+            if attempt == 0:
                 time.sleep(30)
                 continue
             raise
