@@ -69,11 +69,11 @@ def main() -> None:
     a = ap.parse_args()
     cpcb = db._fetch_all(lambda: db.client().table("readings")
                          .select("station_id, ts, pm25, pm10, no2, so2, o3, co, nh3, aqi")
-                         .eq("ingest_source", "cpcb").is_("value_basis", "null").order("ts"))
+                         .eq("ingest_source", "cpcb").is_("value_basis", "null").order("ts").order("station_id"))
     pre = db._fetch_all(lambda: db.client().table("readings")
                         .select("station_id, ts, pm25, pm10, no2, so2, o3, co, nh3, aqi")
                         .is_("ingest_source", "null").is_("value_basis", "null")
-                        .gte("ts", PRE_TAG_CPCB_FROM).lt("ts", PRE_TAG_CPCB_TO).order("ts"))
+                        .gte("ts", PRE_TAG_CPCB_FROM).lt("ts", PRE_TAG_CPCB_TO).order("ts").order("station_id"))
     pre_cpcb = [r for r in pre if _all_integer(r)]
     fixed = [convert(r) for r in cpcb] + [convert(r, co_index_scale=1.0) for r in pre_cpcb]
     cpcb = cpcb + pre_cpcb
@@ -85,9 +85,9 @@ def main() -> None:
             before.get("aqi"), after.get("aqi")))
     converting = {(r["station_id"], r["ts"]) for r in pre_cpcb}
     other = db._fetch_all(lambda: db.client().table("readings").select("station_id, ts")
-                          .neq("ingest_source", "cpcb").is_("value_basis", "null").order("ts"))
+                          .neq("ingest_source", "cpcb").is_("value_basis", "null").order("ts").order("station_id"))
     other += [r for r in db._fetch_all(lambda: db.client().table("readings").select("station_id, ts")
-                                       .is_("ingest_source", "null").is_("value_basis", "null").order("ts"))
+                                       .is_("ingest_source", "null").is_("value_basis", "null").order("ts").order("station_id"))
               if (r["station_id"], r["ts"]) not in converting]
     print(f"non-CPCB rows to label 'hourly': {len(other)}")
     if not a.apply:
