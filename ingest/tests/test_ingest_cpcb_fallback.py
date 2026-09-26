@@ -105,3 +105,65 @@ def test_run_does_not_re_average_cpcb_rows(monkeypatch):
     except _Stop:
         pass
     assert seen == []
+
+
+def _recent(hours_ago=1):
+    from datetime import datetime, timedelta, timezone
+    t = datetime.now(timezone.utc).replace(minute=30, second=0, microsecond=0) - timedelta(hours=hours_ago)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ"), t.isoformat()
+
+
+def _mock_openaq(monkeypatch, latest, units):
+    monkeypatch.setattr(ingest, "_SENSOR_CACHE", {})
+    monkeypatch.setattr(ingest.openaq, "get_location",
+                        lambda lid: {"sensors": {1: "no2", 2: "co"}, "units": units})
+    monkeypatch.setattr(ingest.openaq, "get_latest", lambda lid: latest)
+    hourly, readings = [], []
+    monkeypatch.setattr(ingest.db, "upsert_readings_hourly", lambda rows: hourly.extend(rows))
+    monkeypatch.setattr(ingest.db, "upsert_reading", lambda row: readings.append(row))
+    return hourly, readings
+
+
+def test_openaq_writes_hourly_table_for_cpcb_covered_station_without_touching_readings(monkeypatch):
+    """CPCB publishes 24h averages; OpenAQ's hourly values go to readings_hourly
+    for every station, and to `readings` only when CPCB didn't cover it."""
+    z, iso = _recent()
+    hourly, readings = _mock_openaq(monkeypatch, [
+        {"sensor_id": 1, "value": 30.0, "ts_utc": z},
+        {"sensor_id": 2, "value": 900.0, "ts_utc": z}], {1: "ppb", 2: "µg/m³"})
+
+    n, ts = ingest._ingest_station_openaq(7, 999, write_readings=False)
+
+    assert (n, ts, readings) == (0, {}, [])
+    assert hourly == [{"station_id": 7, "ts": iso, "no2": 30.0, "co": 0.9}]
+
+    ingest._ingest_station_openaq(7, 999, write_readings=True)
+    assert readings and readings[0]["value_basis"] == "hourly" and readings[0]["co"] == 0.9
+
+
+def test_openaq_ppb_labelled_co_is_cpcb_mg_per_m3(monkeypatch):
+    """0.81 'ppb' of CO is ~100x below background: it is CPCB's native mg/m3."""
+    z, _ = _recent()
+    hourly, _ = _mock_openaq(monkeypatch, [{"sensor_id": 2, "value": 0.81, "ts_utc": z}], {2: "ppb"})
+    ingest._ingest_station_openaq(7, 999, write_readings=False)
+    assert hourly[0]["co"] == 0.81
+
+
+def test_openaq_drops_retired_sensors_last_values(monkeypatch):
+    """/latest includes retired sensors' last values (2016-2022 rows reached
+    `readings` this way); only readings from the last 72h are kept."""
+    z, _ = _recent()
+    hourly, readings = _mock_openaq(monkeypatch, [
+        {"sensor_id": 1, "value": 89.7, "ts_utc": "2022-10-31T00:45:00Z"},
+        {"sensor_id": 1, "value": 30.0, "ts_utc": z}], {1: "ppb"})
+    ingest._ingest_station_openaq(7, 999, write_readings=True)
+    assert len(hourly) == 1 and hourly[0]["no2"] == 30.0
+    assert all(not r["ts"].startswith("2022") for r in readings)
+
+
+def test_openaq_sensor_map_is_cached(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ingest, "_SENSOR_CACHE", {})
+    monkeypatch.setattr(ingest.openaq, "get_location", lambda lid: calls.append(lid) or {"sensors": {}})
+    ingest._openaq_sensors(5); ingest._openaq_sensors(5)
+    assert calls == [5]

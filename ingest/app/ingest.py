@@ -280,15 +280,63 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
     return patched
 
 
-# ── OpenAQ fallback (for stations CPCB didn't cover) ─────────────────────────
+# ── OpenAQ: hourly values for every station; fallback rows for uncovered ones ─
 
-def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[int, dict[int, str]]:
+# location -> {sensor_id: parameter}. Sensors change rarely, so caching this
+# halves the OpenAQ calls per cycle (the key's 60/min limit is shared).
+_SENSOR_CACHE: dict[int, tuple[float, dict]] = {}
+_SENSOR_CACHE_TTL_S = 24 * 3600
+
+
+# OpenAQ's /latest returns every sensor's LAST value, retired sensors
+# included — e.g. 2016-2022 values from sensors replaced in 2025. Anything
+# older than this is not a current reading (49 such rows had reached
+# `readings` via the fallback before this guard, Sept 2026).
+OPENAQ_MAX_LATEST_AGE_H = 72
+
+
+def _openaq_sensors(openaq_location_id: int) -> tuple[dict, dict]:
+    """-> ({sensor_id: parameter}, {sensor_id: unit label}), cached."""
+    now = datetime.now(timezone.utc).timestamp()
+    hit = _SENSOR_CACHE.get(openaq_location_id)
+    if hit and now - hit[0] < _SENSOR_CACHE_TTL_S:
+        return hit[1]
+    loc = openaq.get_location(openaq_location_id)
+    val = (loc["sensors"], loc.get("units") or {})
+    _SENSOR_CACHE[openaq_location_id] = (now, val)
+    return val
+
+
+def _openaq_co_mg(value: float, unit: str | None) -> float:
+    """CO in mg/m3 from an OpenAQ value, by the sensor's unit label.
+
+    The Indian CPCB feed on OpenAQ labels its current gas sensors "ppb" but
+    carries CPCB's native units: ug/m3 for NO2 (verified against CPCB,
+    Sept 2026) and mg/m3 for CO (e.g. 0.81 at a Delhi station; 0.81 ppb of
+    CO would be ~100x below global background). Older sensors labelled
+    "µg/m³" do report ug/m3."""
+    if unit == "µg/m³":
+        return aqi.co_ug_to_mg(value)
+    if unit == "ppm":
+        return value * 1.145
+    return value  # "ppb" (CPCB mislabel, really mg/m3) or "mg/m³"
+
+
+def _ingest_station_openaq(station_id: int, openaq_location_id: int,
+                           write_readings: bool = True) -> tuple[int, dict[int, str]]:
     """Pull latest readings for one station via OpenAQ.
-    Returns (rows_upserted, {station_id: latest_ts}) so the caller can pass
-    the ts map to _recompute_24h_aqi — same 24h rolling-average AQI correction
-    that the CPCB path applies, for consistency across sources."""
-    sensors = openaq.get_location(openaq_location_id)["sensors"]
+
+    Always writes the values to readings_hourly: CPCB's feed only carries
+    AQI-window averages (24h; 8h CO/O3), so OpenAQ is the platform's only
+    source of real hourly concentrations (Sept 2026). Also writes them to
+    `readings` when write_readings is set, i.e. when CPCB did not cover the
+    station this cycle (the original fallback role).
+
+    Returns (rows_upserted to readings, {station_id: latest_ts}) so the
+    caller can pass the ts map to _recompute_24h_aqi."""
+    sensors, units = _openaq_sensors(openaq_location_id)
     latest = openaq.get_latest(openaq_location_id)
+    oldest_ok = datetime.now(timezone.utc) - timedelta(hours=OPENAQ_MAX_LATEST_AGE_H)
 
     by_hour: dict[str, dict] = {}
     for m in latest:
@@ -296,44 +344,43 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
         col = openaq.PARAMS.get(param or "")
         if col is None or m["value"] is None or m["value"] < 0:
             continue
+        if datetime.fromisoformat(m["ts_utc"].replace("Z", "+00:00")) < oldest_ok:
+            continue  # a retired sensor's last value, not a current reading
         # OpenAQ range validation — same limits as the CPCB path.
         # CO from OpenAQ is in µg/m³; convert limit to µg/m³ for comparison.
-        if col in _CONC_MAX_UGM3 and m["value"] > _CONC_MAX_UGM3[col]:
+        if col != "co" and col in _CONC_MAX_UGM3 and m["value"] > _CONC_MAX_UGM3[col]:
             log.warning(
                 "OpenAQ out-of-range %s=%.1f µg/m³ for station_id=%s — dropped",
                 col, m["value"], station_id,
             )
             continue
+        value = m["value"]
         if col == "co":
-            co_ug = m["value"]
-            if aqi.co_ug_to_mg(co_ug) > _CO_MAX_MG:
+            value = _openaq_co_mg(value, units.get(m["sensor_id"]))  # by_hour holds CO in mg/m³
+            if value > _CO_MAX_MG:
                 log.warning(
-                    "OpenAQ out-of-range co=%.1f µg/m³ (%.2f mg/m³) for station_id=%s — dropped",
-                    co_ug, aqi.co_ug_to_mg(co_ug), station_id,
+                    "OpenAQ out-of-range co=%.2f mg/m³ for station_id=%s — dropped",
+                    value, station_id,
                 )
                 continue
         ts = _hour_floor_utc(m["ts_utc"])
-        by_hour.setdefault(ts, {})[col] = m["value"]
+        by_hour.setdefault(ts, {})[col] = value
+
+    hourly_rows = []
+    for ts, values in by_hour.items():
+        hourly_rows.append({"station_id": station_id, "ts": ts, **values})  # CO already mg/m³
+    if hourly_rows:
+        db.upsert_readings_hourly(hourly_rows)
+    if not write_readings:
+        return 0, {}
 
     latest_ts: str | None = None
     for ts, values in by_hour.items():
         row = {"station_id": station_id, "ts": ts, "ingest_source": "openaq",
                "value_basis": "hourly", **values}
-        # OpenAQ delivers CO in µg/m³; convert before passing to compute_aqi
-        # which expects mg/m³. Omitting this makes CO=1000 µg/m³ read as
-        # 1000 mg/m³ and peg AQI at 500 for every OpenAQ-sourced station.
-        co_raw = values.get("co")
-        co_mg = aqi.co_ug_to_mg(co_raw) if co_raw is not None else None
-        # Bug fix (Sept 2026): co_mg was computed correctly for the AQI calc
-        # below but never written back into `row` — the `**values` spread
-        # above left row["co"] as the RAW µg/m³ number, while readings.co is
-        # documented and treated everywhere downstream (CPCB path, frontend
-        # display) as mg/m³. A real OpenAQ reading of e.g. 620 µg/m³ CO was
-        # being stored as co=620 and then displayed as "620.00 mg/m³" — a
-        # 1000x inflation that pegged the pollutant at Severe. Overwrite
-        # row["co"] with the converted mg/m³ value (or drop the key entirely
-        # if conversion wasn't possible) so the column is unit-consistent
-        # with every other ingest path before it's ever written to the DB.
+        # CO is already mg/m³ in by_hour (converted per sensor unit above);
+        # compute_aqi and readings.co both expect mg/m³.
+        co_mg = values.get("co")
         if co_mg is not None:
             row["co"] = co_mg
         else:
@@ -403,17 +450,21 @@ def run() -> dict:
     # openaq_location_id (populated from stations.yaml via migration 20260812 —
     # the YAML is now retired; DB is the single source of truth). Skips any
     # station already covered by CPCB this cycle to avoid burning OpenAQ quota.
+    # UPDATE (Sept 2026): every station is now fetched, because OpenAQ is the
+    # only source of real hourly values (CPCB publishes 24h averages); CPCB-
+    # covered stations write to readings_hourly only, the rest also get the
+    # fallback row in `readings`. The sensor-map cache keeps this at about
+    # one call per station per cycle.
     openaq_station_ts: dict[int, str] = {}
     if config.OPENAQ_API_KEY:
         for station in all_stations:
             oa_id = station.get("openaq_location_id")
             if not oa_id:
                 continue
-            if station["id"] in cpcb_covered:
-                continue
+            covered = station["id"] in cpcb_covered
             summary["openaq_stations_tried"] += 1
             try:
-                n, oa_ts = _ingest_station_openaq(station["id"], oa_id)
+                n, oa_ts = _ingest_station_openaq(station["id"], oa_id, write_readings=not covered)
                 summary["openaq_rows_written"] += n
                 openaq_station_ts.update(oa_ts)
             except Exception as e:

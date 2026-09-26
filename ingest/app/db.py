@@ -167,6 +167,18 @@ def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
     return written
 
 
+def upsert_readings_hourly(rows: list[dict]) -> None:
+    """Real hourly concentrations (OpenAQ) — see migration
+    20260927010000_readings_hourly.sql for why they are kept apart from
+    `readings`, whose CPCB rows are 24h averages.
+
+    One upsert per row, like upsert_reading: a row carries only the
+    pollutants seen for that hour, and a bulk upsert would null the missing
+    columns, wiping values an earlier cycle stored for the same hour."""
+    for row in rows:
+        _with_retry(lambda row=row: client().table("readings_hourly").upsert(row, on_conflict="station_id,ts").execute())
+
+
 def upsert_weather(row: dict) -> None:
     _with_retry(lambda: client().table("weather").upsert(row, on_conflict="ward_id,ts").execute())
 
