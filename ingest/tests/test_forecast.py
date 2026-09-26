@@ -63,6 +63,23 @@ def _synthetic_weather(days: int, ward_ids: list[int], seed: int = RNG_SEED) -> 
     return rows
 
 
+# ── enabled pollutants ────────────────────────────────────────────────────────
+
+
+def test_default_enabled_pollutants_covers_all_six():
+    """Regression test (Sept 2026): DEFAULT_ENABLED_POLLUTANTS used to be
+    just ("pm25", "pm10", "no2") — not because so2/co/o3 lacked real data
+    (readings.so2/co/o3 and the forecast_runs/forecasts schema already
+    supported all six), but because this constant, and
+    db.get_readings_history()'s select() (which didn't fetch so2/co/o3 at
+    all), were never extended. That gap was the actual reason AQI/SO2/CO/O3
+    had no forecast of their own and silently fell back to displaying
+    PM2.5's curve everywhere in the frontend, labelled "(proxy)" -
+    forecastPollutantFor() in web/src/lib/mapRules.ts. Locked in here so a
+    future change can't silently narrow this list back down."""
+    assert set(forecast.DEFAULT_ENABLED_POLLUTANTS) == {"pm25", "pm10", "no2", "so2", "co", "o3"}
+
+
 # ── pure metric functions ────────────────────────────────────────────────────
 
 

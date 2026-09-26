@@ -57,9 +57,28 @@ built around the Geofabrik static-extract approach instead.
 - Precise industrial-zone polygon boundaries (pending OSM access or a DDA
   shapefile).
 
+## Correction (Sept 2026) — a real, more advanced kernel already exists
+
+A `kernel/` module was added here briefly this session (a Gaussian-plume
+prototype) before discovering that `ingest/app/vayutrace_kernel.py` — a
+separate, already-shipped, already-scheduled production system — already
+does this and does it better: season-aware Pasquill-Gifford sigma
+calibrated against 4,340 real reading+weather pairs, a calm-wind
+isotropic fallback, a literature-grounded dynamic regional-fire-transport
+index, and real industrial/road/fire inventories
+(`vayutrace_industrial_zones.py`, `vayutrace_osm_roads.py`,
+`vayutrace_firms.py`), wired into the live scheduled pipeline via
+`vayutrace_attribution.py`. That prototype was deleted rather than kept
+as a redundant, less-rigorous duplicate. This `vayu_isrm/` directory's
+own `sources/` inventory (industrial zones, sector priors) remains a
+smaller, independent, standalone reference — not currently imported by
+the production `vayutrace_*` system.
+
 ## Next concrete step
 
-Either: get a FIRMS `MAP_KEY` (fastest, unblocks real fire data today), or
-start on the dispersion kernel math against the industrial-zone and
-sector-prior data already in hand, since that doesn't depend on FIRMS or
-OSM being ready first.
+FIRMS_MAP_KEY has been added to the environment and verified live (HTTP
+200, real CSV header returned) — the production `vayutrace_firms.py`
+should now receive real fire data on its next scheduled run, no code
+change needed there. Next real step is auditing whether the production
+kernel's OUTPUT is actually surfaced anywhere in the frontend (checked
+separately, see main project session notes).
