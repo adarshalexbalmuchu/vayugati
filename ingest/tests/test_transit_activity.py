@@ -47,10 +47,35 @@ class TestSummarizeActivity:
         assert by_id[1]["vehicle_count"] == 2
         assert by_id[2]["vehicle_count"] == 0
 
-    def test_wards_without_lat_lng_are_skipped_not_fabricated(self):
+    def test_wards_without_lat_lng_or_boundary_are_skipped_not_fabricated(self):
         ward_no_coords = {"id": 3, "name": "No Coords", "lat": None, "lng": None}
         summary = summarize_activity([vehicle(28.8524, 77.0925)], [ward_no_coords])
         assert summary["per_ward"] == []
+
+    def test_wards_without_lat_lng_but_with_a_boundary_are_scored_via_centroid_fallback(self):
+        """Regression test (Sept 2026): this is the actual production fix —
+        253 of 265 wards have no captured lat/lng but do have a real
+        boundary polygon; they used to be silently skipped here (the same
+        gap that also meant get_hotspot_wards() was the only ward source
+        ever passed in, restricting this whole feature to 13 wards) and
+        must now be scored via the same boundary_area_centroid() fallback
+        vayutrace_kernel.py's dispersion kernel already uses."""
+        boundary_ward = {
+            "id": 4, "name": "Boundary-only Ward", "lat": None, "lng": None,
+            "boundary": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [77.0875, 28.8474], [77.0875, 28.8574],
+                    [77.0975, 28.8574], [77.0975, 28.8474], [77.0875, 28.8474],
+                ]],
+            },
+        }
+        # A vehicle right at Narela's real point, ~1.1km from this boundary
+        # ward's centroid (77.0925, 28.8524) — comfortably inside the 3km buffer.
+        summary = summarize_activity([vehicle(28.8524, 77.0925)], [boundary_ward])
+        assert summary["per_ward"] != []
+        assert summary["per_ward"][0]["ward_id"] == 4
+        assert summary["per_ward"][0]["vehicle_count"] == 1
 
     def test_activity_level_buckets(self):
         # 0 -> none, 1..5 -> low, 6..15 -> medium, 16+ -> high

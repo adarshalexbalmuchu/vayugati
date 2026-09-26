@@ -254,7 +254,13 @@ def run_transit() -> dict:
             )
         else:
             try:
-                wards = db.get_hotspot_wards()
+                # Bug fix (Sept 2026): was db.get_hotspot_wards() (the
+                # original 13 is_hotspot=true wards only) — see
+                # transit_activity.summarize_activity()'s own doc comment
+                # for the full story. get_wards_with_city() returns all 265
+                # (with `boundary`, so summarize_activity's own centroid
+                # fallback can score every ward, not just the 13).
+                wards = db.get_wards_with_city()
                 _last_transit = transit_activity.summarize_activity([v.as_dict() for v in vehicles], wards)
             except Exception:
                 logging.getLogger("ingest").exception("transit activity ward lookup failed")
@@ -424,10 +430,45 @@ async def lifespan(app: FastAPI):
     # every 15 minutes: data.gov.in CPCB feed refreshes on the same cadence,
     # so we can capture sub-hourly readings. Timestamps are 15-min-floored in
     # ingest.py, so each 15-min window gets its own (station_id, ts) row.
+    #
+    # KNOWN RISK (Sept 2026, accepted deliberately, not yet mitigated):
+    # ingest.run()'s weather step was extended this session from 13 to up
+    # to 265 wards (boundary-centroid fallback for wards with no captured
+    # point — see vayutrace_kernel.boundary_bbox_center() and this file's
+    # own run_ingest()). That step is ~530 sequential, uncached, unbatched
+    # HTTP calls to MET Norway + Open-Meteo (neither offers a real batch
+    # endpoint) — a live timed run this session took 446.8s (~7.5 min) for
+    # a full, error-free cycle. run_ingest() already has overlap protection
+    # (_lock.acquire(blocking=False) raises "ingest already running" rather
+    # than stacking runs), so this fails SAFELY — a run that overruns 15
+    # min causes the NEXT scheduled cycle to be skipped entirely, not
+    # corrupted data. Still a real risk: a slower network day (MET Norway
+    # retries/30s timeouts across many calls) could push a run close to or
+    # past 15 minutes, silently dropping a cycle. Deliberately left
+    # unmitigated for now (explicit decision, not an oversight) rather than
+    # add speculative complexity (a hard time budget, or splitting weather
+    # onto its own less-frequent schedule) before it's an observed problem.
+    # If ingest cycles start being skipped in practice, this is the place
+    # to revisit — see open_meteo.get_current_batch()'s own per-location
+    # timing log (every 25 locations) for diagnosing where time goes.
     scheduler.add_job(run_ingest, "interval", minutes=15)
     # once per hour: recompute forecast + attribution on the freshly-ingested data.
     # Forecast model doesn't benefit from 15-min retraining cadence.
-    scheduler.add_job(run_intel, "cron", minute=25)
+    # misfire_grace_time is explicit here (Sept 2026 fix) — a cron trigger's
+    # default grace window is much stricter than an interval trigger's, so
+    # when this process's event loop is briefly blocked (e.g. a long-running
+    # request, or the machine sleeping), run_intel was being dropped entirely
+    # for that hour instead of just running late — unlike run_ops/run_transit/
+    # cleanup_stuck_jobs above, which tolerated the same delay fine. Observed
+    # directly: three consecutive missed firings (18:25/19:25/20:25 UTC) with
+    # no fallback run, leaving forecast_runs stale for 3+ hours and triggering
+    # the frontend's "Forecast unavailable — data is stale" banner even
+    # though the forecast pipeline itself was never actually broken. A
+    # forecast that's an hour late is still useful; one silently skipped for
+    # the whole hour is not — 20 minutes of slack comfortably covers a brief
+    # stall without masking a real, sustained outage (which cleanup_stuck_jobs'
+    # own health check still surfaces independently).
+    scheduler.add_job(run_intel, "cron", minute=25, misfire_grace_time=1200)
     # every 5 minutes: drain pending notifications and escalate overdue tasks
     scheduler.add_job(run_ops, "interval", minutes=5)
     # every 5 minutes: refresh the Delhi OTD transport-activity context layer.
