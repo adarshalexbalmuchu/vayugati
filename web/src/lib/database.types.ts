@@ -1693,6 +1693,7 @@ export type Database = {
           so2: number | null
           station_id: number
           ts: string
+          value_basis: string | null
         }
         Insert: {
           aqi?: number | null
@@ -1707,6 +1708,7 @@ export type Database = {
           so2?: number | null
           station_id: number
           ts: string
+          value_basis?: string | null
         }
         Update: {
           aqi?: number | null
@@ -1721,10 +1723,61 @@ export type Database = {
           so2?: number | null
           station_id?: number
           ts?: string
+          value_basis?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "readings_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      readings_hourly: {
+        Row: {
+          co: number | null
+          ingested_at: string
+          nh3: number | null
+          no2: number | null
+          o3: number | null
+          pm10: number | null
+          pm25: number | null
+          so2: number | null
+          source: string
+          station_id: number
+          ts: string
+        }
+        Insert: {
+          co?: number | null
+          ingested_at?: string
+          nh3?: number | null
+          no2?: number | null
+          o3?: number | null
+          pm10?: number | null
+          pm25?: number | null
+          so2?: number | null
+          source?: string
+          station_id: number
+          ts: string
+        }
+        Update: {
+          co?: number | null
+          ingested_at?: string
+          nh3?: number | null
+          no2?: number | null
+          o3?: number | null
+          pm10?: number | null
+          pm25?: number | null
+          so2?: number | null
+          source?: string
+          station_id?: number
+          ts?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "readings_hourly_station_id_fkey"
             columns: ["station_id"]
             isOneToOne: false
             referencedRelation: "stations"

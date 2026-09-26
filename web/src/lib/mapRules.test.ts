@@ -34,6 +34,7 @@ function ward(overrides: Partial<WardSummary> = {}): WardSummary {
     ts: null,
     station_name: null,
     station_agency: null,
+    hourly: null,
     isMonitored: true,
     ...overrides,
   }

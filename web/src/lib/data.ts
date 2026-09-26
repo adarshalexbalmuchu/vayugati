@@ -58,6 +58,20 @@ export interface WardSummary {
   ts: string | null
   station_name: string | null
   station_agency: string | null
+  /** The ward station's latest real HOURLY mean (readings_hourly), when one
+   *  exists within HOURLY_FRESH_HOURS. The top-level pm25/no2/... fields come
+   *  from `readings`, whose CPCB rows are 24-hour averages (CPCB publishes
+   *  nothing finer), so this is what "current concentration" should show.
+   *  `ts` is the start of that hour. CO in mg/m³, like everywhere else. */
+  hourly: {
+    ts: string
+    pm25: number | null
+    pm10: number | null
+    no2: number | null
+    so2: number | null
+    co: number | null
+    o3: number | null
+  } | null
   /** Has at least one active station assigned. Added Sept 2026 when
    *  fetchAllWardsAqi() was extended to return every ward (not just
    *  monitored ones) — see that function's own doc comment for why.
@@ -193,6 +207,10 @@ export async function fetchWindField(): Promise<WindFieldPoint[]> {
  *  multi-day upstream outage; the reading's `ts` marks it stale downstream. */
 export const LAST_KNOWN_READING_HOURS = 72
 
+/** An hourly mean older than this isn't shown as "current". The ingest
+ *  service fills readings_hourly once an hour with a 6h look-back. */
+export const HOURLY_FRESH_HOURS = 6
+
 export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   // Bug fix (Sept 2026): this used to return ONLY "monitored" wards (has
   // at least one active station) — 39 of 265. That was fine while nothing
@@ -230,6 +248,22 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
       .limit(Math.max(allStationIds.length, 1) * 4),
   ])
   if (!wards) return []
+
+  // Latest real hourly mean per station (see WardSummary.hourly).
+  const hourlySince = new Date(Date.now() - HOURLY_FRESH_HOURS * 3600 * 1000).toISOString()
+  const { data: hourlyRows } = await supabase
+    .from('readings_hourly')
+    .select('station_id, ts, pm25, pm10, no2, so2, co, o3')
+    .in('station_id', allStationIds)
+    .gte('ts', hourlySince)
+    .order('ts', { ascending: false })
+    .limit(Math.max(allStationIds.length, 1) * (HOURLY_FRESH_HOURS + 1))
+  const hourlyByStation = new Map<number, NonNullable<WardSummary['hourly']>>()
+  for (const r of hourlyRows ?? []) {
+    if (!hourlyByStation.has(r.station_id)) {
+      hourlyByStation.set(r.station_id, { ts: r.ts, pm25: r.pm25, pm10: r.pm10, no2: r.no2, so2: r.so2, co: r.co, o3: r.o3 })
+    }
+  }
 
   const wardStations = new Map<number, { id: number; name: string; agency: string | null; is_primary: boolean }[]>()
   for (const s of allStations ?? []) {
@@ -291,6 +325,11 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
       ts: best?.reading.ts ?? null,
       station_name: best?.station.name ?? null,
       station_agency: best?.station.agency ?? null,
+      // Same station as the reading above when it has an hourly mean; else
+      // whichever of the ward's stations does.
+      hourly: (best && hourlyByStation.get(best.station.id))
+        ?? stations.map((s) => hourlyByStation.get(s.id)).find((h) => h != null)
+        ?? null,
       isMonitored: monitoredWardIds.has(ward.id),
     }
   })

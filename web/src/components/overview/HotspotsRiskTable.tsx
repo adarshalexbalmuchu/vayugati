@@ -565,7 +565,8 @@ function normalizeCpcbCo(co: { avg: number; unit?: string }): number {
  *  than the two real SVG charts elsewhere on this same panel.
  *
  *  The 6 pollutants can't share one literal numeric axis — CO is measured
- *  in mg/m³ at a completely different real-world magnitude (~0.02-0.1)
+ *  in mg/m³ at a completely different real-world magnitude (~0.5-2 in Delhi;
+ *  the ~0.05 once seen here was an ingest unit bug, fixed Sept 2026)
  *  than PM10 (~50-200+ µg/m³); plotting both on the same absolute scale
  *  would make CO's bar invisible. Instead each bar is drawn as a percentage
  *  of THAT pollutant's own CPCB severity scale (cfg.barMax — the same
@@ -789,9 +790,21 @@ function WardDetailPanel({
   const wardRank = ward.isMonitored && rankIndex >= 0 ? rankIndex + 1 : null
   const wardRankTotal = monitoredRanked.length
 
-  // Build pollutant readings: CPCB → OpenAQ (skip CO from OpenAQ, wrong unit) → ward fields
+  // Build pollutant readings. A real hourly mean (readings_hourly) wins when
+  // one is fresh: CPCB's feed carries only 24-hour averages (Sept 2026
+  // finding), which are a poor stand-in for "current". Otherwise
+  // CPCB → OpenAQ (skip CO from OpenAQ, wrong unit) → ward fields, labelled
+  // as the 24-hour averages they are.
   const readings: Partial<Record<typeof POLLUTANT_ORDER[number], number>> = {}
-  if (preferred?.cpcbPollutants) {
+  const hourly = ward.hourly
+  if (hourly) {
+    for (const k of ['pm25', 'pm10', 'no2', 'so2', 'co', 'o3'] as const) {
+      if (hourly[k] != null) readings[k] = hourly[k] as number
+    }
+  }
+  const readingsBasis: 'hourly' | 'cpcb24h' | 'latest' =
+    hourly && Object.keys(readings).length > 0 ? 'hourly' : preferred?.cpcbPollutants ? 'cpcb24h' : 'latest'
+  if (readingsBasis !== 'hourly' && preferred?.cpcbPollutants) {
     for (const k of POLLUTANT_ORDER) {
       const v = preferred.cpcbPollutants[k]
       if (v?.avg == null) continue
@@ -800,7 +813,7 @@ function WardDetailPanel({
       readings[k] = k === 'co' ? normalizeCpcbCo(v) : v.avg
     }
   }
-  if (preferred?.openaqPollutants) {
+  if (readingsBasis !== 'hourly' && preferred?.openaqPollutants) {
     for (const k of POLLUTANT_ORDER) {
       if (k === 'co') continue // OpenAQ CO is µg/m³; config expects mg/m³ — skip
       const v = preferred.openaqPollutants[k]
@@ -814,12 +827,20 @@ function WardDetailPanel({
   // selects them). nh3 has no ward.nh3 field to fall back to (see
   // mapRules.ts's own note: nh3 isn't queried at the ward level anywhere
   // yet), so it's correctly left out here, not a remaining gap.
+  if (readingsBasis !== 'hourly') {
   if (!('pm25' in readings) && ward.pm25 != null) readings.pm25 = ward.pm25
   if (!('pm10' in readings) && ward.pm10 != null) readings.pm10 = ward.pm10
   if (!('no2' in readings) && ward.no2 != null) readings.no2 = ward.no2
   if (!('so2' in readings) && ward.so2 != null) readings.so2 = ward.so2
   if (!('co' in readings) && ward.co != null) readings.co = ward.co
   if (!('o3' in readings) && ward.o3 != null) readings.o3 = ward.o3
+  }
+  const readingsLabel =
+    readingsBasis === 'hourly' && hourly
+      ? `Current readings · hourly mean from ${new Date(hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+      : readingsBasis === 'cpcb24h'
+        ? 'Current readings · 24-hour averages (CPCB)'
+        : 'Current readings'
 
   const readingKeys = POLLUTANT_ORDER.filter((k) => readings[k] != null)
 
@@ -981,7 +1002,7 @@ function WardDetailPanel({
       {readingKeys.length > 0 && (
         <div className="px-4 pt-4 pb-4">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            Current readings
+            {readingsLabel}
           </p>
           <CurrentReadingsChart readings={readings} keys={readingKeys} />
         </div>
