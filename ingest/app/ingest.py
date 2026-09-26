@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from . import aqi, config, data_gov_cpcb, db, open_meteo, openaq, station_matching
+from .vayutrace_kernel import boundary_bbox_center
 
 log = logging.getLogger("ingest")
 
@@ -82,7 +83,7 @@ def _parse_cpcb_ts(ts_str: str) -> str | None:
 
 def _ingest_from_cpcb(
     match_index: dict[str, int],
-) -> tuple[int, list[str], set[int], list[dict], dict[int, str]]:
+) -> tuple[int, list[str], set[int], list[dict], dict[int, str], dict[int, list[dict]]]:
     """Fetch CPCB/data.gov.in latest readings and write matched ones to Supabase.
 
     One API call per cycle returns all Delhi stations — no per-station loop,
@@ -96,7 +97,14 @@ def _ingest_from_cpcb(
     if records is None:
         msg = "CPCB fetch returned None — DATA_GOV_API_KEY unset or API unavailable"
         log.warning(msg)
-        return 0, [msg], set(), [], {}
+        # Six values, matching the success path below and this function's
+        # annotation. Bug fix (Sept 2026): this path returned only five,
+        # so every CPCB outage crashed run() with "not enough values to
+        # unpack (expected 6, got 5)" instead of degrading to the OpenAQ
+        # fallback. Confirmed live: data.gov.in was returning HTTP 502 and
+        # the ingest job had been failing every 15-minute cycle for ~25h,
+        # which in turn left the whole UI in its stale-data state.
+        return 0, [msg], set(), [], {}, {}
 
     cpcb_by_station = data_gov_cpcb.group_by_station(records)
     rows_written = 0
@@ -311,6 +319,20 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
         # 1000 mg/m³ and peg AQI at 500 for every OpenAQ-sourced station.
         co_raw = values.get("co")
         co_mg = aqi.co_ug_to_mg(co_raw) if co_raw is not None else None
+        # Bug fix (Sept 2026): co_mg was computed correctly for the AQI calc
+        # below but never written back into `row` — the `**values` spread
+        # above left row["co"] as the RAW µg/m³ number, while readings.co is
+        # documented and treated everywhere downstream (CPCB path, frontend
+        # display) as mg/m³. A real OpenAQ reading of e.g. 620 µg/m³ CO was
+        # being stored as co=620 and then displayed as "620.00 mg/m³" — a
+        # 1000x inflation that pegged the pollutant at Severe. Overwrite
+        # row["co"] with the converted mg/m³ value (or drop the key entirely
+        # if conversion wasn't possible) so the column is unit-consistent
+        # with every other ingest path before it's ever written to the DB.
+        if co_mg is not None:
+            row["co"] = co_mg
+        else:
+            row.pop("co", None)
         computed_aqi = aqi.compute_aqi(
             values.get("pm25"), values.get("pm10"),
             no2=values.get("no2"), so2=values.get("so2"),
@@ -401,23 +423,69 @@ def run() -> dict:
 
     summary["readings_upserted"] = summary["cpcb_rows_written"] + summary["openaq_rows_written"]
 
-    # ── Open-Meteo weather (batch — one request for all wards) ───────────────
-    # Sequential per-ward calls produced consistent 429s from Render's shared
-    # egress IP even with 0.5s pauses. Open-Meteo accepts comma-separated
-    # lat/lng arrays and returns results in the same order, so N wards = 1
-    # request instead of N.
+    # ── Weather (MET Norway via open_meteo.py; PBLH via Open-Meteo) ──────────
+    # CORRECTION (Sept 2026): despite this function's name and the comment
+    # that used to be here, get_current_batch() is NOT a real batched
+    # request — MET Norway has no batch endpoint (see that function's own
+    # doc comment), so it's a sequential loop of individual HTTP calls, one
+    # per location, each with its own 15s timeout and no rate-limiting or
+    # backoff. get_current_pblh() below adds a SECOND individual call per
+    # ward on top of that.
+    #
+    # Bug fix (Sept 2026, direct request): this used to filter to only wards
+    # with a real captured lat/lng — 13 of 265 — silently leaving the other
+    # 252 with no weather row at all. That meant vayutrace_kernel.py's
+    # boundary-centroid fallback (added the same session, for the SAME 252
+    # wards) still fell back to a hardcoded calm-wind default (180°, 0 m/s)
+    # for all of them, since get_latest_weather_by_ward() had nothing real
+    # to return. Fixed by computing the same boundary-centroid fallback
+    # here as the QUERY location for wards with no point — never writing a
+    # fabricated lat/lng back to the ward row itself, only using it to ask
+    # "what's the weather roughly here".
+    #
+    # REAL, ACCEPTED TRADEOFF (explicit go-ahead given, not defaulted into):
+    # this takes the weather step from ~13 to up to ~265 wards, i.e. up to
+    # ~530 sequential external HTTP calls per ingest cycle instead of ~26 —
+    # meaningfully longer cycle time and real exposure to MET
+    # Norway/Open-Meteo rate limits, with no protection against either
+    # added here. If ingest cycles start timing out, running long, or
+    # logging weather-batch errors/429s, this is the first place to look —
+    # a per-call delay or a hard time budget for this whole step would be
+    # the fix, not reverting the ward coverage.
     wards_all = db.get_wards()
-    geo_wards = [(name, ward) for name, ward in wards_all.items()
-                 if ward["lat"] is not None and ward["lng"] is not None]
+    geo_wards: list[tuple[str, dict, float, float]] = []
+    skipped_no_location = 0
+    for name, ward in wards_all.items():
+        if ward["lat"] is not None and ward["lng"] is not None:
+            geo_wards.append((name, ward, ward["lat"], ward["lng"]))
+            continue
+        fallback = boundary_bbox_center(ward.get("boundary"))
+        if fallback is None:
+            skipped_no_location += 1
+            continue
+        flat, flng = fallback
+        geo_wards.append((name, ward, flat, flng))
+    if skipped_no_location:
+        log.warning(
+            "weather batch: %d/%d wards have neither a point nor a boundary — skipped",
+            skipped_no_location, len(wards_all),
+        )
     if geo_wards:
         try:
-            locations = [(ward["lat"], ward["lng"]) for _, ward in geo_wards]
+            locations = [(qlat, qlng) for _, _, qlat, qlng in geo_wards]
             weather_results = open_meteo.get_current_batch(locations)
-            for (name, ward), w in zip(geo_wards, weather_results):
+            for (name, ward, qlat, qlng), w in zip(geo_wards, weather_results):
+                # Bug fix (Sept 2026): get_current_batch() now isolates
+                # per-location failures instead of raising and losing every
+                # ward queued after the failure — see that function's own
+                # updated doc comment. w is None for a ward whose individual
+                # MET Norway call failed; skip just that ward, not the rest.
+                if w is None:
+                    continue
                 # PBLH from Open-Meteo (separate API, degrades gracefully to None).
                 # Literature: PBLH is the #1-5 PM2.5 predictor in IGP ML studies
                 # (AMT 2019, JGR Atmospheres 2021, Aerosol Sci Tech 2025).
-                pblh = open_meteo.get_current_pblh(ward["lat"], ward["lng"])
+                pblh = open_meteo.get_current_pblh(qlat, qlng)
                 wind_speed_ms = (w["wind_speed"] or 0.0) / 3.6  # km/h → m/s for VC
                 vc = round(pblh * wind_speed_ms, 1) if pblh is not None else None
                 db.upsert_weather(
