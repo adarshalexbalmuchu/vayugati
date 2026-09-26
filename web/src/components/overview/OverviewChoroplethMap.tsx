@@ -9,6 +9,23 @@ import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
 import { fetchAllWardBoundaries, fetchWindField, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
+import { HOTSPOT_READING_STALE_MINUTES } from '../../lib/overviewRules'
+
+/** Hover badge text: the ward name, plus the reading's age when it's stale.
+ *  (MapLibre hands feature properties back as plain JSON, hence the loose type.) */
+function hoverLabel(props: Record<string, unknown> | null | undefined): string | null {
+  const name = (props?.name as string | undefined) ?? null
+  if (!name) return null
+  return props?.stale && props?.ageLabel ? `${name} · ${props.ageLabel as string}` : name
+}
+
+function readingAge(ts: string | null | undefined): { stale: boolean; ageLabel: string | null } {
+  if (!ts) return { stale: false, ageLabel: null }
+  const minutes = (Date.now() - new Date(ts).getTime()) / 60000
+  if (!Number.isFinite(minutes) || minutes <= HOTSPOT_READING_STALE_MINUTES) return { stale: false, ageLabel: null }
+  const h = Math.round(minutes / 60)
+  return { stale: true, ageLabel: h >= 48 ? `last reading ${Math.round(h / 24)}d ago` : `last reading ${h}h ago` }
+}
 
 const DELHI_CENTER: [number, number] = [77.209, 28.6139]
 const DELHI_ZOOM = 9.6
@@ -30,7 +47,17 @@ const CIRCLE = 'ov-ward-circle'
 // wind axis, a real spatial-correlation question. See fetchWindField's own
 // doc comment for why this is several real per-location readings, not one
 // fabricated "city wind" value.
-type WardFeatureProps = { id: number; name: string; aqi: number | null; isMonitored: boolean }
+type WardFeatureProps = {
+  id: number
+  name: string
+  aqi: number | null
+  isMonitored: boolean
+  /** Reading older than HOTSPOT_READING_STALE_MINUTES: drawn faded, and the
+   *  hover badge says how old it is, so a last-known value shown during an
+   *  upstream outage is never mistaken for a current one. */
+  stale: boolean
+  ageLabel: string | null
+}
 type WardGeoJSON = FeatureCollection<Polygon | MultiPolygon, WardFeatureProps>
 type CenterGeoJSON = FeatureCollection<Point, WardFeatureProps>
 const WIND_SRC = 'ov-wind'
@@ -231,7 +258,10 @@ export default function OverviewChoroplethMap({
           return {
             type: 'Feature',
             id: b.id,
-            properties: { id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward?.isMonitored ?? false },
+            properties: {
+              id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward?.isMonitored ?? false,
+              ...(aqi != null ? readingAge(ward?.ts) : { stale: false, ageLabel: null }),
+            },
             geometry: b.geometry,
           }
         }),
@@ -264,7 +294,10 @@ export default function OverviewChoroplethMap({
         return {
           type: 'Feature',
           id: w.id,
-          properties: { id: w.id, name: formatWardName(w.name), aqi, isMonitored: true },
+          properties: {
+            id: w.id, name: formatWardName(w.name), aqi, isMonitored: true,
+            ...(aqi != null ? readingAge(w.ts) : { stale: false, ageLabel: null }),
+          },
           geometry: { type: 'Point', coordinates: [w.lng!, w.lat!] },
         }
       }),
@@ -324,6 +357,7 @@ export default function OverviewChoroplethMap({
             'case',
             ['boolean', ['feature-state', 'selected'], false], 0.92,
             ['boolean', ['feature-state', 'hover'], false], 0.85,
+            ['all', ['boolean', ['get', 'isMonitored'], false], ['boolean', ['get', 'stale'], false]], 0.35,
             ['boolean', ['get', 'isMonitored'], false], 0.75,
             0.22,
           ] as maplibregl.ExpressionSpecification,
@@ -381,6 +415,7 @@ export default function OverviewChoroplethMap({
             'case',
             ['boolean', ['feature-state', 'selected'], false], 1,
             ['boolean', ['feature-state', 'hover'], false], 0.95,
+            ['boolean', ['get', 'stale'], false], 0.45,
             0.88,
           ] as maplibregl.ExpressionSpecification,
         },
@@ -459,7 +494,7 @@ export default function OverviewChoroplethMap({
       if (id != null) {
         hoveredCircleId = id
         if (map.getSource(CSRC)) map.setFeatureState({ source: CSRC, id }, { hover: true })
-        setHoveredNameRef.current(feat?.properties?.name as string ?? null)
+        setHoveredNameRef.current(hoverLabel(feat?.properties))
       }
     })
     map.on('mouseleave', CIRCLE, () => {
@@ -493,7 +528,7 @@ export default function OverviewChoroplethMap({
       if (id != null) {
         hoveredFillId = id
         if (map.getSource(SRC)) map.setFeatureState({ source: SRC, id }, { hover: true })
-        setHoveredNameRef.current(feat.properties?.name as string ?? null)
+        setHoveredNameRef.current(hoverLabel(feat.properties))
       }
     })
     map.on('mouseleave', FILL, () => {
@@ -612,7 +647,7 @@ export default function OverviewChoroplethMap({
 
       {/* Hovered ward name badge */}
       {hoveredName && (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[160px] truncate rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[260px] truncate rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm">
           {hoveredName}
         </div>
       )}
@@ -659,6 +694,14 @@ export default function OverviewChoroplethMap({
               </div>
             ))}
           </div>
+          {/* Only shown when it applies: explains the faded fill a last-known
+              reading gets during an upstream outage (see readingAge above). */}
+          {geojson.features.some((f) => f.properties.stale) && (
+            <div className="mt-1.5 flex items-center gap-1.5 border-t border-slate-200/70 pt-1.5">
+              <span className="h-2.5 w-3 flex-shrink-0 rounded-[2px] bg-[#fff833] opacity-40" />
+              <span className="text-[9px] font-medium text-slate-500">Faded: reading &gt;3h old</span>
+            </div>
+          )}
           {/* Wind field caption (Sept 2026) — a small note explaining the blue
               arrows, not a full legend (only one glyph/colour to explain,
               unlike the 6-band AQI scale above). Point count is real, not

@@ -188,6 +188,11 @@ export async function fetchWindField(): Promise<WindFieldPoint[]> {
   return points
 }
 
+/** How far back fetchAllWardsAqi looks for a station's last-known reading
+ *  when it has nothing in the normal 3h window. Long enough to ride out a
+ *  multi-day upstream outage; the reading's `ts` marks it stale downstream. */
+export const LAST_KNOWN_READING_HOURS = 72
+
 export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   // Bug fix (Sept 2026): this used to return ONLY "monitored" wards (has
   // at least one active station) — 39 of 265. That was fine while nothing
@@ -237,6 +242,28 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   const latestByStation = new Map<number, typeof recentReadings extends (infer T)[] | null ? T : never>()
   for (const r of recentReadings ?? []) {
     if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r)
+  }
+
+  // Last-known fallback (Sept 2026, CPCB outage): a station with nothing in
+  // the 3h window used to vanish, so a ~2-day data.gov.in/OpenAQ outage
+  // blanked every AQI on the dashboard. Look further back for just those
+  // stations and show their last value; `ts` rides along so every consumer's
+  // existing staleness handling (hotspotStatus 'stale', the map's faded
+  // fill, "(stale reading)" labels) marks it as old rather than current.
+  const missing = allStationIds.filter((id) => !latestByStation.has(id))
+  if (missing.length > 0) {
+    const lastKnownSince = new Date(Date.now() - LAST_KNOWN_READING_HOURS * 3600 * 1000).toISOString()
+    const { data: older } = await supabase
+      .from('readings')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+      .in('station_id', missing)
+      .gte('ts', lastKnownSince)
+      .lt('ts', since)
+      .order('ts', { ascending: false })
+      .limit(missing.length * 4)
+    for (const r of older ?? []) {
+      if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r)
+    }
   }
 
   return wards.map((ward) => {
