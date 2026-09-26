@@ -167,16 +167,23 @@ def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
     return written
 
 
-def upsert_readings_hourly(rows: list[dict]) -> None:
+def upsert_readings_hourly(rows: list[dict], chunk: int = 500) -> None:
     """Real hourly concentrations (OpenAQ) — see migration
     20260927010000_readings_hourly.sql for why they are kept apart from
     `readings`, whose CPCB rows are 24h averages.
 
-    One upsert per row, like upsert_reading: a row carries only the
-    pollutants seen for that hour, and a bulk upsert would null the missing
-    columns, wiping values an earlier cycle stored for the same hour."""
-    for row in rows:
-        _with_retry(lambda row=row: client().table("readings_hourly").upsert(row, on_conflict="station_id,ts").execute())
+    Rows carry only the pollutants seen for that hour. A bulk upsert fills
+    missing columns with NULL, which would wipe values an earlier run stored
+    for the same hour. So rows are batched by their exact column set: every
+    row in a batch has the same columns, and none are nulled."""
+    groups: dict[frozenset, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(frozenset(r), []).append(r)
+    for batch_rows in groups.values():
+        for i in range(0, len(batch_rows), chunk):
+            batch = batch_rows[i : i + chunk]
+            _with_retry(lambda batch=batch: client().table("readings_hourly")
+                        .upsert(batch, on_conflict="station_id,ts").execute())
 
 
 def get_hourly_history(hours: int = 24 * 30) -> list[dict]:

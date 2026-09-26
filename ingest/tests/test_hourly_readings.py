@@ -67,3 +67,27 @@ def test_one_station_failure_does_not_stop_the_rest(monkeypatch):
     monkeypatch.setattr(hr.openaq, "get_location", boom)
     s = hr.sync()
     assert s["stations"] == 1 and len(s["errors"]) == 1
+
+
+def test_upsert_batches_by_column_set_so_nothing_is_nulled(monkeypatch):
+    from app import db
+    sent = []
+
+    class _T:
+        def upsert(self, batch, on_conflict):
+            sent.append([sorted(r) for r in batch]); return self
+        def execute(self):
+            return self
+
+    class _C:
+        def table(self, name):
+            assert name == "readings_hourly"; return _T()
+
+    monkeypatch.setattr(db, "client", lambda: _C())
+    db.upsert_readings_hourly([
+        {"station_id": 1, "ts": "a", "no2": 1.0},
+        {"station_id": 1, "ts": "b", "no2": 2.0, "co": 0.5},
+        {"station_id": 1, "ts": "c", "no2": 3.0}])
+    assert len(sent) == 2
+    for batch in sent:
+        assert len({tuple(r) for r in batch}) == 1   # one column set per request
