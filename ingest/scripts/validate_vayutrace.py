@@ -274,7 +274,10 @@ def build_observations(hours: int) -> tuple[dict, dict, dict]:
     extreme-outlier stations Delhi routinely produces, which would drag a
     mean and make every other ward look artificially clean.
     """
-    readings = db.get_readings_history(hours=hours)
+    # Real hourly values: CPCB rows in `readings` are 24h running means since
+    # 2026-08-11, and scoring an hourly model against them (as this script did
+    # until Sept 2026) mixes two kinds of data across that date.
+    readings = db.get_hourly_history(hours=hours)
     weather = db.get_weather_history(hours=hours)
 
     # ward-hour -> mean pm25 (a ward can have multiple stations/readings per hour)
