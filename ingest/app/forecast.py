@@ -1191,7 +1191,10 @@ def run(city_code: str | None = None) -> dict:
         # Fetch once per city (not per pollutant) — all three pollutants read
         # the same 30-day window; re-fetching inside the loop triples the
         # number of large paginated DB requests for no benefit.
-        readings = db.get_readings_history(hours=24 * 30)
+        # Real hourly values (readings_hourly), not `readings`: CPCB's rows
+        # there are 24h averages since 2026-08-11, and a forecaster trained
+        # on a 24h running mean learns a smoothed, lagged series.
+        readings = db.get_hourly_history(hours=24 * 30)
         weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
         last_forecast_times = db.get_last_forecast_times(city["id"])
         # NO2 hourly series (built once per city) — used as a co-pollutant lag

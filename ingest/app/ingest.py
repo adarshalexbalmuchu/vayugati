@@ -322,18 +322,13 @@ def _openaq_co_mg(value: float, unit: str | None) -> float:
     return value  # "ppb" (CPCB mislabel, really mg/m3) or "mg/m³"
 
 
-def _ingest_station_openaq(station_id: int, openaq_location_id: int,
-                           write_readings: bool = True) -> tuple[int, dict[int, str]]:
-    """Pull latest readings for one station via OpenAQ.
+def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[int, dict[int, str]]:
+    """Pull latest readings for one station via OpenAQ (fallback for a
+    station CPCB did not cover this cycle). Real hourly means for EVERY
+    station are written separately, by hourly_readings.sync().
 
-    Always writes the values to readings_hourly: CPCB's feed only carries
-    AQI-window averages (24h; 8h CO/O3), so OpenAQ is the platform's only
-    source of real hourly concentrations (Sept 2026). Also writes them to
-    `readings` when write_readings is set, i.e. when CPCB did not cover the
-    station this cycle (the original fallback role).
-
-    Returns (rows_upserted to readings, {station_id: latest_ts}) so the
-    caller can pass the ts map to _recompute_24h_aqi."""
+    Returns (rows_upserted, {station_id: latest_ts}) so the caller can pass
+    the ts map to _recompute_24h_aqi."""
     sensors, units = _openaq_sensors(openaq_location_id)
     latest = openaq.get_latest(openaq_location_id)
     oldest_ok = datetime.now(timezone.utc) - timedelta(hours=OPENAQ_MAX_LATEST_AGE_H)
@@ -366,13 +361,6 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int,
         ts = _hour_floor_utc(m["ts_utc"])
         by_hour.setdefault(ts, {})[col] = value
 
-    hourly_rows = []
-    for ts, values in by_hour.items():
-        hourly_rows.append({"station_id": station_id, "ts": ts, **values})  # CO already mg/m³
-    if hourly_rows:
-        db.upsert_readings_hourly(hourly_rows)
-    if not write_readings:
-        return 0, {}
 
     latest_ts: str | None = None
     for ts, values in by_hour.items():
@@ -450,21 +438,19 @@ def run() -> dict:
     # openaq_location_id (populated from stations.yaml via migration 20260812 —
     # the YAML is now retired; DB is the single source of truth). Skips any
     # station already covered by CPCB this cycle to avoid burning OpenAQ quota.
-    # UPDATE (Sept 2026): every station is now fetched, because OpenAQ is the
-    # only source of real hourly values (CPCB publishes 24h averages); CPCB-
-    # covered stations write to readings_hourly only, the rest also get the
-    # fallback row in `readings`. The sensor-map cache keeps this at about
-    # one call per station per cycle.
+    # Real hourly values for every station come from hourly_readings.sync(),
+    # scheduled separately (main.py), not from this fallback.
     openaq_station_ts: dict[int, str] = {}
     if config.OPENAQ_API_KEY:
         for station in all_stations:
             oa_id = station.get("openaq_location_id")
             if not oa_id:
                 continue
-            covered = station["id"] in cpcb_covered
+            if station["id"] in cpcb_covered:
+                continue
             summary["openaq_stations_tried"] += 1
             try:
-                n, oa_ts = _ingest_station_openaq(station["id"], oa_id, write_readings=not covered)
+                n, oa_ts = _ingest_station_openaq(station["id"], oa_id)
                 summary["openaq_rows_written"] += n
                 openaq_station_ts.update(oa_ts)
             except Exception as e:

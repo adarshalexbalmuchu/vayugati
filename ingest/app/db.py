@@ -179,6 +179,36 @@ def upsert_readings_hourly(rows: list[dict]) -> None:
         _with_retry(lambda row=row: client().table("readings_hourly").upsert(row, on_conflict="station_id,ts").execute())
 
 
+def get_hourly_history(hours: int = 24 * 30) -> list[dict]:
+    """Real hourly concentrations from readings_hourly, in exactly
+    get_readings_history()'s shape ([{ts, ward_id, pm25, ..., aqi}]) so
+    forecasting and attribution can switch source without other changes.
+
+    Why not `readings`: since 2026-08-11 its CPCB rows are 24h (8h CO/O3)
+    averages, not hourly values (value_basis='naqi_window'). A model trained
+    on those learns a smoothed, lagged series. aqi is None here: AQI is
+    defined on 24h averages, not on single hours.
+    """
+    stations = _with_retry(lambda: client().table("stations").select("id, ward_id").execute().data) or []
+    sid_to_ward = {s["id"]: s["ward_id"] for s in stations if s.get("ward_id") is not None}
+    if not sid_to_ward:
+        return []
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = _fetch_all(
+        lambda: client()
+        .table("readings_hourly")
+        .select("ts, station_id, pm25, pm10, no2, so2, co, o3")
+        .gte("ts", cutoff)
+        .order("ts")
+        .order("station_id")
+    )
+    return [
+        {"ts": r["ts"], "ward_id": sid_to_ward[r["station_id"]], "pm25": r["pm25"], "pm10": r["pm10"],
+         "no2": r["no2"], "so2": r["so2"], "co": r["co"], "o3": r["o3"], "aqi": None}
+        for r in rows if r["station_id"] in sid_to_ward
+    ]
+
+
 def upsert_weather(row: dict) -> None:
     _with_retry(lambda: client().table("weather").upsert(row, on_conflict="ward_id,ts").execute())
 
@@ -312,7 +342,10 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
         .table("readings")
         .select("ts, station_id, pm25, pm10, no2, so2, co, o3, aqi")
         .gte("ts", cutoff)
+        # (ts, station_id), not ts alone: many rows share a ts, and range
+        # paging over a non-unique order can skip or repeat rows (Sept 2026).
         .order("ts")
+        .order("station_id")
     )
     out = []
     for r in rows:

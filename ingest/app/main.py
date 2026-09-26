@@ -270,6 +270,23 @@ def run_transit() -> dict:
         _transit_lock.release()
 
 
+_hourly_lock = threading.Lock()
+
+
+def run_hourly_readings() -> dict:
+    """Real hourly concentrations -> readings_hourly (hourly_readings.py).
+    CPCB's feed carries only 24h averages, so this is the platform's hourly
+    series; forecasts train on it."""
+    from . import hourly_readings
+
+    if not _hourly_lock.acquire(blocking=False):
+        raise RuntimeError("hourly readings sync already running")
+    try:
+        return hourly_readings.sync()
+    finally:
+        _hourly_lock.release()
+
+
 def run_fire_counts() -> dict:
     """Fetch yesterday's VIIRS NRT regional fire count from NASA FIRMS and
     store it in fire_counts for use as a forecast lag feature.
@@ -469,6 +486,10 @@ async def lifespan(app: FastAPI):
     # stall without masking a real, sustained outage (which cleanup_stuck_jobs'
     # own health check still surfaces independently).
     scheduler.add_job(run_intel, "cron", minute=25, misfire_grace_time=1200)
+    # :40 — OpenAQ publishes an hour's mean some minutes after it closes; a
+    # 6h look-back fills in late hours. ~350 paced calls (~12 min), clear of
+    # ingest's own OpenAQ fallback burst.
+    scheduler.add_job(run_hourly_readings, "cron", minute=40, misfire_grace_time=1200)
     # every 5 minutes: drain pending notifications and escalate overdue tasks
     scheduler.add_job(run_ops, "interval", minutes=5)
     # every 5 minutes: refresh the Delhi OTD transport-activity context layer.

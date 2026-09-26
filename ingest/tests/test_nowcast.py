@@ -338,7 +338,7 @@ def test_run_marks_exactly_one_nowcast_point_and_logs_shadow_candidates(monkeypa
         "get_wards_with_city",
         lambda: [{"id": wid, "name": f"ward{wid}", "lat": 28.6, "lng": 77.2, "city_id": 1} for wid in ward_ids],
     )
-    monkeypatch.setattr(forecast.db, "get_readings_history", lambda hours=720: readings)
+    monkeypatch.setattr(forecast.db, "get_hourly_history", lambda hours=720: readings)
     monkeypatch.setattr(forecast.db, "get_weather_history", lambda hours=720: weather)
     monkeypatch.setattr(forecast.db, "insert_forecast_run", lambda row: fake.forecast_runs.append(row) or len(fake.forecast_runs))
     monkeypatch.setattr(forecast.db, "replace_forecasts", lambda ward_id, pollutant, rows: fake.forecasts.extend(rows))
