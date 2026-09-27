@@ -331,7 +331,7 @@ export default function MapToolbar(props: MapToolbarProps) {
               as a validated prediction. */}
           {!isQuality && (timeMode === '24h' || timeMode === '48h') && !forecastSuppressed && !pollutantForecastless && forecastAccuracy && forecastAccuracy.totalWardPollutantPairs > 0 && (
             <div
-              title="Most wards fall back to a seasonal/hourly baseline rather than the trained model — see docs/data/forecast-validation-report.md for the full breakdown."
+              title="The trained model is used only at lead times where it beat simple forecast rules in validation; elsewhere the best simple rule is shown."
               className="mt-2 flex items-center gap-1 rounded-lg border border-status-warning/30 bg-status-warning/10 px-2 py-1 text-[11px] font-medium text-status-warning"
             >
               <Info className="h-3 w-3 flex-shrink-0" aria-hidden />

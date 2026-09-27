@@ -117,17 +117,25 @@ export default function SelectedWardPanel({
       </dl>
 
       <div className="mt-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Current readings</p>
+        {/* Real hourly mean when one is fresh (readings_hourly); otherwise the
+            CPCB values, labelled as the 24-hour averages they are (Sept 2026:
+            CPCB's feed carries AQI-window averages only). One basis for the
+            whole grid, never mixed per pollutant. */}
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          {ward.hourly
+            ? `Current readings · hourly mean from ${new Date(ward.hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+            : ward.station_name ? 'Current readings · 24-hour averages (CPCB)' : 'Current readings'}
+        </p>
         {ward.station_name ? (
           <dl className="mt-1 grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
             {(
               [
-                { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', value: ward.pm25 },
-                { key: 'pm10', label: 'PM10', unit: 'µg/m³', value: ward.pm10 },
-                { key: 'no2', label: 'NO₂', unit: 'µg/m³', value: ward.no2 },
-                { key: 'so2', label: 'SO₂', unit: 'µg/m³', value: ward.so2 },
-                { key: 'co', label: 'CO', unit: 'mg/m³', value: ward.co },
-                { key: 'o3', label: 'O₃', unit: 'µg/m³', value: ward.o3 },
+                { key: 'pm25', label: 'PM2.5', unit: 'µg/m³', value: (ward.hourly ?? ward).pm25 },
+                { key: 'pm10', label: 'PM10', unit: 'µg/m³', value: (ward.hourly ?? ward).pm10 },
+                { key: 'no2', label: 'NO₂', unit: 'µg/m³', value: (ward.hourly ?? ward).no2 },
+                { key: 'so2', label: 'SO₂', unit: 'µg/m³', value: (ward.hourly ?? ward).so2 },
+                { key: 'co', label: 'CO', unit: 'mg/m³', value: (ward.hourly ?? ward).co },
+                { key: 'o3', label: 'O₃', unit: 'µg/m³', value: (ward.hourly ?? ward).o3 },
               ] as const
             ).map(({ key, label, unit, value }) => (
               <div key={key}>
@@ -306,6 +314,11 @@ export default function SelectedWardPanel({
                       emission strength — treat the split as indicative, not exact.
                     </p>
                   )}
+                  <p className="text-[10px] leading-relaxed text-slate-500">
+                    Model-based, not measured: checked against hourly monitor data it
+                    ranks wards only weakly, and source shares are unverified without
+                    chemical analysis. Use as a lead for field checks, not as a finding.
+                  </p>
                   {vayuTraceAttribution.confidence != null && (
                     <p className="text-[10px] text-slate-500">
                       Confidence <span className="font-semibold text-slate-700">{Math.round(vayuTraceAttribution.confidence * 100)}%</span>

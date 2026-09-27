@@ -1101,6 +1101,15 @@ function WardDetailPanel({
                       strength. Indicative, not exact.
                     </p>
                   )}
+                  {/* Validation, Sept 2026 (on real hourly data, 29 wards):
+                      the dispersion model ranks wards by local load only
+                      weakly (rho ~0.13) and its source SHARES cannot be
+                      checked without chemical speciation. Say so. */}
+                  <p className="mt-1 text-[9px] leading-snug text-slate-400">
+                    Model-based, not measured: checked against hourly monitor data it
+                    ranks wards only weakly, and source shares are unverified without
+                    chemical analysis. Use as a lead for field checks, not as a finding.
+                  </p>
                   {attribution.confidence != null && (
                     <p className="mt-1 text-[9px] text-slate-400">
                       Confidence <span className="font-semibold text-slate-600">{Math.round(attribution.confidence * 100)}%</span>

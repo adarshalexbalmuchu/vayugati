@@ -1393,8 +1393,8 @@ export type ForecastHorizonHours = (typeof FORECAST_HORIZONS_HOURS)[number]
 
 export type ForecastMethod = 'lightgbm' | 'diurnal_persistence'
 export const FORECAST_METHOD_LABEL: Record<ForecastMethod, string> = {
-  lightgbm: 'Machine-learning model (LightGBM)',
-  diurnal_persistence: 'Seasonal/hourly baseline (fallback)',
+  lightgbm: 'Machine-learning model (used where it beat simple rules)',
+  diurnal_persistence: 'Simple baseline rule (beat the model in validation)',
 }
 
 /**
@@ -1461,12 +1461,18 @@ export function isHorizonValidated(maxValidatedHorizonHours: number | null, hori
 }
 
 /** Plain-language fallback-status line for the forecast panel. */
+/** Since Sept 2026 the forecaster (ingest/app/forecast_global.py) decides per
+ *  pollutant AND lead time: the trained model is served only at lead times
+ *  where it beat the best simple rule (no change / same hour yesterday /
+ *  24-h average / daily pattern) in validation; that rule is served elsewhere. */
 export function forecastFallbackStatus(method: ForecastMethod, beatsPersistence: boolean): string {
-  if (method === 'lightgbm' && beatsPersistence) return 'Using the validated machine-learning model.'
-  if (method === 'diurnal_persistence' && !beatsPersistence) {
-    return "Falling back to the seasonal/hourly baseline - the model hasn't beaten simple persistence yet."
+  if (method === 'lightgbm' && beatsPersistence) {
+    return 'Validated machine-learning model at the lead times where it beat simple forecast rules; the best simple rule elsewhere.'
   }
-  return 'Using the seasonal/hourly baseline.'
+  if (method === 'lightgbm') {
+    return 'Machine-learning model at some lead times; the best simple rule where the model did not win.'
+  }
+  return 'Falling back to the best simple forecast rule (e.g. same hour yesterday or 24-h average) - it beat the trained model in validation.'
 }
 
 // ── authority routing and operational dispatch (Phase 9) ────────────────────
