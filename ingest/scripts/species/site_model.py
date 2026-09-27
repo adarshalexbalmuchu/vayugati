@@ -276,6 +276,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             nm, v = NM[i, m], V[i, m]
             s = sid[i]
             site_res[s]["obs"] = float(np.log(v.mean() / nm.mean()))
+            site_res[s]["fold"] = fk
             res["y"] += list(v); res["site"] += [s] * len(v); res["month"] += list(ist_month[m])
             res["B  network mean only"] += list(nm)
             for tag, p in preds.items():
@@ -310,7 +311,8 @@ def _report(res, site_res, choices, n_groups, seed, log):
     obs = np.array([site_res[s]["obs"] for s in scored])
     out = {"n_sites": len(scored), "n_groups": n_groups, "n_hours": len(y), "site": {}, "hourly": {}}
     log("\nSITE LEVEL: rank of each held-out monitor's ratio to its network (n=%d monitors)" % len(scored))
-    for tag in [t for t in site_res[scored[0]] if t != "obs"]:
+    folds_of = np.array([site_res[s]["fold"] for s in scored])
+    for tag in [t for t in site_res[scored[0]] if t not in ("obs", "fold")]:
         p = np.array([site_res[s][tag] for s in scored])
         rho = spearmanr(p, obs)[0]
         boots = []
@@ -319,8 +321,24 @@ def _report(res, site_res, choices, n_groups, seed, log):
             boots.append(spearmanr(p[i], obs[i])[0])
         lo, hi = np.nanpercentile(boots, [2.5, 97.5])
         r2 = 1 - np.sum((obs - p) ** 2) / np.sum((obs - obs.mean()) ** 2)
-        out["site"][tag] = dict(rho=float(rho), lo=float(lo), hi=float(hi), r2=float(r2))
-        log("  %-24s rho %+.3f  [95%% %+.2f, %+.2f]   R2(log ratio) %+.3f" % (tag, rho, lo, hi, r2))
+        # Honest ranges: a 90% interval for each held-out site built only from
+        # out-of-fold errors at sites in OTHER folds (cross-validation
+        # conformal), then how often the truth lands inside and how wide it is.
+        err = np.abs(obs - p)
+        cover, widths = [], []
+        for i in range(len(scored)):
+            others = err[folds_of != folds_of[i]]
+            if len(others) < 10:
+                continue
+            q = np.quantile(others, 0.9)
+            cover.append(err[i] <= q)
+            widths.append(q)
+        cov = float(np.mean(cover)) if cover else float("nan")
+        # +/- q in log-ratio terms = a multiplicative range of exp(q) either way
+        fac = float(np.exp(np.median(widths))) if widths else float("nan")
+        out["site"][tag] = dict(rho=float(rho), lo=float(lo), hi=float(hi), r2=float(r2), cover90=cov, range_x=fac)
+        log("  %-24s rho %+.3f  [95%% %+.2f, %+.2f]   R2(log ratio) %+.3f   90%% range: truth inside %3.0f%%, width x/%.2f"
+            % (tag, rho, lo, hi, r2, 100 * cov, fac))
     if choices:
         log("  nested proxy choice (sigma, w_major, w_minor): %s" % Counter(choices).most_common(3))
     log("\nHOURLY at held-out monitors (%d site-hours)" % len(y))
