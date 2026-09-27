@@ -168,6 +168,13 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
         CTX["terrain"] = np.column_stack([fill(CX[:, ci[k]]) for k in ("elev", "elev_rel5", "elev_rel20", "rough10")])
         CTX["plants"] = np.log1p(CX[:, [ci["plants_s10"], ci["plants_s30"], ci["plants_s100"]]])
         CTX["all context"] = np.column_stack([CTX["wind"], CTX["terrain"], CTX["plants"]])
+        # household solid fuel (NFHS-5 district share x WorldPop): the largest IGP PM2.5 source
+        from scripts.species import household as HH
+        sf = HH.solid_fuel_share([pos[s] for s in sid])
+        sf = np.where(np.isfinite(sf), sf, np.nanmedian(sf))
+        CTX["household fuel"] = np.column_stack([
+            sf, np.log1p(RX[:, ri["pop_s1.0"]] * sf), np.log1p(RX[:, ri["pop_s4.0"]] * sf)])
+        CTX["plants + household"] = np.column_stack([CTX["plants"], CTX["household fuel"]])
 
     hours = sorted({h for s in sid for h in good[s]})
     hidx = {h: i for i, h in enumerate(hours)}
