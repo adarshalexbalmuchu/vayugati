@@ -112,7 +112,7 @@ def _met_row(m, h):
 
 
 def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, n_folds=None,
-        modulation=True, verbose=True, seed=0, raster=False):
+        modulation=True, verbose=True, seed=0, raster=False, context=False):
     """group_km : monitors closer than this are held out together (2 = new site,
                   ~15 = a whole new city with all its monitors).
     net_km     : the network mean uses monitors within this radius (None = all).
@@ -152,6 +152,22 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             sat = np.where(np.isnan(sat), np.nanmean(sat), sat)
         RZ = np.column_stack([sat, np.log1p(RX[:, ri["pop_s1.0"]]), np.log1p(RX[:, ri["pop_s4.0"]]),
                               np.nan_to_num(RX[:, ri["built_s0.5"]], nan=0.0)])
+    CTX = {}
+    if raster and context:
+        from scripts.species import context_features as CF
+        from scripts.species.features import load_sources
+        roads_src, ind_src, _ = load_sources(_feature_bbox(sites))
+        cn, CX = CF.features([pos[s] for s in sid], sid, d["met"], roads_src, ind_src, f"{species}_{region or 'ncr'}_{n}")
+        ci = {nm: i for i, nm in enumerate(cn)}
+        fill = lambda a: np.where(np.isfinite(a), a, np.nanmedian(a))
+        # wind: is the site DOWNWIND of its sources? log(wind-weighted / unweighted load)
+        CTX["wind"] = np.column_stack([
+            np.log1p(CX[:, ci["ww_road_major_s4"]]) - np.log1p(X[:, fi["road_major_s4.0"]]),
+            np.log1p(CX[:, ci["ww_industrial_s3"]]) - np.log1p(X[:, fi["industrial_s3.0"]]),
+            np.log1p(CX[:, ci["ww_plants_s30"]]) - np.log1p(CX[:, ci["plants_s30"]])])
+        CTX["terrain"] = np.column_stack([fill(CX[:, ci[k]]) for k in ("elev", "elev_rel5", "elev_rel20", "rough10")])
+        CTX["plants"] = np.log1p(CX[:, [ci["plants_s10"], ci["plants_s30"], ci["plants_s100"]]])
+        CTX["all context"] = np.column_stack([CTX["wind"], CTX["terrain"], CTX["plants"]])
 
     hours = sorted({h for s in sid for h in good[s]})
     hidx = {h: i for i, h in enumerate(hours)}
@@ -167,11 +183,25 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
     for i, s in enumerate(sid):
         for j in np.flatnonzero(~np.isnan(V[i])):
             MET[i, j] = _met_row(d["met"].get((s, hk[j])), hours[j])
+    WD = np.full((n, len(hours)), np.nan)
+    for i, s_ in enumerate(sid):
+        for j in np.flatnonzero(~np.isnan(V[i])):
+            m_ = d["met"].get((s_, hk[j]))
+            if m_ and m_.get("wind_dir") is not None and (m_.get("wind_speed") or 0) > 0.5:
+                WD[i, j] = np.radians(m_["wind_dir"])
     V0 = np.nan_to_num(V)
     OBS = (~np.isnan(V)).astype(np.float64)
     D = np.array([[S._km(pos[a], pos[b]) for b in sid] for a in sid])
     ADJ = np.ones((n, n)) if net_km is None else (D <= net_km).astype(float)
     np.fill_diagonal(ADJ, 0.0)
+    # Upwind weighting (transport): neighbour j counts 1 + cos(bearing_ij - wind_from_i(t)),
+    # i.e. 2 when it lies straight upwind, 0 straight downwind, 1 when calm/unknown.
+    # Decomposes into three fixed matrix products, so it is cheap every hour.
+    lat_ = np.array([pos[s_][0] for s_ in sid]); lng_ = np.array([pos[s_][1] for s_ in sid])
+    kx = 111.320 * np.cos(np.radians(lat_))[:, None]
+    BR = np.arctan2((lng_[None, :] - lng_[:, None]) * kx, (lat_[None, :] - lat_[:, None]) * 110.574)
+    COSB, SINB = np.cos(BR), np.sin(BR)
+    cw = np.where(np.isnan(WD), 0.0, np.cos(WD)); sw = np.where(np.isnan(WD), 0.0, np.sin(WD))
 
     G = groups(sites, group_km) if group_km > 0 else [[s] for s in sid]
     if n_folds:
@@ -203,6 +233,10 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
         NUM, CNT = A @ V0, A @ OBS
         with np.errstate(invalid="ignore", divide="ignore"):
             NM = np.where(CNT >= min_net, NUM / CNT, np.nan)
+            AC, AS = A * COSB, A * SINB
+            NUMu = NUM + cw * (AC @ V0) + sw * (AS @ V0)
+            CNTu = CNT + cw * (AC @ OBS) + sw * (AS @ OBS)
+            NMu = np.where((CNT >= min_net) & (CNTu > 0.25), NUMu / CNTu, np.nan)
         tr = np.array([i for i in range(n) if i not in set(te)])
         ok = ~np.isnan(V) & ~np.isnan(NM)
         ratio = {}
@@ -253,6 +287,11 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             rl = RidgeCV(alphas=np.logspace(-2, 3, 30)).fit(sl.transform(L[T]), y)
             preds["LUR: roads+sat+pop+built"] = rl.predict(sl.transform(L))
             preds["LUR + IDW residual"] = preds["LUR: roads+sat+pop+built"] + idw(y - rl.predict(sl.transform(L[T])))
+            for cname, C in CTX.items():
+                LC = np.column_stack([L, C])
+                sc2 = StandardScaler().fit(LC[T])
+                rc = RidgeCV(alphas=np.logspace(-2, 3, 30)).fit(sc2.transform(LC[T]), y)
+                preds[f"LUR+{cname} + IDW resid"] = rc.predict(sc2.transform(LC)) + idw(y - rc.predict(sc2.transform(LC[T])))
 
         if modulation:
             rows = [(i, np.flatnonzero(ok[i])) for i in T]
@@ -282,9 +321,13 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             res["y"] += list(v); res["site"] += [s] * len(v); res["month"] += list(ist_month[m])
             res["day"] += list(ist_day[m]); res["hr"] += list(ist_hr[m])
             res["B  network mean only"] += list(nm)
+            nmu = np.where(np.isfinite(NMu[i, m]), NMu[i, m], nm)
+            res["B  UPWIND network only"] += list(nmu)
             for tag, p in preds.items():
                 site_res[s][tag] = float(p[i])
                 res["N x R: " + tag] += list(nm * np.exp(p[i]))
+                if tag == "LUR + IDW residual":
+                    res["UPWIND N x R: LUR + IDW residual"] += list(nmu * np.exp(p[i]))
             if modulation:
                 lvl = np.exp(preds["ridge + IDW residual"][i])
                 f_te = np.column_stack([MET[i, m], np.log(nm / nbar)])
@@ -389,6 +432,7 @@ if __name__ == "__main__":
     ap.add_argument("--folds", type=int, default=None)
     ap.add_argument("--no-modulation", action="store_true")
     ap.add_argument("--raster", action="store_true", help="add satellite NO2 / population / built-up features")
+    ap.add_argument("--context", action="store_true", help="add wind / terrain / power-plant features (needs --raster)")
     a = ap.parse_args()
     run(a.species, region=a.region, group_km=a.group_km, net_km=a.net_km, min_net=a.min_net,
-        n_folds=a.folds, modulation=not a.no_modulation, raster=a.raster)
+        n_folds=a.folds, modulation=not a.no_modulation, raster=a.raster, context=a.context)
