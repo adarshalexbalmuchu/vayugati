@@ -168,3 +168,27 @@ def compute_aqi(
     if nh3 is not None:
         subs.append(_sub_index(nh3, NH3_BREAKPOINTS))
     return max(subs) if subs else None
+
+
+def compute_cpcb_aqi(
+    pm25: float | None,
+    pm10: float | None,
+    no2: float | None = None,
+    so2: float | None = None,
+    o3: float | None = None,
+    co_mg: float | None = None,
+    nh3: float | None = None,
+) -> int | None:
+    """The AQI CPCB would report: compute_aqi, but only when at least THREE
+    pollutants are available and one of them is PM2.5 or PM10 (CPCB National
+    AQI rule). Otherwise None: an index from, say, CO and O3 alone reads as
+    "Good" on a day PM made the air Poor. That produced false dips in stored
+    AQI (Sept 2026), e.g. a Mundka row with only SO2/CO/O3 stored AQI 49
+    between hours of ~120.
+
+    compute_aqi stays the raw max-sub-index helper."""
+    vals = [pm25, pm10, no2, so2, o3, co_mg, nh3]
+    present = sum(v is not None for v in vals)
+    if present < 3 or (pm25 is None and pm10 is None):
+        return None
+    return compute_aqi(pm25, pm10, no2=no2, so2=so2, o3=o3, co_mg=co_mg, nh3=nh3)

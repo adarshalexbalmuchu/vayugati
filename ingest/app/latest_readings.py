@@ -130,7 +130,7 @@ def reconcile_latest(
                 co_mg: float | None = None
                 if co_val is not None:
                     co_mg = co_val if co_data.get("unit", "MG/M3") == "MG/M3" else aqi.co_ug_to_mg(co_val)
-                cpcb_aqi = aqi.compute_aqi(
+                cpcb_aqi = aqi.compute_cpcb_aqi(
                     pollutants.get("pm25", {}).get("avg"),
                     pollutants.get("pm10", {}).get("avg"),
                     no2=pollutants.get("no2", {}).get("avg"),
@@ -158,7 +158,7 @@ def reconcile_latest(
             # halve-then-halve-again (net /1000 on an already-correct
             # mg/m³ value), pegging OpenAQ-sourced CO readings at ~0.
             co_mg = openaq_entry.get("co")
-            openaq_aqi = aqi.compute_aqi(
+            openaq_aqi = aqi.compute_cpcb_aqi(
                 openaq_entry.get("pm25"),
                 openaq_entry.get("pm10"),
                 no2=openaq_entry.get("no2"),

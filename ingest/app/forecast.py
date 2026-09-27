@@ -91,6 +91,11 @@ NOWCAST_TARGET_HOURS = 1
 # readings_hourly: the global model pools wards and needs a validation window
 # of its own (forecast_global.VALIDATION_DAYS) on top of the training span.
 GLOBAL_HISTORY_DAYS = 90
+# A forecast whose origin (the ward's newest observation) is older than this
+# is not published. During an upstream outage the forecaster otherwise wrote
+# "next 48h" runs starting two days in the past, dated today, which also
+# cleared the UI's "forecast stale" banner (Sept 2026).
+MAX_ORIGIN_AGE_H = 6
 NOWCAST_TOLERANCE_MINUTES = 30
 NOWCAST_BACKTEST_WINDOW_DAYS = 30
 MIN_NOWCAST_VALIDATION_SAMPLES = 72  # ~3 days at one backtest-origin/hour, comfortably below the ~700 a 30-day blocked backtest yields
@@ -1347,6 +1352,13 @@ def run(city_code: str | None = None) -> dict:
                                 ward["id"], pollutant, last_forecast.isoformat(),
                             )
                             continue
+                ward_obs = readings_df[readings_df["ward_id"] == ward["id"]]
+                if not ward_obs.empty:
+                    origin_age_h = (datetime.now(timezone.utc) - pd.Timestamp(ward_obs["ts"].max())).total_seconds() / 3600
+                    if origin_age_h > MAX_ORIGIN_AGE_H:
+                        summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant,
+                                                   "reason": f"stale_origin_{origin_age_h:.0f}h"})
+                        continue
                 result = None
                 if ward["id"] in served_global:
                     result = _forecast_ward_pollutant_global(

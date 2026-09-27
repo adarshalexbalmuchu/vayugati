@@ -22,6 +22,13 @@ from app import forecast  # noqa: E402
 RNG_SEED = 20260723
 
 
+
+@pytest.fixture(autouse=True)
+def _origin_guard_off(monkeypatch):
+    """The fixed synthetic datasets here are dated 2026-05; the production
+    stale-origin guard (forecast.MAX_ORIGIN_AGE_H) is tested on its own."""
+    monkeypatch.setattr(forecast, "MAX_ORIGIN_AGE_H", 10 ** 9)
+
 def _synthetic_readings(days: int, ward_ids: list[int], seed: int = RNG_SEED) -> list[dict]:
     """Deterministic hourly PM2.5 readings: a diurnal double-peak (rush
     hours) on top of a per-ward baseline, plus fixed, seeded noise — never
@@ -510,3 +517,27 @@ def test_lightgbm_path_can_be_selected_when_it_genuinely_beats_persistence():
     assert beats is True
     assert max_validated in forecast.HORIZONS_H
     assert metrics[str(forecast.HORIZONS_H[0])]["mae"] < metrics[str(forecast.HORIZONS_H[0])]["persistence_mae"]
+
+
+def test_stale_origin_is_not_published(monkeypatch):
+    """Upstream outage: data ends days ago. No 'next 48h' forecast may be
+    written from it (it would start in the past yet be dated today)."""
+    monkeypatch.setattr(forecast, "MAX_ORIGIN_AGE_H", 6)
+    ward_ids = [1, 2]
+    readings = _synthetic_readings(12, ward_ids)       # ends 2026-05-13
+    weather = _synthetic_weather(12, ward_ids)
+    monkeypatch.setattr(forecast.db, "get_active_cities",
+                        lambda city_code=None: [{"id": 1, "city_code": "delhi", "config": {"forecasting": {"enabled_pollutants": ["pm25"]}}}])
+    monkeypatch.setattr(forecast.db, "get_wards_with_city",
+                        lambda: [{"id": w, "name": f"w{w}", "lat": 28.6, "lng": 77.2, "city_id": 1} for w in ward_ids])
+    monkeypatch.setattr(forecast.db, "get_hourly_history", lambda hours=720: readings)
+    monkeypatch.setattr(forecast.db, "get_weather_history", lambda hours=720: weather)
+    monkeypatch.setattr(forecast.db, "get_last_forecast_times", lambda city_id: {})
+    monkeypatch.setattr(forecast.db, "get_fire_counts_history", lambda days=45: [])
+    monkeypatch.setattr(forecast.db, "get_pending_nowcast_shadows", lambda before_iso, limit=500: [])
+    written = []
+    monkeypatch.setattr(forecast.db, "insert_forecast_run", lambda row: written.append(row) or 1)
+    monkeypatch.setattr(forecast.db, "replace_forecasts", lambda *a: written.append(a))
+    summary = forecast.run(city_code="delhi")
+    assert summary["runs"] == 0 and written == []
+    assert all(s.get("reason", "").startswith("stale_origin") for s in summary["skipped"])

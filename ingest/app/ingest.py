@@ -200,7 +200,7 @@ def _ingest_from_cpcb(
         # These concentrations are CPCB's own AQI-window averages (24h; 8h for
         # CO/O3), so the AQI computed from them IS CPCB's AQI — no further
         # averaging (see run(): CPCB rows are not passed to _recompute_24h_aqi).
-        computed_aqi = aqi.compute_aqi(
+        computed_aqi = aqi.compute_cpcb_aqi(
             row.get("pm25"), row.get("pm10"),
             no2=row.get("no2"), so2=row.get("so2"),
             o3=row.get("o3"), co_mg=co_mg,
@@ -264,7 +264,7 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
         # readings.co is stored in mg/m³ for CPCB rows (see NOTE above);
         # get_24h_avg_concentrations() normalises OpenAQ µg/m³ rows to mg/m³,
         # so avg["co"] is always mg/m³ and goes straight to co_mg.
-        corrected = aqi.compute_aqi(
+        corrected = aqi.compute_cpcb_aqi(
             avg.get("pm25"), avg.get("pm10"),
             no2=avg.get("no2"), so2=avg.get("so2"),
             o3=avg.get("o3"), co_mg=avg.get("co"),
@@ -373,7 +373,7 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
             row["co"] = co_mg
         else:
             row.pop("co", None)
-        computed_aqi = aqi.compute_aqi(
+        computed_aqi = aqi.compute_cpcb_aqi(
             values.get("pm25"), values.get("pm10"),
             no2=values.get("no2"), so2=values.get("so2"),
             o3=values.get("o3"), co_mg=co_mg,

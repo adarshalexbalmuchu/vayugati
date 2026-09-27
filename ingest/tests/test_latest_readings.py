@@ -16,7 +16,10 @@ STALE = (NOW - timedelta(hours=4)).isoformat()
 STATION = {"id": 1, "name": "Narela, Delhi - DPCC", "ward_id": 1}
 
 
-_DEFAULT_POLLUTANTS = {"pm25": {"avg": 90.0, "min": 80.0, "max": 100.0}, "pm10": {"avg": 150.0, "min": 140.0, "max": 160.0}}
+# A third pollutant (NO2, sub-index 25) so the CPCB AQI rule (>= 3 pollutants,
+# one of them PM) is met; it never sets the max in these tests.
+_DEFAULT_POLLUTANTS = {"pm25": {"avg": 90.0, "min": 80.0, "max": 100.0}, "pm10": {"avg": 150.0, "min": 140.0, "max": 160.0},
+                       "no2": {"avg": 20.0, "min": 15.0, "max": 25.0}}
 _UNSET = object()
 
 

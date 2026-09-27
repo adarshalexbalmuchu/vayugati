@@ -261,3 +261,11 @@ def test_backfill_pre_tag_rows_are_identified_by_integer_values_and_raw_co():
     assert fix._all_integer(cpcb_like) and not fix._all_integer(openaq_like)
     out = fix.convert(cpcb_like, co_index_scale=1.0)
     assert out["co"] == pytest.approx(0.94) and out["ingest_source"] == "cpcb"
+
+
+def test_cpcb_aqi_needs_three_pollutants_including_pm():
+    from app.aqi import compute_cpcb_aqi
+    assert compute_cpcb_aqi(None, None, so2=8.8, o3=8.0, co_mg=0.98) is None   # no PM: the Mundka false dip
+    assert compute_cpcb_aqi(75.0, None, no2=20.0) is None                       # only two pollutants
+    assert compute_cpcb_aqi(75.0, None, no2=20.0, co_mg=0.9) == compute_aqi(75.0, None, no2=20.0, co_mg=0.9)
+    assert compute_cpcb_aqi(None, 120.0, no2=20.0, o3=30.0) == compute_aqi(None, 120.0, no2=20.0, o3=30.0)

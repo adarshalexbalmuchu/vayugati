@@ -58,7 +58,7 @@ def convert(row: dict, co_index_scale: float = 1000.0) -> dict:
     if row.get("co") is not None:
         # stored as index/1000 by the old "UG/M3" default; round() recovers the integer index
         out["co"] = aqi.concentration_from_sub_index("co", round(row["co"] * co_index_scale))
-    out["aqi"] = aqi.compute_aqi(out.get("pm25"), out.get("pm10"), no2=out.get("no2"), so2=out.get("so2"),
+    out["aqi"] = aqi.compute_cpcb_aqi(out.get("pm25"), out.get("pm10"), no2=out.get("no2"), so2=out.get("so2"),
                                  o3=out.get("o3"), co_mg=out.get("co"), nh3=out.get("nh3"))
     return out
 

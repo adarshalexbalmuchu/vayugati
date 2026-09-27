@@ -24,6 +24,13 @@ RNG_SEED = 20260901
 # ── _select_nowcast_point ────────────────────────────────────────────────────
 
 
+
+@pytest.fixture(autouse=True)
+def _origin_guard_off(monkeypatch):
+    """The fixed synthetic datasets here are dated 2026-05; the production
+    stale-origin guard (forecast.MAX_ORIGIN_AGE_H) is tested on its own."""
+    monkeypatch.setattr(forecast, "MAX_ORIGIN_AGE_H", 10 ** 9)
+
 def test_select_nowcast_point_worked_example_from_review():
     """anchor 12:00, generated 12:45 -> future_idx[0] (=anchor+1h=13:00) is
     only 15 minutes ahead of "now", not a genuine 1h-ahead nowcast. The
