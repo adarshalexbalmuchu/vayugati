@@ -1,3 +1,4 @@
+import WardEstimateBlock from '../map/WardEstimateBlock'
 import { Fragment, useState } from 'react'
 import { ChevronRight, Info, MapPin, Search, X } from 'lucide-react'
 import { aqiLevel } from '../AqiBadge'
@@ -1005,6 +1006,14 @@ function WardDetailPanel({
             {readingsLabel}
           </p>
           <CurrentReadingsChart readings={readings} keys={readingKeys} />
+        </div>
+      )}
+
+      {/* Wards with no monitor (~226 of 265): model estimate with its honest
+          90% range instead of an empty panel (Sept 2026). */}
+      {!ward.isMonitored && (
+        <div className="px-4 pt-4 pb-4">
+          <WardEstimateBlock wardId={ward.id} />
         </div>
       )}
 

@@ -7,6 +7,7 @@ import type { ActiveTaskDispatch, ForecastRunRow, Incident } from '../../lib/inc
 import { MAP_POLLUTANT_LABEL, nowcastPoint, stationReadingValue, type MapPollutant, type MapTimeMode } from '../../lib/mapRules'
 import { Skeleton } from '../ui'
 import NowcastBlock from './NowcastBlock'
+import WardEstimateBlock from './WardEstimateBlock'
 
 const NEXT_ACTION: Record<string, string> = {
   severe: 'Dispatch verification - forecast to cross severe soon.',
@@ -139,7 +140,10 @@ export default function SelectedWardPanel({
             ))}
           </dl>
         ) : (
-          <p className="mt-1 text-xs text-slate-400">No monitoring station matched for this ward.</p>
+          <>
+            <p className="mt-1 text-xs text-slate-400">No monitoring station in this ward.</p>
+            <WardEstimateBlock wardId={ward.id} />
+          </>
         )}
       </div>
 

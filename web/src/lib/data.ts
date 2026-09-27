@@ -1642,3 +1642,34 @@ export async function fetchLatestReadingsPreferred(): Promise<LatestReadingRecon
     return null
   }
 }
+
+
+/** A model estimate of a ward's 24h PM2.5 or NO2 (ward_estimates table),
+ *  mainly for wards with no monitor. estimate = calibrated live-network 24h
+ *  mean x the ward's usual ratio (land use, power plants for PM2.5, nearby-
+ *  monitor correction); lower_90/upper_90 are an honest 90% range from
+ *  cross-validation at held-out monitors. window_end dates it: during an
+ *  upstream outage it is the last full day, not "now". */
+export interface WardEstimate {
+  pollutant: 'pm25' | 'no2'
+  estimate: number
+  lower_90: number
+  upper_90: number
+  window_end: string
+  n_stations: number
+  model_version: string
+}
+
+export async function fetchWardEstimates(wardId: number): Promise<WardEstimate[]> {
+  const { data } = await supabase
+    .from('ward_estimates')
+    .select('pollutant, estimate, lower_90, upper_90, window_end, n_stations, model_version')
+    .eq('ward_id', wardId)
+    .order('window_end', { ascending: false })
+    .limit(4)
+  const latest = new Map<string, WardEstimate>()
+  for (const r of data ?? []) {
+    if (!latest.has(r.pollutant)) latest.set(r.pollutant, r as WardEstimate)
+  }
+  return (['pm25', 'no2'] as const).map((p) => latest.get(p)).filter((e): e is WardEstimate => e != null)
+}

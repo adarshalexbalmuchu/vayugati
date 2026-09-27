@@ -1785,6 +1785,56 @@ export type Database = {
           },
         ]
       }
+      ward_estimates: {
+        Row: {
+          created_at: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours: number
+        }
+        Insert: {
+          created_at?: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours?: number
+        }
+        Update: {
+          created_at?: string
+          estimate?: number
+          lower_90?: number
+          model_version?: string
+          n_stations?: number
+          network_mean?: number
+          pollutant?: string
+          upper_90?: number
+          ward_id?: number
+          window_end?: string
+          window_hours?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ward_estimates_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       report_events: {
         Row: {
           actor_id: string | null
