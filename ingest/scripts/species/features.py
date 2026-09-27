@@ -132,6 +132,30 @@ def load_sources(bbox=None):
     return out
 
 
+def _kernel_sums(plat, plng, slat, slng, weights, sigmas, cutoff_sigmas: float = 4.0) -> np.ndarray:
+    """Gaussian-weighted source sums at each point: out[p, sigma, column].
+
+    Per point, over sources within cutoff_sigmas * max(sigma) only (the
+    Gaussian weight beyond 4 sigma is < 0.03%), so it scales to the whole
+    plain; a full points x cells matrix would need gigabytes there. The
+    longitude scale uses each point's own latitude (a fixed 28.6 N was up to
+    ~6% off at the plain's 22-32 N edges)."""
+    out = np.zeros((len(plat), len(sigmas), weights.shape[1]))
+    if len(slat) == 0:
+        return out
+    reach = cutoff_sigmas * max(sigmas)
+    for i, (la, lo) in enumerate(zip(plat, plng)):
+        kx = 111.320 * np.cos(np.radians(la))
+        near = (np.abs(slat - la) * KM_PER_DEG_LAT <= reach) & (np.abs(slng - lo) * kx <= reach)
+        if not near.any():
+            continue
+        d2 = ((slat[near] - la) * KM_PER_DEG_LAT) ** 2 + ((slng[near] - lo) * kx) ** 2
+        w = weights[near]
+        for j, sg in enumerate(sigmas):
+            out[i, j] = np.exp(-d2 / (2 * sg * sg)) @ w
+    return out
+
+
 def static_features(pos: dict[int, tuple[float, float]], bbox=None) -> tuple[list[int], list[str], np.ndarray]:
     roads, ind, sites = load_sources(bbox)
 
@@ -147,27 +171,25 @@ def static_features(pos: dict[int, tuple[float, float]], bbox=None) -> tuple[lis
             for g, members in ROAD_GROUPS.items():
                 if cls in members:
                     group_len[g][i] += km
-    d_road = _pairwise_km(wlat, wlng, rlat, rlng)
 
     names, cols = [], []
-    for g in ROAD_GROUPS:
-        for s in SIGMAS_KM:
-            k = np.exp(-(d_road ** 2) / (2 * s * s))
+    road = _kernel_sums(wlat, wlng, rlat, rlng, np.column_stack([group_len[g] for g in ROAD_GROUPS]), SIGMAS_KM)
+    for gi, g in enumerate(ROAD_GROUPS):
+        for si, s in enumerate(SIGMAS_KM):
             names.append(f"road_{g}_s{s}")
-            cols.append(k @ group_len[g])
+            cols.append(road[:, si, gi])
 
     ilat = np.array([z["lat"] for z in ind]); ilng = np.array([z["lng"] for z in ind])
     iw = np.array([z["emission_weight"] for z in ind])
-    d_ind = _pairwise_km(wlat, wlng, ilat, ilng)
-    for s in IND_SIGMAS_KM:
+    indk = _kernel_sums(wlat, wlng, ilat, ilng, iw[:, None], IND_SIGMAS_KM)
+    for si, s in enumerate(IND_SIGMAS_KM):
         names.append(f"industrial_s{s}")
-        cols.append(np.exp(-(d_ind ** 2) / (2 * s * s)) @ iw)
+        cols.append(indk[:, si, 0])
 
     clat = np.array([x["lat"] for x in sites]); clng = np.array([x["lng"] for x in sites])
     carea = np.array([x["area_m2"] * x["activity_weight"] for x in sites])
-    d_con = _pairwise_km(wlat, wlng, clat, clng)
     names.append("construction_s1.5")
-    cols.append(np.exp(-(d_con ** 2) / (2 * 1.5 * 1.5)) @ carea)
+    cols.append(_kernel_sums(wlat, wlng, clat, clng, carea[:, None], (1.5,))[:, 0, 0])
 
     return ward_ids, names, np.column_stack(cols)
 
