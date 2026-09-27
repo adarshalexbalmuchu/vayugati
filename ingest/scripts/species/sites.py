@@ -139,7 +139,7 @@ def _sensor_span(sensor_id: int) -> tuple[str, str]:
 
 
 def _chunk(sensor_id: int, a: datetime, b: datetime) -> dict[str, float]:
-    """One <=31-day window = one page (<=744 hours), avoiding OpenAQ's slow deep-page offsets."""
+    """One <=41-day window = one page (<=984 hours of the 1000-row limit), avoiding OpenAQ's slow deep-page offsets."""
     out = {}
     res = _get(f"/sensors/{sensor_id}/hours", {
         "datetime_from": a.strftime("%Y-%m-%dT%H:%M:%SZ"), "datetime_to": b.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -172,7 +172,7 @@ def _sensor_hours(sensor_id: int, date_from: str, date_to: str) -> dict[str, flo
         end = datetime.fromisoformat(min(last, date_to)) + timedelta(days=1)
         windows = []
         while a < end:
-            b = min(a + timedelta(days=30), end)
+            b = min(a + timedelta(days=41), end)  # 984 h: still one 1000-row page, 27% fewer calls than 30 d
             windows.append((a, b))
             a = b
         try:
