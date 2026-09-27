@@ -87,6 +87,10 @@ UNCERTAINTY_Z = 1.28
 # `forecasts.horizon_ts` values `future_idx` already produces, not a new
 # horizon added to the validation set.
 NOWCAST_TARGET_HOURS = 1
+# History the forecaster reads. 90 days (was 30) since forecasts moved to
+# readings_hourly: the global model pools wards and needs a validation window
+# of its own (forecast_global.VALIDATION_DAYS) on top of the training span.
+GLOBAL_HISTORY_DAYS = 90
 NOWCAST_TOLERANCE_MINUTES = 30
 NOWCAST_BACKTEST_WINDOW_DAYS = 30
 MIN_NOWCAST_VALIDATION_SAMPLES = 72  # ~3 days at one backtest-origin/hour, comfortably below the ~700 a 30-day blocked backtest yields
@@ -141,6 +145,7 @@ def _forecasting_config(city_row: dict) -> dict:
         "enabled_pollutants": cfg.get("enabled_pollutants") or list(DEFAULT_ENABLED_POLLUTANTS),
         "horizons_hours": tuple(cfg.get("horizons_hours") or HORIZONS_H),
         "min_mae_improvement_pct": cfg.get("min_mae_improvement_pct", DEFAULT_MIN_MAE_IMPROVEMENT_PCT),
+        "retraining_frequency_hours": cfg.get("retraining_frequency_hours", 24),
         "pollutant_thresholds": ((city_row.get("config") or {}).get("anomaly_detection") or {}).get(
             "pollutant_thresholds", {}
         ),
@@ -1089,6 +1094,104 @@ def _forecast_ward_pollutant(
     }
 
 
+def _forecast_ward_pollutant_global(
+    ward: dict,
+    pollutant: str,
+    readings_df: pd.DataFrame,
+    served: dict,
+    gm,
+    threshold: float | None,
+) -> dict | None:
+    """Result dict (same shape as _forecast_ward_pollutant) from the global,
+    horizon-gated forecaster (forecast_global.py). Its forecast is of TOTAL
+    concentration; it is expressed here as an offset from the city median
+    at the origin (latest_baseline), because run() writes
+    predicted = latest_baseline + excess and every downstream consumer
+    (bands, nowcast, forecasts rows) is built on that decomposition."""
+    from . import forecast_global
+
+    ward_id = int(ward["id"])
+    df = _with_local_excess(readings_df)
+    w = _ward_series(df, ward_id)
+    if w.empty:
+        return None
+    origin = served["origin"]
+    latest_baseline = float(w["baseline"].get(origin, w["baseline"].iloc[-1]))
+    future_idx = served["future_idx"]
+    preds = served["total"] - latest_baseline
+    preds_q10 = served["q10"] - latest_baseline
+    preds_q90 = served["q90"] - latest_baseline
+    if np.isnan(preds).any():
+        return None
+
+    n = len(w)
+    expected_hours = max((w.index.max() - w.index.min()).total_seconds() / 3600.0, 1)
+    completeness = min(1.0, float(w["value"].notna().sum()) / expected_hours)
+    data_quality_status = "ok" if completeness >= 0.5 else "stale_inputs"
+
+    validation_metrics, max_validated = forecast_global.ward_validation_metrics(
+        gm, ward_id, HORIZONS_H, lambda m, a: _threshold_metrics(m, a, threshold))
+    beats_persistence = max_validated is not None
+    model_served = any(src == "model" for src in served["source"])
+    confidence = 0.5
+    if beats_persistence and max_validated:
+        confidence = float(np.clip(0.4 + 0.1 * HORIZONS_H.index(max_validated), 0.4, 0.9))
+    residual_std = (validation_metrics.get(str(HORIZONS_H[-1])) or {}).get("rmse")
+
+    excess_hist = list(w["local_excess"].astype(float).to_numpy())
+    generated_at = datetime.now(timezone.utc)
+    nowcast_idx, nowcast_tolerance_ok = _select_nowcast_point(future_idx, generated_at)
+    nowcast_target_ts = generated_at + timedelta(hours=NOWCAST_TARGET_HOURS)
+    nowcast_candidates: dict[str, dict] = {}
+    if nowcast_tolerance_ok:
+        by_hour_nowcast = w["local_excess"].astype(float).groupby(w.index.hour).mean()
+        use_model_1h = served["source"][0] == "model"
+        nowcast_candidates = _nowcast_candidate_predictions(
+            excess_hist, future_idx, by_hour_nowcast, nowcast_idx,
+            lgb_point_pred=preds if use_model_1h else None,
+            lgb_lower=preds_q10 if use_model_1h else None,
+            lgb_upper=preds_q90 if use_model_1h else None,
+        )
+    if nowcast_idx == -1:
+        nowcast_status = "stale_anchor"
+    elif not nowcast_tolerance_ok:
+        nowcast_status = "no_point_within_tolerance"
+    elif not nowcast_candidates:
+        nowcast_status = "no_eligible_candidate"
+    else:
+        nowcast_status = "available"
+
+    return {
+        "ward_id": ward_id,
+        "pollutant": pollutant,
+        # forecast_runs.method is CHECK-constrained to these two values; the
+        # model_version says which forecaster produced the run.
+        "method": "lightgbm" if model_served else "diurnal_persistence",
+        "model_version": forecast_global.MODEL_VERSION_GLOBAL,
+        "generated_at": generated_at,
+        "training_period_start": gm.train_start.to_pydatetime(),
+        "training_period_end": gm.train_end.to_pydatetime(),
+        "training_rows": gm.n_rows,
+        "data_completeness": round(completeness, 3),
+        "data_quality_status": data_quality_status,
+        "validation_metrics": validation_metrics,
+        "max_validated_horizon_hours": max_validated,
+        "beats_persistence": beats_persistence,
+        "latest_baseline": latest_baseline,
+        "future_idx": future_idx,
+        "preds": preds,
+        "preds_q10": preds_q10,
+        "preds_q90": preds_q90,
+        "confidence": confidence,
+        "residual_std": residual_std,
+        "nowcast_idx": nowcast_idx,
+        "nowcast_tolerance_ok": nowcast_tolerance_ok,
+        "nowcast_target_ts": nowcast_target_ts,
+        "nowcast_status": nowcast_status,
+        "nowcast_candidates": nowcast_candidates,
+    }
+
+
 def _select_nowcast_production_method(
     ward_id: int, pollutant: str, nowcast_candidates: dict[str, dict]
 ) -> tuple[str, dict, bool, int]:
@@ -1194,8 +1297,8 @@ def run(city_code: str | None = None) -> dict:
         # Real hourly values (readings_hourly), not `readings`: CPCB's rows
         # there are 24h averages since 2026-08-11, and a forecaster trained
         # on a 24h running mean learns a smoothed, lagged series.
-        readings = db.get_hourly_history(hours=24 * 30)
-        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
+        readings = db.get_hourly_history(hours=24 * GLOBAL_HISTORY_DAYS)
+        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * GLOBAL_HISTORY_DAYS))
         last_forecast_times = db.get_last_forecast_times(city["id"])
         # NO2 hourly series (built once per city) — used as a co-pollutant lag
         # feature when forecasting PM2.5 and PM10. Passed as None when NO2 is
@@ -1213,6 +1316,21 @@ def run(city_code: str | None = None) -> dict:
                 continue
             threshold = cfg["pollutant_thresholds"].get(pollutant)
 
+            # Global, horizon-gated forecaster (forecast_global.py): one pooled
+            # model per pollutant, refit at most every retraining_frequency_hours.
+            # Wards it cannot serve fall back to the per-ward path below.
+            served_global: dict = {}
+            gm = None
+            try:
+                from . import forecast_global
+                gm = forecast_global.fit_cached(
+                    pollutant, readings_df, weather_df, cfg["min_mae_improvement_pct"],
+                    max_age_h=cfg.get("retraining_frequency_hours", 24))
+                if gm is not None:
+                    served_global = forecast_global.serve(gm, readings_df, weather_df)
+            except Exception:
+                log.exception("global forecaster failed for %s — per-ward models only", pollutant)
+
             for ward in city_wards:
                 # Skip retraining if no new readings have arrived since the last
                 # forecast for this ward+pollutant — the model would produce
@@ -1229,11 +1347,16 @@ def run(city_code: str | None = None) -> dict:
                                 ward["id"], pollutant, last_forecast.isoformat(),
                             )
                             continue
-                result = _forecast_ward_pollutant(
-                    ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
-                    no2_readings_df=no2_readings_df if pollutant != "no2" else None,
-                    fire_counts=fire_counts_series if not fire_counts_series.empty else None,
-                )
+                result = None
+                if ward["id"] in served_global:
+                    result = _forecast_ward_pollutant_global(
+                        ward, pollutant, readings_df, served_global[ward["id"]], gm, threshold)
+                if result is None:
+                    result = _forecast_ward_pollutant(
+                        ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
+                        no2_readings_df=no2_readings_df if pollutant != "no2" else None,
+                        fire_counts=fire_counts_series if not fire_counts_series.empty else None,
+                    )
                 if result is None:
                     summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant})
                     continue
