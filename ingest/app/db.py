@@ -80,6 +80,9 @@ def get_all_stations() -> list[dict]:
     )
 
 
+LAST_KNOWN_HOURS = 72
+
+
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     """station_id -> {ts, pm25, pm10, no2, so2, co, o3, aqi} for each
     station's single most recent reading. Uses one IN query to fetch recent
@@ -87,20 +90,22 @@ def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     replaces N sequential round-trips (one per station) with one request."""
     if not station_ids:
         return {}
-    # Fetch the latest 24 hours of readings for all stations in one query.
-    # 24h (not 2h) so that the last-known reading is always returned even
-    # during a prolonged ingest outage — reconcile_latest() uses this to
-    # display stale-but-real values rather than blanks.
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    rows = (
-        client()
+    # Look back LAST_KNOWN_HOURS (72h, the same horizon the frontend's
+    # last-known fallback uses: web/src/lib/data.ts LAST_KNOWN_READING_HOURS)
+    # so a prolonged upstream outage still returns each station's last real
+    # reading. With 24h, the Sept 2026 data.gov.in outage passed that mark
+    # after a day, every station came back empty, and the dashboard blanked
+    # every ward's AQI. Paged: 72h x ~40 stations x up to 4 rows/h can exceed
+    # PostgREST's 1000-row page.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=LAST_KNOWN_HOURS)).isoformat()
+    rows = _fetch_all(
+        lambda: client()
         .table("readings")
         .select("station_id, ts, pm25, pm10, no2, so2, co, o3, aqi, ingest_source")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
         .order("ts", desc=True)
-        .execute()
-        .data
+        .order("station_id")
     )
     # Keep only the first (latest) row per station.
     out: dict[int, dict] = {}

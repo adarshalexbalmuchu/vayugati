@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import CityKpiRow from './CityKpiRow'
 import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
-import { fetchAllWardBoundaries, fetchWindField, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
+import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
 import { HOTSPOT_READING_STALE_MINUTES } from '../../lib/overviewRules'
 
@@ -42,11 +42,6 @@ const LINE   = 'ov-ward-line'
 const CSRC   = 'ov-ward-centers'
 const CIRCLE = 'ov-ward-circle'
 
-// Wind field — small arrows spread across the city (Sept 2026 addition) so
-// a viewer can visually check whether the AQI pattern lines up with the
-// wind axis, a real spatial-correlation question. See fetchWindField's own
-// doc comment for why this is several real per-location readings, not one
-// fabricated "city wind" value.
 type WardFeatureProps = {
   id: number
   name: string
@@ -60,45 +55,6 @@ type WardFeatureProps = {
 }
 type WardGeoJSON = FeatureCollection<Polygon | MultiPolygon, WardFeatureProps>
 type CenterGeoJSON = FeatureCollection<Point, WardFeatureProps>
-const WIND_SRC = 'ov-wind'
-const WIND_LAYER = 'ov-wind-arrows'
-const WIND_IMAGE_ID = 'ov-wind-arrow-img'
-type WindFeatureProps = { wardName: string; windSpeed: number; windDir: number }
-type WindGeoJSON = FeatureCollection<Point, WindFeatureProps>
-
-/** Same small arrow glyph MapView.tsx's own wind layer uses (copied rather
- *  than imported — that file is a large, page-specific component and this
- *  map intentionally stays self-contained, matching how every other
- *  Overview map layer here is defined locally rather than shared). */
-function createWindArrowImage(): ImageData {
-  const size = 32
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return new ImageData(size, size)
-  const cx = size / 2
-  const tip = 4
-  const baseY = size - 6
-  const hw = 6
-  ctx.clearRect(0, 0, size, size)
-  ctx.shadowColor = 'rgba(0,0,0,0.35)'
-  ctx.shadowBlur = 3
-  ctx.shadowOffsetY = 1
-  ctx.fillStyle = 'rgba(30, 100, 220, 0.92)'
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.moveTo(cx, tip)
-  ctx.lineTo(cx + hw, baseY)
-  ctx.lineTo(cx, baseY - 5)
-  ctx.lineTo(cx - hw, baseY)
-  ctx.closePath()
-  ctx.fill()
-  ctx.shadowColor = 'transparent'
-  ctx.stroke()
-  return ctx.getImageData(0, 0, size, size)
-}
 
 const AQI_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   'step',
@@ -194,22 +150,6 @@ export default function OverviewChoroplethMap({
     })
   }, [])
 
-  // Wind field — fetched once here (not threaded down as a prop from
-  // CommandView/HotspotsRiskTable) since no other component needs it; same
-  // pattern as the boundaries fetch above. Refreshed every 15 minutes,
-  // matching the ingest service's own weather-fetch cadence — no point
-  // polling faster than the underlying data can change.
-  const [windField, setWindField] = useState<Awaited<ReturnType<typeof fetchWindField>>>([])
-  useEffect(() => {
-    let cancelled = false
-    const load = () => fetchWindField().then((w) => { if (!cancelled) setWindField(w) })
-    load()
-    const id = setInterval(load, 15 * 60 * 1000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-  }, [])
 
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
@@ -303,16 +243,6 @@ export default function OverviewChoroplethMap({
       }),
   }), [wards, latestReadingsByWard, boundaryWardIds, boundariesLoaded])
 
-  const windGeoJSON = useMemo<WindGeoJSON>(() => ({
-    type: 'FeatureCollection',
-    features: windField
-      .filter((w) => w.windSpeed != null && w.windDir != null)
-      .map((w): Feature<Point, WindFeatureProps> => ({
-        type: 'Feature',
-        properties: { wardName: w.wardName, windSpeed: w.windSpeed as number, windDir: w.windDir as number },
-        geometry: { type: 'Point', coordinates: [w.lng, w.lat] },
-      })),
-  }), [windField])
 
   // Mount the map once.
   useEffect(() => {
@@ -421,36 +351,6 @@ export default function OverviewChoroplethMap({
         },
       })
 
-      // ── Wind field layer (spatial-correlation view, Sept 2026) ─────────────
-      if (!map.hasImage(WIND_IMAGE_ID)) {
-        map.addImage(WIND_IMAGE_ID, createWindArrowImage())
-      }
-      map.addSource(WIND_SRC, {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] } as WindGeoJSON,
-      })
-      map.addLayer({
-        id: WIND_LAYER,
-        type: 'symbol',
-        source: WIND_SRC,
-        layout: {
-          'icon-image': WIND_IMAGE_ID,
-          // wind_dir is the direction wind comes FROM (meteorological
-          // convention) — rotate 180° so the arrow points the direction the
-          // air is actually moving toward, matching MapView.tsx's own wind
-          // layer convention.
-          'icon-rotate': ['%', ['+', ['to-number', ['get', 'windDir']], 180], 360] as maplibregl.ExpressionSpecification,
-          'icon-rotation-alignment': 'map',
-          'icon-size': ['interpolate', ['linear'], ['to-number', ['get', 'windSpeed']],
-            0, 0.4,
-            5, 0.55,
-            15, 0.8,
-            25, 1.0,
-          ] as maplibregl.ExpressionSpecification,
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-      })
     }
 
     if (map.isStyleLoaded()) addLayers()
@@ -609,17 +509,6 @@ export default function OverviewChoroplethMap({
     else map.once('load', apply)
   }, [centersGeoJSON])
 
-  // Push updated wind field GeoJSON.
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    const apply = () => {
-      const src = map.getSource(WIND_SRC) as maplibregl.GeoJSONSource | undefined
-      if (src) src.setData(windGeoJSON)
-    }
-    if (mapReadyRef.current) apply()
-    else map.once('load', apply)
-  }, [windGeoJSON])
 
   // Sync selected feature state on both sources.
   useEffect(() => {
@@ -700,19 +589,6 @@ export default function OverviewChoroplethMap({
             <div className="mt-1.5 flex items-center gap-1.5 border-t border-slate-200/70 pt-1.5">
               <span className="h-2.5 w-3 flex-shrink-0 rounded-[2px] bg-[#fff833] opacity-40" />
               <span className="text-[9px] font-medium text-slate-500">Faded: reading &gt;3h old</span>
-            </div>
-          )}
-          {/* Wind field caption (Sept 2026) — a small note explaining the blue
-              arrows, not a full legend (only one glyph/colour to explain,
-              unlike the 6-band AQI scale above). Point count is real, not
-              decorative — makes clear this is a sample of real readings
-              spread across the city, not a single fabricated "city wind". */}
-          {windGeoJSON.features.length > 0 && (
-            <div className="mt-2 flex items-center gap-1.5 border-t border-slate-900/10 pt-1.5">
-              <span className="text-xs leading-none text-[rgba(30,100,220,0.92)]">➤</span>
-              <span className="text-[9px] font-medium text-slate-600">
-                Wind · {windGeoJSON.features.length} points
-              </span>
             </div>
           )}
         </GlassSurface>
