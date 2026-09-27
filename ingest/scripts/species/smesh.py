@@ -154,6 +154,7 @@ def run(species: str, log=print):
     log(f"{species}: {n} sites, {len(days)} days, {len(df)} site-days, {len(G)} city groups -> {FOLDS} folds")
 
     preds = defaultdict(lambda: np.full(len(df), np.nan))
+    gammas = []
     feat = [c for c in df.columns if c.startswith(("cams_", "wx_")) or c in ("maiac", "doy_sin", "doy_cos", "wkd")] \
         + static_names + ["net", "net_log_ratio_cams"]
     for f, grp in enumerate(folds):
@@ -207,6 +208,48 @@ def run(species: str, log=print):
             lr = float(rg.predict(sc.transform(static[[col[s]]]))[0] + (w_ @ res_T) / w_.sum())
             mk = (df["site"] == s).to_numpy()
             preds["current ward model (network x land-use ratio)"][mk] = df.loc[mk, "net"] * np.exp(lr)
+        # ── additive: regional background + local increment / ventilation ──
+        # (Lenschow urban increment; box-model scaling by wind x mixing height)
+        Bg = np.full(Y.shape, np.nan)
+        for i in range(n):
+            nb = np.flatnonzero(A[i] > 0)
+            if len(nb) >= MIN_NET:
+                with np.errstate(all="ignore"):
+                    cnt_i = np.isfinite(Y[nb]).sum(0)
+                    Bg[i] = np.where(cnt_i >= MIN_NET, np.nanpercentile(Y[nb], 20, axis=0), np.nan)
+        df["bg"] = Bg[[col[s_] for s_ in df["site"]], [didx[x] for x in df["day"]]]
+        vent = (df["wx_boundary_layer_height"] * df["wx_wind_speed"]).clip(lower=50)
+        vref = float(np.nanmedian(vent))
+        trn = tr & np.isfinite(df["bg"]) & np.isfinite(vent)
+        best = None
+        for gamma in (0.0, 0.25, 0.5, 0.75, 1.0):
+            amp = (vref / vent) ** gamma
+            inc_site = (((df["y"] - df["bg"]) / amp)[trn]).groupby(df.loc[trn, "site"]).median()
+            Ts = [s_ for s_ in inc_site.index if (df.loc[trn, "site"] == s_).sum() >= 60]
+            if len(Ts) < 20:
+                continue
+            Zt = static[[col[s_] for s_ in Ts]]; It = inc_site[Ts].to_numpy()
+            # inner leave-one-site-out error of the increment model, on daily values
+            err, k = 0.0, 0
+            sc_i = StandardScaler().fit(Zt); rg_i = RidgeCV(alphas=np.logspace(-2, 3, 20)).fit(sc_i.transform(Zt), It)
+            fitted = rg_i.predict(sc_i.transform(Zt))
+            for j, s_ in enumerate(Ts):
+                mk_ = trn & (df["site"] == s_)
+                pj = df.loc[mk_, "bg"] + fitted[j] * amp[mk_]
+                err += float(np.abs(pj - df.loc[mk_, "y"]).sum()); k += int(mk_.sum())
+            if best is None or err / k < best[0]:
+                best = (err / k, gamma, sc_i, rg_i, It, Ts)
+        if best is not None:
+            _, gamma, sc_i, rg_i, It, Ts = best
+            res_i = It - rg_i.predict(sc_i.transform(static[[col[s_] for s_ in Ts]]))
+            amp_all = (vref / vent) ** gamma
+            for s_ in grp:
+                w_ = np.array([1 / max(D[col[s_], col[t]], 0.5) ** 2 for t in Ts])
+                I_hat = float(rg_i.predict(sc_i.transform(static[[col[s_]]]))[0] + (w_ @ res_i) / w_.sum())
+                mk = (df["site"] == s_).to_numpy()
+                preds["ADDITIVE: background + increment/ventilation"][mk] = np.clip(
+                    df.loc[mk, "bg"] + I_hat * amp_all[mk], 0, None)
+            gammas.append(gamma)
         log(f"  fold {f + 1}/{FOLDS}")
 
     y = df["y"].to_numpy(); site = df["site"].to_numpy(); fold = df["fold"].to_numpy()
@@ -226,6 +269,8 @@ def run(species: str, log=print):
             inside.append(np.mean(e[fo == ff] <= q)); widths.append(q)
         out[k] = dict(r2=r2, mae=mae, bias=bias, rho=rho, cover=float(np.mean(inside)), width=float(np.exp(np.mean(widths))))
         log(f"  {k:48s} {r2:+6.2f} {mae:6.1f} {bias:+6.1f} | {rho:+.2f} | {100*np.mean(inside):3.0f}%, x/{np.exp(np.mean(widths)):.2f}")
+    if gammas:
+        log(f"  additive model: ventilation exponent gamma chosen per fold = {gammas}")
     return out
 
 
