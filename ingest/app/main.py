@@ -287,6 +287,21 @@ def run_hourly_readings() -> dict:
         _hourly_lock.release()
 
 
+_ward_est_lock = threading.Lock()
+
+
+def run_ward_estimates() -> dict:
+    """24h PM2.5/NO2 estimates for every ward (ward_estimates.py)."""
+    from . import ward_estimates
+
+    if not _ward_est_lock.acquire(blocking=False):
+        raise RuntimeError("ward estimates already running")
+    try:
+        return ward_estimates.run()
+    finally:
+        _ward_est_lock.release()
+
+
 def run_fire_counts() -> dict:
     """Fetch yesterday's VIIRS NRT regional fire count from NASA FIRMS and
     store it in fire_counts for use as a forecast lag feature.
@@ -490,6 +505,8 @@ async def lifespan(app: FastAPI):
     # 6h look-back fills in late hours. ~350 paced calls (~12 min), clear of
     # ingest's own OpenAQ fallback burst.
     scheduler.add_job(run_hourly_readings, "cron", minute=40, misfire_grace_time=1200)
+    # :55, after the hourly-means sync has landed.
+    scheduler.add_job(run_ward_estimates, "cron", minute=55, misfire_grace_time=1200)
     # every 5 minutes: drain pending notifications and escalate overdue tasks
     scheduler.add_job(run_ops, "interval", minutes=5)
     # every 5 minutes: refresh the Delhi OTD transport-activity context layer.
