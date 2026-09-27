@@ -162,6 +162,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
     hk = [datetime.utcfromtimestamp(h * 3600).strftime("%Y-%m-%dT%H") for h in hours]
     ist_month = np.array([(datetime.utcfromtimestamp(h * 3600) + timedelta(hours=5.5)).month for h in hours])
     ist_day = np.array([int((h * 3600 + 19800) // 86400) for h in hours])  # IST calendar day number
+    ist_hr = np.array([int((h * 3600 + 19800) // 3600) for h in hours])     # IST hour number (window blocks)
     MET = np.full((n, len(hours), 11), np.nan, dtype=np.float32)
     for i, s in enumerate(sid):
         for j in np.flatnonzero(~np.isnan(V[i])):
@@ -279,7 +280,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             site_res[s]["obs"] = float(np.log(v.mean() / nm.mean()))
             site_res[s]["fold"] = fk
             res["y"] += list(v); res["site"] += [s] * len(v); res["month"] += list(ist_month[m])
-            res["day"] += list(ist_day[m])
+            res["day"] += list(ist_day[m]); res["hr"] += list(ist_hr[m])
             res["B  network mean only"] += list(nm)
             for tag, p in preds.items():
                 site_res[s][tag] = float(p[i])
@@ -308,10 +309,21 @@ def _report(res, site_res, choices, n_groups, seed, log):
     from scipy.stats import spearmanr
 
     y = np.array(res["y"]); W = np.array(res["site"]); mo = np.array(res["month"]); dy = np.array(res["day"])
-    # daily means per (site, IST day), keeping days with >= 18 valid hours
-    dkey = W.astype(np.int64) * 100000 + dy
-    uk, inv, cnt = np.unique(dkey, return_inverse=True, return_counts=True)
-    dok = cnt[inv] >= 18
+    hr = np.array(res["hr"])
+
+    def window_scores(p, win):
+        """R2 and MAE of block means over `win` IST clock hours per site
+        (a block needs >= 75% of its hours)."""
+        key = W.astype(np.int64) * 10_000_000 + hr // win
+        uk, inv, cnt = np.unique(key, return_inverse=True, return_counts=True)
+        ok = cnt[inv] >= max(1, int(0.75 * win))
+        nk = len(uk)
+        n = np.bincount(inv[ok], minlength=nk)
+        yb = np.bincount(inv[ok], weights=y[ok], minlength=nk)[n > 0] / n[n > 0]
+        pb = np.bincount(inv[ok], weights=p[ok], minlength=nk)[n > 0] / n[n > 0]
+        return (1 - np.sum((yb - pb) ** 2) / np.sum((yb - yb.mean()) ** 2), float(np.mean(np.abs(yb - pb))),
+                float(yb.mean()))
+
     rng = np.random.default_rng(seed)
     scored = sorted(site_res)
     obs = np.array([site_res[s]["obs"] for s in scored])
@@ -349,24 +361,18 @@ def _report(res, site_res, choices, n_groups, seed, log):
         log("  nested proxy choice (sigma, w_major, w_minor): %s" % Counter(choices).most_common(3))
     log("\nHOURLY at held-out monitors (%d site-hours)" % len(y))
     wmask = np.isin(mo, list(WINTER))
-    for tag in [t for t in res if t not in ("y", "site", "month", "day")]:
+    for tag in [t for t in res if t not in ("y", "site", "month", "day", "hr")]:
         p = np.array(res[tag])
         def r2(mk): return 1 - np.sum((y[mk] - p[mk]) ** 2) / np.sum((y[mk] - y[mk].mean()) ** 2)
         within = np.array([x for x in (spearmanr(p[W == s], y[W == s])[0] for s in np.unique(W)) if x == x])
-        nk = len(uk)
-        yd = np.bincount(inv[dok], weights=y[dok], minlength=nk) / np.maximum(np.bincount(inv[dok], minlength=nk), 1)
-        pdm = np.bincount(inv[dok], weights=p[dok], minlength=nk) / np.maximum(np.bincount(inv[dok], minlength=nk), 1)
-        keep = np.bincount(inv[dok], minlength=len(uk)) > 0
-        yd, pdm = yd[keep], pdm[keep]
-        r2_daily = 1 - np.sum((yd - pdm) ** 2) / np.sum((yd - yd.mean()) ** 2)
-        mae_daily = float(np.mean(np.abs(yd - pdm)))
+        win = {w: window_scores(p, w) for w in (6, 12, 24)}
         o = dict(r2=float(r2(np.ones_like(y, bool))), r2_winter=float(r2(wmask)), r2_rest=float(r2(~wmask)),
-                 r2_daily=float(r2_daily), mae_daily=mae_daily, mean_daily=float(yd.mean()),
+                 windows={w: dict(r2=float(v[0]), mae=v[1], mean=v[2]) for w, v in win.items()},
                  rmse=float(np.sqrt(np.mean((y - p) ** 2))), within=float(np.median(within)),
                  within_pos=float(np.mean(within > 0)))
         out["hourly"][tag] = o
-        log("  %-36s R2 hourly %+.3f | DAILY %+.3f (MAE %.1f on mean %.1f) | winter %+.3f  within-site rho %+.3f"
-            % (tag, o["r2"], o["r2_daily"], o["mae_daily"], o["mean_daily"], o["r2_winter"], o["within"]))
+        log("  %-34s R2 1h %+.2f | 6h %+.2f (MAE %4.1f) | 12h %+.2f (MAE %4.1f) | 24h %+.2f (MAE %4.1f, mean %.0f)"
+            % (tag, o["r2"], win[6][0], win[6][1], win[12][0], win[12][1], win[24][0], win[24][1], win[24][2]))
     return out
 
 
