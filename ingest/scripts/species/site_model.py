@@ -161,6 +161,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             V[i, hidx[h]] = v
     hk = [datetime.utcfromtimestamp(h * 3600).strftime("%Y-%m-%dT%H") for h in hours]
     ist_month = np.array([(datetime.utcfromtimestamp(h * 3600) + timedelta(hours=5.5)).month for h in hours])
+    ist_day = np.array([int((h * 3600 + 19800) // 86400) for h in hours])  # IST calendar day number
     MET = np.full((n, len(hours), 11), np.nan, dtype=np.float32)
     for i, s in enumerate(sid):
         for j in np.flatnonzero(~np.isnan(V[i])):
@@ -278,6 +279,7 @@ def run(species="no2", region=None, group_km=2.0, net_km=None, min_net=MIN_NET, 
             site_res[s]["obs"] = float(np.log(v.mean() / nm.mean()))
             site_res[s]["fold"] = fk
             res["y"] += list(v); res["site"] += [s] * len(v); res["month"] += list(ist_month[m])
+            res["day"] += list(ist_day[m])
             res["B  network mean only"] += list(nm)
             for tag, p in preds.items():
                 site_res[s][tag] = float(p[i])
@@ -305,7 +307,11 @@ def _report(res, site_res, choices, n_groups, seed, log):
 
     from scipy.stats import spearmanr
 
-    y = np.array(res["y"]); W = np.array(res["site"]); mo = np.array(res["month"])
+    y = np.array(res["y"]); W = np.array(res["site"]); mo = np.array(res["month"]); dy = np.array(res["day"])
+    # daily means per (site, IST day), keeping days with >= 18 valid hours
+    dkey = W.astype(np.int64) * 100000 + dy
+    uk, inv, cnt = np.unique(dkey, return_inverse=True, return_counts=True)
+    dok = cnt[inv] >= 18
     rng = np.random.default_rng(seed)
     scored = sorted(site_res)
     obs = np.array([site_res[s]["obs"] for s in scored])
@@ -343,16 +349,24 @@ def _report(res, site_res, choices, n_groups, seed, log):
         log("  nested proxy choice (sigma, w_major, w_minor): %s" % Counter(choices).most_common(3))
     log("\nHOURLY at held-out monitors (%d site-hours)" % len(y))
     wmask = np.isin(mo, list(WINTER))
-    for tag in [t for t in res if t not in ("y", "site", "month")]:
+    for tag in [t for t in res if t not in ("y", "site", "month", "day")]:
         p = np.array(res[tag])
         def r2(mk): return 1 - np.sum((y[mk] - p[mk]) ** 2) / np.sum((y[mk] - y[mk].mean()) ** 2)
         within = np.array([x for x in (spearmanr(p[W == s], y[W == s])[0] for s in np.unique(W)) if x == x])
+        nk = len(uk)
+        yd = np.bincount(inv[dok], weights=y[dok], minlength=nk) / np.maximum(np.bincount(inv[dok], minlength=nk), 1)
+        pdm = np.bincount(inv[dok], weights=p[dok], minlength=nk) / np.maximum(np.bincount(inv[dok], minlength=nk), 1)
+        keep = np.bincount(inv[dok], minlength=len(uk)) > 0
+        yd, pdm = yd[keep], pdm[keep]
+        r2_daily = 1 - np.sum((yd - pdm) ** 2) / np.sum((yd - yd.mean()) ** 2)
+        mae_daily = float(np.mean(np.abs(yd - pdm)))
         o = dict(r2=float(r2(np.ones_like(y, bool))), r2_winter=float(r2(wmask)), r2_rest=float(r2(~wmask)),
+                 r2_daily=float(r2_daily), mae_daily=mae_daily, mean_daily=float(yd.mean()),
                  rmse=float(np.sqrt(np.mean((y - p) ** 2))), within=float(np.median(within)),
                  within_pos=float(np.mean(within > 0)))
         out["hourly"][tag] = o
-        log("  %-36s R2 %+.3f (winter %+.3f, rest %+.3f)  RMSE %5.1f  within-site rho %+.3f (%3.0f%% +)"
-            % (tag, o["r2"], o["r2_winter"], o["r2_rest"], o["rmse"], o["within"], 100 * o["within_pos"]))
+        log("  %-36s R2 hourly %+.3f | DAILY %+.3f (MAE %.1f on mean %.1f) | winter %+.3f  within-site rho %+.3f"
+            % (tag, o["r2"], o["r2_daily"], o["mae_daily"], o["mean_daily"], o["r2_winter"], o["within"]))
     return out
 
 
