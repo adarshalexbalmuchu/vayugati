@@ -56,6 +56,10 @@ export interface WardSummary {
   co: number | null
   o3: number | null
   ts: string | null
+  /** What the pm25/no2/... fields above hold (readings.value_basis):
+   *  'naqi_window' = CPCB's 24h (8h CO/O3) averages, 'hourly' = an hourly
+   *  value, null = unknown. Labels must say which. */
+  valueBasis: 'hourly' | 'naqi_window' | null
   station_name: string | null
   station_agency: string | null
   /** The ward station's latest real HOURLY mean (readings_hourly), when one
@@ -241,7 +245,7 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
     // .in('station_id', []) returns zero rows, not an error.
     supabase
       .from('readings')
-      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts, value_basis')
       .in('station_id', allStationIds)
       .gte('ts', since)
       .order('ts', { ascending: false })
@@ -289,7 +293,7 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
     const lastKnownSince = new Date(Date.now() - LAST_KNOWN_READING_HOURS * 3600 * 1000).toISOString()
     const { data: older } = await supabase
       .from('readings')
-      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts, value_basis')
       .in('station_id', missing)
       .gte('ts', lastKnownSince)
       .lt('ts', since)
@@ -323,6 +327,7 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
       co: best?.reading.co ?? null,
       o3: best?.reading.o3 ?? null,
       ts: best?.reading.ts ?? null,
+      valueBasis: (best?.reading.value_basis as WardSummary['valueBasis']) ?? null,
       station_name: best?.station.name ?? null,
       station_agency: best?.station.agency ?? null,
       // Same station as the reading above when it has an hourly mean; else

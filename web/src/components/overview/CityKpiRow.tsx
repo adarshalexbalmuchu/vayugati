@@ -141,8 +141,10 @@ export default function CityKpiRow({
   // Forecast coverage: show operational status when run failed rather than
   // the configured-count (93/93) that contradicts the "unavailable" banner.
   const forecastLabel = forecastRunFailed ? 'Forecast run' : 'Wards forecast'
+  // A forecast can't be fresh when no new readings have arrived (e.g. the
+  // CPCB feed is down): that is waiting, not a failed run.
   const forecastValue = forecastRunFailed
-    ? 'Failed'
+    ? (!readingConfirmedFresh || (age != null && age >= 180) ? 'Waiting for data' : 'Failed')
     : coverage
     ? `${coverage.fresh}/${coverage.total}`
     : '—'

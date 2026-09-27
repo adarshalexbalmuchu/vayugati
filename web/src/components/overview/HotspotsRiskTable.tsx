@@ -804,7 +804,11 @@ function WardDetailPanel({
     }
   }
   const readingsBasis: 'hourly' | 'cpcb24h' | 'latest' =
-    hourly && Object.keys(readings).length > 0 ? 'hourly' : preferred?.cpcbPollutants ? 'cpcb24h' : 'latest'
+    hourly && Object.keys(readings).length > 0
+      ? 'hourly'
+      : preferred?.cpcbPollutants || ward.valueBasis === 'naqi_window'
+        ? 'cpcb24h'
+        : 'latest'
   if (readingsBasis !== 'hourly' && preferred?.cpcbPollutants) {
     for (const k of POLLUTANT_ORDER) {
       const v = preferred.cpcbPollutants[k]
@@ -836,12 +840,17 @@ function WardDetailPanel({
   if (!('co' in readings) && ward.co != null) readings.co = ward.co
   if (!('o3' in readings) && ward.o3 != null) readings.o3 = ward.o3
   }
+  // Age suffix whenever the values are older than 3h (e.g. during an upstream
+  // outage), so last-known values never read as current.
+  const valuesTs = readingsBasis === 'hourly' && hourly ? hourly.ts : ward.ts
+  const valuesAgeH = valuesTs ? (Date.now() - new Date(valuesTs).getTime()) / 3_600_000 : null
+  const ageSuffix = valuesAgeH != null && valuesAgeH > 3 ? ` · ${Math.round(valuesAgeH)} h old` : ''
   const readingsLabel =
-    readingsBasis === 'hourly' && hourly
-      ? `Current readings · hourly mean from ${new Date(hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+    (readingsBasis === 'hourly' && hourly
+      ? `Readings · hourly mean from ${new Date(hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
       : readingsBasis === 'cpcb24h'
-        ? 'Current readings · 24-hour averages (CPCB)'
-        : 'Current readings'
+        ? 'Readings · 24-hour averages (CPCB)'
+        : 'Readings') + ageSuffix
 
   const readingKeys = POLLUTANT_ORDER.filter((k) => readings[k] != null)
 

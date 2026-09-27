@@ -122,9 +122,14 @@ export default function SelectedWardPanel({
             CPCB's feed carries AQI-window averages only). One basis for the
             whole grid, never mixed per pollutant. */}
         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-          {ward.hourly
-            ? `Current readings · hourly mean from ${new Date(ward.hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
-            : ward.station_name ? 'Current readings · 24-hour averages (CPCB)' : 'Current readings'}
+          {(ward.hourly
+            ? `Readings · hourly mean from ${new Date(ward.hourly.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+            : ward.valueBasis === 'naqi_window' ? 'Readings · 24-hour averages (CPCB)' : 'Readings') +
+            (() => {
+              const t = ward.hourly?.ts ?? ward.ts
+              const h = t ? (Date.now() - new Date(t).getTime()) / 3_600_000 : null
+              return h != null && h > 3 ? ` · ${Math.round(h)} h old` : ''
+            })()}
         </p>
         {ward.station_name ? (
           <dl className="mt-1 grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
