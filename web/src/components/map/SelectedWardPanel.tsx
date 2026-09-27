@@ -326,7 +326,10 @@ export default function SelectedWardPanel({
                   </p>
                   {vayuTraceAttribution.confidence != null && (
                     <p className="text-[10px] text-slate-500">
-                      Confidence <span className="font-semibold text-slate-700">{Math.round(vayuTraceAttribution.confidence * 100)}%</span>
+                      Split precision{' '}
+                      <span className="font-semibold text-slate-700">
+                        {vayuTraceAttribution.confidence >= 0.66 ? 'high' : vayuTraceAttribution.confidence >= 0.33 ? 'medium' : 'low'}
+                      </span>
                       {' '}· how tight the dominant source's range is
                       {' '}· local excess only · forward model, not a measurement
                     </p>

@@ -1424,7 +1424,10 @@ export function confidenceTierLabel(
   if (beatsPersistence && maxValidatedHorizonHours != null) {
     return `Validated to ${maxValidatedHorizonHours}h`
   }
-  return 'Not statistically validated (baseline estimate)'
+  // A simple rule is served exactly where it beat the trained model in
+  // validation (forecast_global.py), so "not validated" would contradict the
+  // status line beside it.
+  return "Simple rule (the trained model didn't beat it here)"
 }
 
 export type ForecastDataQualityStatus = 'ok' | 'insufficient_data' | 'stale_inputs'

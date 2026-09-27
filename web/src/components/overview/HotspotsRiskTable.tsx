@@ -866,7 +866,7 @@ function WardDetailPanel({
   const forecastLabel =
     pollutant === forecastForPollutant
       ? MAP_POLLUTANT_LABEL[pollutant]
-      : `${MAP_POLLUTANT_LABEL[forecastForPollutant]} (proxy)`
+      : `${MAP_POLLUTANT_LABEL[forecastForPollutant]} (drives AQI)`
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -920,6 +920,9 @@ function WardDetailPanel({
               </>
             )}
             {' '}of {wardRankTotal} monitored wards · {MAP_POLLUTANT_LABEL[pollutant]}
+            {ward.ts && Date.now() - new Date(ward.ts).getTime() > 3 * 3_600_000 && (
+              <span className="text-status-warning"> · reading {Math.round((Date.now() - new Date(ward.ts).getTime()) / 3_600_000)} h old</span>
+            )}
           </p>
         )}
         {/* Health advisory (Sept 2026 addition) — aqiLevel() already carries
@@ -1121,7 +1124,10 @@ function WardDetailPanel({
                   </p>
                   {attribution.confidence != null && (
                     <p className="mt-1 text-[9px] text-slate-400">
-                      Confidence <span className="font-semibold text-slate-600">{Math.round(attribution.confidence * 100)}%</span>
+                      Split precision{' '}
+                      <span className="font-semibold text-slate-600">
+                        {attribution.confidence >= 0.66 ? 'high' : attribution.confidence >= 0.33 ? 'medium' : 'low'}
+                      </span>
                       {' '}· how tight the dominant source's range is
                       {' '}· local excess only, not a measurement
                     </p>
