@@ -1,6 +1,7 @@
 import { ChevronRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Attribution, VayuTraceAttribution, WardForecastSummary, WardSummary } from '../../lib/data'
+import ForecastOutlook from './ForecastOutlook'
 import { confidenceTierLabel, forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import { hotspotStatus, HOTSPOT_STATUS_LABEL, type TimeWindowHours } from '../../lib/overviewRules'
 import type { ActiveTaskDispatch, ForecastRunRow, Incident } from '../../lib/incidents'
@@ -94,7 +95,7 @@ export default function SelectedWardPanel({
           </dd>
         </div>
         <div>
-          <dt className="text-slate-400">Forecast peak</dt>
+          <dt className="text-slate-400">Forecast peak (most likely)</dt>
           <dd className="font-semibold tabular-nums text-slate-800">
             {forecast?.peakPred != null ? `${Math.round(forecast.peakPred)} µg/m³` : 'Unavailable'}
           </dd>
@@ -115,6 +116,7 @@ export default function SelectedWardPanel({
           </dd>
         </div>
       </dl>
+      <ForecastOutlook points={forecast?.points} />
 
       <div className="mt-3">
         {/* Real hourly mean when one is fresh (readings_hourly); otherwise the

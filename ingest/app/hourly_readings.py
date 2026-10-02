@@ -98,7 +98,10 @@ def _rows_for_station(station_id: int, sensors, date_from: datetime, date_to: da
     return [{"station_id": station_id, "ts": ts, **vals} for ts, vals in by_hour.items()]
 
 
-def _walk(date_from: datetime, date_to: datetime, station_ids: set[int] | None = None) -> dict:
+def _walk(date_from: datetime, date_to: datetime, station_ids: set[int] | None = None, sink=None) -> dict:
+    """sink(rows) stores each station's rows: the database by default, or the
+    local training archive (archive())."""
+    sink = sink or db.upsert_readings_hourly
     summary = {"stations": 0, "rows": 0, "errors": []}
     for st in db.get_all_stations():
         loc = st.get("openaq_location_id")
@@ -108,13 +111,20 @@ def _walk(date_from: datetime, date_to: datetime, station_ids: set[int] | None =
             sensors = _current_sensors(loc)
             rows = _rows_for_station(st["id"], sensors, date_from, date_to)
             if rows:
-                db.upsert_readings_hourly(rows)
+                sink(rows)
             summary["stations"] += 1
             summary["rows"] += len(rows)
         except Exception as e:  # one station must not stop the rest
             log.exception("hourly readings failed for station_id=%s", st["id"])
             summary["errors"].append(f"station_id={st['id']}: {type(e).__name__}")
     return summary
+
+
+def archive(date_from: datetime, date_to: datetime, station_ids: set[int] | None = None) -> dict:
+    """Same walk as backfill(), but into the local training archive
+    (history_archive.py) instead of the size-limited database."""
+    from . import history_archive
+    return _walk(date_from, date_to, station_ids, sink=history_archive.append)
 
 
 def sync(hours_back: int = 6) -> dict:

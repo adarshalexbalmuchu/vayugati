@@ -18,6 +18,7 @@ set under ingest/data/species_cache/.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import math
 import pickle
 from pathlib import Path
@@ -164,8 +165,11 @@ def maiac_at(points, max_km: float = 1.0) -> np.ndarray:
 
 
 def features(points: list[tuple[float, float]], months: list[str], cache_key: str):
-    """-> (names, X) for the given points, cached by cache_key."""
-    f = ROOT / "species_cache" / f"raster_{cache_key}.pkl"
+    """-> (names, X) for the given points, cached by cache_key plus a hash of
+    the points and months (a key that only counts sites silently reused
+    features when QC changed which sites were kept)."""
+    tag = hashlib.sha1(repr(([(round(a, 5), round(b, 5)) for a, b in points], list(months))).encode()).hexdigest()[:10]
+    f = ROOT / "species_cache" / f"raster_{cache_key}_{tag}.pkl"
     if f.exists():
         return pickle.loads(f.read_bytes())
     no2 = trop_no2_at(points, months)

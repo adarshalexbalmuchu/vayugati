@@ -302,6 +302,35 @@ def run_ward_estimates() -> dict:
         _ward_est_lock.release()
 
 
+_gates_lock = threading.Lock()
+
+
+def run_forecast_gates() -> dict:
+    """Weekly rolling backtest of the forecaster -> the gates file every
+    refit reads (scripts/forecast_rolling_backtest.py --write-gates; see
+    forecast_global.load_gates). A niced subprocess: ~40 min of CPU that
+    must not stall the scheduler's own threads. If it fails for three weeks
+    running, forecast_global falls back to its single-window gate and logs so."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    if not _gates_lock.acquire(blocking=False):
+        raise RuntimeError("forecast gates backtest already running")
+    try:
+        root = Path(__file__).resolve().parents[1]
+        proc = subprocess.run(
+            ["nice", "-n", "10", sys.executable, "scripts/forecast_rolling_backtest.py", "--write-gates", "--refresh"],
+            cwd=root, capture_output=True, text=True, timeout=3 * 3600,
+        )
+        tail = [ln for ln in proc.stdout.splitlines() if "=>" in ln or "wrote" in ln]
+        if proc.returncode != 0:
+            raise RuntimeError(f"forecast gates backtest failed: {proc.stderr[-2000:]}")
+        return {"lines": tail}
+    finally:
+        _gates_lock.release()
+
+
 def run_fire_counts() -> dict:
     """Fetch yesterday's VIIRS NRT regional fire count from NASA FIRMS and
     store it in fire_counts for use as a forecast lag feature.
@@ -519,6 +548,8 @@ async def lifespan(app: FastAPI):
     # VIIRS NRT has ~3h latency; 06:00 UTC (11:30 IST) ensures yesterday's
     # full-day count is stable and complete before ingestion.
     scheduler.add_job(run_fire_counts, "cron", hour=6, minute=0)
+    # weekly, Sunday 20:30 UTC (02:00 IST Monday): rolling backtest -> forecast gates.
+    scheduler.add_job(run_forecast_gates, "cron", day_of_week="sun", hour=20, minute=30, misfire_grace_time=6 * 3600)
     scheduler.start()
 
     # first pass immediately: ingest, then download the OSM .pbf if needed,

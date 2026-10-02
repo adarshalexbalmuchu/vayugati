@@ -91,6 +91,14 @@ NOWCAST_TARGET_HOURS = 1
 # readings_hourly: the global model pools wards and needs a validation window
 # of its own (forecast_global.VALIDATION_DAYS) on top of the training span.
 GLOBAL_HISTORY_DAYS = 90
+# The global forecaster trains on every season it has seen (forecast lab, Oct
+# 2026: winter PM2.5 error -5.5 to -6.6% at 12-48 h vs a 90-day window). Older
+# hours come from the local archives (history_archive.py, weather_archive.py),
+# not the database.
+GLOBAL_TRAIN_DAYS = 730
+# PM2.5's severe level: a coarse "elevated" flag, never a precise probability
+# (lab: high classifier probabilities were overconfident at this level).
+SEVERE_THRESHOLD = {"pm25": 250.0}
 # A forecast whose origin (the ward's newest observation) is older than this
 # is not published. During an upstream outage the forecaster otherwise wrote
 # "next 48h" runs starting two days in the past, dated today, which also
@@ -1194,6 +1202,9 @@ def _forecast_ward_pollutant_global(
         "nowcast_target_ts": nowcast_target_ts,
         "nowcast_status": nowcast_status,
         "nowcast_candidates": nowcast_candidates,
+        "exceed_threshold": threshold if threshold in served.get("p_exceed", {}) else None,
+        "exceed_probs": served.get("p_exceed", {}).get(threshold),
+        "severe_elevated": served.get("severe_elevated"),
     }
 
 
@@ -1277,6 +1288,44 @@ def _score_pending_nowcast_shadows(hourly_by_pollutant: dict[str, pd.DataFrame])
     return scored
 
 
+def _long_weather(weather_df: pd.DataFrame) -> pd.DataFrame:
+    """The weather table (from 2026-07-14) plus the local ERA5 archive for
+    older hours, so the long-history forecaster sees origin weather throughout."""
+    from . import weather_archive
+    try:
+        first = weather_df["ts"].min() if not weather_df.empty else pd.Timestamp.now(tz="UTC")
+        old = weather_archive.frame_before(first)
+    except Exception:
+        log.warning("weather archive unreadable; training without older weather", exc_info=True)
+        return weather_df
+    if old.empty:
+        return weather_df
+    return pd.concat([old, weather_df], ignore_index=True)
+
+
+def _forecast_weather_frames(city_wards: list[dict], readings: list[dict]):
+    """(training frames, serving frames) of ECMWF forecasts for the wards with
+    readings, or (None, None) if Open-Meteo cannot be reached: the forecaster
+    then trains and serves without forecast-weather inputs, as before."""
+    from . import forecast_weather
+    from .vayutrace_kernel import boundary_area_centroid
+    with_data = {r["ward_id"] for r in readings}
+    cells = {}
+    for w in city_wards:
+        if w["id"] not in with_data:
+            continue
+        c = (w["lat"], w["lng"]) if w.get("lat") is not None else boundary_area_centroid(w.get("boundary"))
+        if c:
+            cells[w["id"]] = forecast_weather.cell(float(c[0]), float(c[1]))
+    if not cells:
+        return None, None
+    try:
+        return forecast_weather.Frames(cells, live=False), forecast_weather.Frames(cells, live=True)
+    except Exception:
+        log.warning("forecast weather unavailable; forecasting without it this cycle", exc_info=True)
+        return None, None
+
+
 def run(city_code: str | None = None) -> dict:
     """Compute and store a validated, multi-pollutant forecast per ward.
     Idempotent (replaces per ward+pollutant)."""
@@ -1302,8 +1351,14 @@ def run(city_code: str | None = None) -> dict:
         # Real hourly values (readings_hourly), not `readings`: CPCB's rows
         # there are 24h averages since 2026-08-11, and a forecaster trained
         # on a 24h running mean learns a smoothed, lagged series.
-        readings = db.get_hourly_history(hours=24 * GLOBAL_HISTORY_DAYS)
+        readings_long = db.get_hourly_history(hours=24 * GLOBAL_TRAIN_DAYS, include_archive=True)
+        # per-ward fallback keeps its 90-day window, counted back from the newest reading
+        newest = max((pd.Timestamp(r["ts"]) for r in readings_long), default=None)
+        readings = readings_long if newest is None else [
+            r for r in readings_long if pd.Timestamp(r["ts"]) >= newest - pd.Timedelta(days=GLOBAL_HISTORY_DAYS)]
         weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * GLOBAL_HISTORY_DAYS))
+        weather_long = _long_weather(weather_df)
+        F_train, F_live = _forecast_weather_frames(city_wards, readings_long)
         last_forecast_times = db.get_last_forecast_times(city["id"])
         # NO2 hourly series (built once per city) — used as a co-pollutant lag
         # feature when forecasting PM2.5 and PM10. Passed as None when NO2 is
@@ -1328,11 +1383,15 @@ def run(city_code: str | None = None) -> dict:
             gm = None
             try:
                 from . import forecast_global
+                readings_df_long = _hourly_ward_pollutant(readings_long, pollutant)
+                severe = SEVERE_THRESHOLD.get(pollutant)
                 gm = forecast_global.fit_cached(
-                    pollutant, readings_df, weather_df, cfg["min_mae_improvement_pct"],
-                    max_age_h=cfg.get("retraining_frequency_hours", 24))
+                    pollutant, readings_df_long, weather_long, cfg["min_mae_improvement_pct"],
+                    max_age_h=cfg.get("retraining_frequency_hours", 24), F=F_train,
+                    thresholds={"alert": threshold, "severe": severe})
                 if gm is not None:
-                    served_global = forecast_global.serve(gm, readings_df, weather_df)
+                    served_global = forecast_global.serve(gm, readings_df_long, weather_long, F=F_live,
+                                                          severe_threshold=severe)
             except Exception:
                 log.exception("global forecaster failed for %s — per-ward models only", pollutant)
 
@@ -1472,6 +1531,13 @@ def run(city_code: str | None = None) -> dict:
                         # and violated the NOT NULL constraint on every insert.
                         "nowcast_backtest_passed": nowcast_backtest_passed if is_nowcast_row else False,
                     }
+                    probs, sev = result.get("exceed_probs"), result.get("severe_elevated")
+                    if probs is not None and i < len(probs) and np.isfinite(probs[i]):
+                        row["exceed_threshold"] = result["exceed_threshold"]
+                        row["exceed_prob"] = round(float(probs[i]), 3)
+                    else:
+                        row["exceed_threshold"] = row["exceed_prob"] = None
+                    row["severe_risk"] = "elevated" if sev is not None and i < len(sev) and bool(sev[i]) else None
                     if is_nowcast_row:
                         row["nowcast_method"] = nowcast_method
                         row["nowcast_backtest_samples"] = nowcast_backtest_samples

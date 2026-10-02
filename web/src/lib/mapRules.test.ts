@@ -61,6 +61,9 @@ function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
     dataQualityStatus: null,
     maxValidatedHorizonHours: null,
     beatsPersistence: null,
+    exceedThreshold: null,
+    exceedProb: null,
+    severeRisk: null,
     ...overrides,
   }
 }
@@ -585,8 +588,8 @@ describe('wardDataStatus', () => {
     expect(wardDataStatus(true, false)).toBe('station_backed')
   })
 
-  it('is nearest_station_proxy when there is no direct station but a nearest one is computable', () => {
-    expect(wardDataStatus(false, true)).toBe('nearest_station_proxy')
+  it('is model_estimate when there is no direct station but the network has stations', () => {
+    expect(wardDataStatus(false, true)).toBe('model_estimate')
   })
 
   it('is no_station_data when neither is available - never a 4th guessed state', () => {

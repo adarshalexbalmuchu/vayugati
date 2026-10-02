@@ -712,6 +712,9 @@ export type Database = {
         Row: {
           baseline_pred: number | null
           confidence: number | null
+          exceed_prob: number | null
+          exceed_threshold: number | null
+          severe_risk: string | null
           forecast_run_id: number | null
           generated_at: string
           horizon_ts: string
@@ -732,6 +735,9 @@ export type Database = {
         Insert: {
           baseline_pred?: number | null
           confidence?: number | null
+          exceed_prob?: number | null
+          exceed_threshold?: number | null
+          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts: string
@@ -752,6 +758,9 @@ export type Database = {
         Update: {
           baseline_pred?: number | null
           confidence?: number | null
+          exceed_prob?: number | null
+          exceed_threshold?: number | null
+          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts?: string

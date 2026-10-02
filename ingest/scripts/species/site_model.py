@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -40,16 +40,24 @@ from scripts.species.features import SIGMAS_KM, static_features  # noqa: E402
 MIN_NET = 5          # an hour's network mean needs >= 5 other monitors reporting
 MIN_HOURS = 2000     # a site needs ~3 months of valid hours to have a stable ratio
 FLATLINE_H = 6       # >= 6 identical consecutive hours = stuck analyser (common CPCB fault)
+# A stuck analyser often jitters by a decimal, so it beats the identical-hours
+# test. A whole IST day within +/-3% (std/mean < 0.03, >= 18 h) is that fault:
+# <1% of days at working Delhi monitors, but 18% of all IGP NO2 days (mostly
+# UPPCB/HSPCB, e.g. Faridabad reading 16-25 ug/m3 every hour for a year).
+LOWVAR_CV = 0.03
 MAX_UGM3 = {"no2": 1000.0, "so2": 1000.0, "o3": 1000.0, "pm25": 2000.0, "pm10": 3000.0, "co": 50000.0}
 WINTER = {11, 12, 1, 2}
 
 
 def _h(hk: str) -> int:
-    return int(datetime.strptime(hk, "%Y-%m-%dT%H").timestamp() // 3600)
+    """UTC hour number of an hour key. The keys are UTC; a naive strptime
+    read them as the machine's local time (IST), which put every monitor hour
+    6 h behind the ERA5 weather joined to it (bug found Sept 2026)."""
+    return int(datetime.strptime(hk, "%Y-%m-%dT%H").replace(tzinfo=timezone.utc).timestamp() // 3600)
 
 
-def qc(d, log=print):
-    """Range + flatline screening, then drop sites with too few hours."""
+def qc(d, log=print, lowvar_cv=LOWVAR_CV):
+    """Range, flatline and stuck-day screening, then drop sites with too few hours."""
     ser = defaultdict(dict)
     for (s, hk), v in d["obs"].items():
         ser[s][_h(hk)] = v
@@ -70,13 +78,23 @@ def qc(d, log=print):
             bad.update(run)
         good = {h: v for h, v in x.items() if 0 < v <= hi and h not in bad}
         dropped["flatline"] += len(bad)
+        if lowvar_cv:
+            days = defaultdict(list)
+            for h in good:
+                days[(h * 3600 + 19800) // 86400].append(h)
+            for hs_d in days.values():
+                v = np.array([good[h] for h in hs_d])
+                if len(v) >= 18 and v.std() < lowvar_cv * v.mean():
+                    for h in hs_d:
+                        del good[h]
+                    dropped["stuck_day"] += len(v)
         dropped["range"] += sum(1 for h, v in x.items() if not (0 < v <= hi))
         if len(good) >= MIN_HOURS:
             out[s] = good
         else:
             dropped["short_site"] += 1
-    log("QC: kept %d/%d sites; removed %d flatline hours, %d out-of-range; %d sites too short"
-        % (len(out), len(ser), dropped["flatline"], dropped["range"], dropped["short_site"]))
+    log("QC: kept %d/%d sites; removed %d flatline hours, %d stuck-day hours, %d out-of-range; %d sites too short"
+        % (len(out), len(ser), dropped["flatline"], dropped["stuck_day"], dropped["range"], dropped["short_site"]))
     return out
 
 

@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
+import { Droplets, Thermometer } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { roleHome, useAuth } from '../lib/auth'
+import { fetchCityWeatherNow } from '../lib/data'
 import { initOfflineSync } from '../lib/offlineSync'
+import { useAsync } from '../lib/useAsync'
+import headerSkyline from '../assets/header-skyline.jpg'
 import DegradedDataBanner from './DegradedDataBanner'
-import { GlassFilterDefs, GlassSurface } from './GlassSurface'
+import { GlassFilterDefs } from './GlassSurface'
 import MobileBottomNav from './MobileNav'
 import { OfflineBanner } from './ui'
 
@@ -23,6 +27,45 @@ export function LogoMark({ className = 'h-8 w-14' }: { className?: string }) {
 }
 
 /** Full wordmark - for login / brand surfaces only. */
+/** City temperature and humidity now (median across wards of each ward's
+ *  latest Open-Meteo reading, see fetchCityWeatherNow), re-fetched every
+ *  10 min. Renders nothing when weather ingest has nothing from the last
+ *  3 h, rather than showing an old value as current. */
+function HeaderWeather() {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 10 * 60_000)
+    return () => clearInterval(t)
+  }, [])
+  const { data } = useAsync(fetchCityWeatherNow, [tick], { cacheKey: 'header-weather', staleAfterMs: 15 * 60_000 })
+  if (!data || (data.tempC == null && data.humidity == null)) return null
+  const asOf = new Date(data.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const label = [
+    data.tempC != null ? `${Math.round(data.tempC)}°C` : null,
+    data.humidity != null ? `humidity ${Math.round(data.humidity)}%` : null,
+  ].filter(Boolean).join(', ')
+  return (
+    <div
+      className="hidden items-center gap-2.5 rounded-lg bg-white/75 px-2.5 py-1.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm backdrop-blur-sm md:flex"
+      title={`Delhi now: ${label}. Median of ${data.wards} wards, Open-Meteo, as of ${asOf}.`}
+      aria-label={`Delhi weather now: ${label}`}
+    >
+      {data.tempC != null && (
+        <span className="flex items-center gap-1">
+          <Thermometer className="h-3.5 w-3.5 text-orange-500" aria-hidden />
+          {Math.round(data.tempC)}°C
+        </span>
+      )}
+      {data.humidity != null && (
+        <span className="flex items-center gap-1">
+          <Droplets className="h-3.5 w-3.5 text-sky-500" aria-hidden />
+          {Math.round(data.humidity)}%
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function LogoWordmark({ className = 'h-16 w-auto' }: { className?: string }) {
   return <img src="/brand/logo.png" alt="Vayu Gati" className={`${className} object-contain`} />
 }
@@ -192,17 +235,21 @@ function TopBar({
   }, [subtitle])
 
   return (
-    // Real liquid-glass header (Sept 2026) — matches the GlassSurface
-    // treatment now used on the Overview/Map pages' floating bars, so the
-    // header no longer reads as a different, flatter design language sitting
-    // above them. Unlike those pages' floating pills, this header sits in
-    // normal document flow above ordinary page content (not a live map), so
-    // the SVG turbulence/displacement warp it inherits from GlassSurface has
-    // much less to distort — it still reads as glass (blur, translucency,
-    // lit top edge), just subtler here than over map imagery, which is the
-    // correct, expected difference rather than a bug.
-    <div className="z-header flex-shrink-0 border-b border-white/40">
-      <GlassSurface radiusClassName="rounded-none" ambientShadow={false} className="flex h-16 items-center gap-3 px-3 sm:px-4">
+    // Illustrated Delhi skyline header (Sept 2026, user request: the plain
+    // glass bar read as too clean for the product). The image is ~10:1 and
+    // the bar 64px tall, so it is cropped to its lower band (monuments +
+    // tree line); soft white fades at both ends keep the logo, tagline and
+    // account controls readable over the trees. Height stays h-16: the nav
+    // rail (top-16, calc(100dvh - 4rem)) and the Map toolbar assume it.
+    <div className="z-header flex-shrink-0 border-b border-slate-200/70">
+      <div
+        className="relative flex h-16 items-center gap-3 bg-cover bg-no-repeat px-3 sm:px-4"
+        style={{
+          backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.5) 16rem, rgba(255,255,255,0) 26rem, rgba(255,255,255,0) calc(100% - 20rem), rgba(255,255,255,0.7) 100%), url(${headerSkyline})`,
+          backgroundPosition: 'center, center 85%',
+          backgroundSize: 'cover, cover',
+        }}
+      >
         {/* Clicking the logo goes back to the role's own home/Overview page
             (Sept 2026) — was purely decorative before, a common convention
             this app didn't yet follow. */}
@@ -234,6 +281,7 @@ function TopBar({
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <HeaderWeather />
           <div className="relative">
             <button
               type="button"
@@ -284,7 +332,7 @@ function TopBar({
             </span>
           </button>
         </div>
-      </GlassSurface>
+      </div>
     </div>
   )
 }
@@ -330,10 +378,10 @@ export default function AppShell({
 
   return (
     <div className="flex h-[100dvh]">
-      {/* Backs every <GlassSurface> in the app (the header below, plus any
+      {/* Backs every <GlassSurface> in the app (the
           page-level ones like the Map/Overview floating bars) via
           url(#glass-distortion) — mounted once here at the shell root
-          rather than per-page, now that the header itself uses it too.
+          rather than per-page.
           Page-level mounts of this same component were removed as
           redundant (Sept 2026). */}
       <GlassFilterDefs />

@@ -80,6 +80,9 @@ function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
     dataQualityStatus: null,
     maxValidatedHorizonHours: null,
     beatsPersistence: null,
+    exceedThreshold: null,
+    exceedProb: null,
+    severeRisk: null,
     ...overrides,
   }
 }

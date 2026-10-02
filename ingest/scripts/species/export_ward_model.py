@@ -9,7 +9,10 @@ Trained on every Indo-Gangetic-plain monitor (no holdout), then applied
 to Delhi's 265 ward centres. The 90% range for a DAILY estimate comes from
 2 km-group cross-validation of this exact pipeline (an unmonitored spot
 inside a monitored city is the Delhi case). The factor k is the 90th
-percentile of |log error| across all out-of-fold site-days.
+percentile of |log error| over out-of-fold site-days at monitors within
+DELHI_KM of Delhi: the dense network there makes errors smaller than the
+IGP-wide figure, which is kept in "validation" for reference, as is the
+coverage of k by season.
 
 Writes ingest/app/data/ward_level_ratios.json (small; committed), which
 app/ward_estimates.py reads. Re-run to refresh.
@@ -38,6 +41,8 @@ from scripts.species import site_model as SM  # noqa: E402
 from scripts.species.features import _kernel_sums, static_features  # noqa: E402
 
 NET_KM, MIN_NET = 150.0, 3
+DELHI_CENTRE, DELHI_KM = (28.61, 77.21), 40.0
+SEASONS = {"winter_nov_feb": (11, 12, 1, 2), "premonsoon_mar_jun": (3, 4, 5, 6), "monsoon_jul_oct": (7, 8, 9, 10)}
 OUT = Path(__file__).resolve().parents[2] / "app" / "data" / "ward_level_ratios.json"
 SPECIES = {"no2": {"plants": False}, "pm25": {"plants": True}}
 
@@ -116,21 +121,22 @@ def run_species(species, wards_pts, log=print):
         return y
 
     def daily(i, NM):
-        """(actual daily means, network daily means) for site i, days with >= 18 h."""
+        """(actual daily means, network daily means, IST day numbers) for site i, days with >= 18 h."""
         ok = np.isfinite(V[i]) & np.isfinite(NM[i])
-        out_a, out_n = [], []
+        out_a, out_n, out_d = [], [], []
         for dd in np.unique(day[ok]):
             m = ok & (day == dd)
             if m.sum() >= 18:
-                out_a.append(V[i, m].mean()); out_n.append(NM[i, m].mean())
-        return np.array(out_a), np.array(out_n)
+                out_a.append(V[i, m].mean()); out_n.append(NM[i, m].mean()); out_d.append(dd)
+        return np.array(out_a), np.array(out_n), np.array(out_d)
 
     # ---- honest daily range: 2 km-group CV of this exact pipeline ----
     G = SM.groups(sites, 2.0)
     rng = np.random.default_rng(0); order = rng.permutation(len(G))
     folds = [sum((G[k] for k in order[f::10]), []) for f in range(10)]
     col = {s: i for i, s in enumerate(sid)}
-    errs, r2_y, r2_p = [], [], []
+    near = np.array([S._km(p, DELHI_CENTRE) <= DELHI_KM for p in pts])
+    errs, r2_y, r2_p, in_delhi, month = [], [], [], [], []
     for grp in folds:
         te = np.array([col[s] for s in grp]); A = ADJ.copy(); A[:, te] = 0
         NM = network(A)
@@ -139,16 +145,24 @@ def run_species(species, wards_pts, log=print):
         sc, rg, res = fit_level(Z[tr], y, D[np.ix_(tr, tr)])
         lr = predict_level(sc, rg, res, Z[te], D[np.ix_(te, tr)])
         for k, i in enumerate(te):
-            a, nm = daily(i, NM)
+            a, nm, dd = daily(i, NM)
             if len(a):
                 p = nm * np.exp(lr[k])
                 errs += list(np.abs(np.log(a) - np.log(p))); r2_y += list(a); r2_p += list(p)
-    errs = np.array(errs); ya = np.array(r2_y); pa = np.array(r2_p)
-    k90 = float(np.exp(np.quantile(errs, 0.9)))
-    r2 = float(1 - np.sum((ya - pa) ** 2) / np.sum((ya - ya.mean()) ** 2))
-    mae = float(np.mean(np.abs(ya - pa)))
-    log(f"{species}: 2 km-group CV, daily: R2 {r2:+.2f}, MAE {mae:.1f} on mean {ya.mean():.1f}, 90% factor x/{k90:.2f} "
-        f"(n={len(errs)} site-days)")
+                in_delhi += [near[i]] * len(a); month += [datetime.utcfromtimestamp(int(x) * 86400).month for x in dd]
+    errs = np.array(errs); ya = np.array(r2_y); pa = np.array(r2_p); dm = np.array(in_delhi); month = np.array(month)
+
+    def r2_mae(m):
+        return (float(1 - np.sum((ya[m] - pa[m]) ** 2) / np.sum((ya[m] - ya[m].mean()) ** 2)),
+                float(np.mean(np.abs(ya[m] - pa[m]))), float(ya[m].mean()))
+    k90_igp = float(np.exp(np.quantile(errs, 0.9)))
+    k90 = float(np.exp(np.quantile(errs[dm], 0.9)))
+    r2, mae, mean_all = r2_mae(np.ones(len(errs), bool))
+    r2_d, mae_d, mean_d = r2_mae(dm)
+    cover = {name: round(float(np.mean(errs[dm & np.isin(month, ms)] <= np.log(k90))), 3) for name, ms in SEASONS.items()}
+    log(f"{species}: 2 km-group CV, daily: IGP R2 {r2:+.2f}, MAE {mae:.1f}, x/{k90_igp:.2f} (n={len(errs)}) | "
+        f"Delhi<{DELHI_KM:.0f}km R2 {r2_d:+.2f}, MAE {mae_d:.1f} on mean {mean_d:.1f}, x/{k90:.2f} (n={int(dm.sum())}) "
+        f"| coverage by season {cover}")
 
     # ---- network calibration: live N comes from OUR stations only (Delhi),
     # while the model was trained with every monitor within 150 km. c converts:
@@ -177,9 +191,12 @@ def run_species(species, wards_pts, log=print):
         "range_factor_90": round(k90, 3),
         "network_calibration": round(c, 4),
         "features": names,
-        "validation": {"design": "2 km-group CV, daily means, IGP monitors", "r2_daily": round(r2, 3),
-                       "mae_daily": round(mae, 1), "mean_daily": round(float(ya.mean()), 1),
-                       "n_site_days": int(len(errs))},
+        "validation": {"design": "2 km-group CV, daily means; range from monitors within "
+                                 f"{DELHI_KM:.0f} km of Delhi, stuck-analyser days removed",
+                       "r2_daily": round(r2_d, 3), "mae_daily": round(mae_d, 1), "mean_daily": round(mean_d, 1),
+                       "n_site_days": int(dm.sum()), "coverage_by_season": cover,
+                       "igp": {"r2_daily": round(r2, 3), "mae_daily": round(mae, 1), "mean_daily": round(mean_all, 1),
+                               "range_factor_90": round(k90_igp, 3), "n_site_days": int(len(errs))}},
         "training_sites": int(keep.sum()),
         "training_period": [datetime.utcfromtimestamp(hours[0] * 3600).date().isoformat(),
                             datetime.utcfromtimestamp(hours[-1] * 3600).date().isoformat()],

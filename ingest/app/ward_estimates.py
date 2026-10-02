@@ -10,7 +10,11 @@ R_w  the ward's usual ratio to that network: exp(log_ratio) from
      app/data/ward_level_ratios.json, exported by
      scripts/species/export_ward_model.py (land use [+ power plants for
      PM2.5] + nearby-monitor correction)
-k    the 90% daily range factor from 2 km-group cross-validation
+k    the 90% daily range factor from 2 km-group cross-validation at monitors
+     within 40 km of Delhi
+
+Values from stuck analysers (a flat trailing day, app/stuck_sensors.py) are
+dropped before N is formed.
 
 The window ends at the newest hour the network has, so an upstream outage
 produces an older, correctly dated estimate rather than a wrong current one.
@@ -25,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import db
+from . import db, stuck_sensors
 
 log = logging.getLogger("ingest")
 MODEL_FILE = Path(__file__).resolve().parent / "data" / "ward_level_ratios.json"
@@ -63,6 +67,9 @@ def compute(rows: list[dict], model: dict | None = None) -> list[dict]:
         return []
     newest = max(datetime.fromisoformat(r["ts"]) for r in rows)
     window_end = newest + timedelta(hours=1)   # readings_hourly ts = hour START
+    rows, blanked = stuck_sensors.drop_stuck(rows, tuple(model["species"]))
+    if blanked:
+        log.info("ward estimates: dropped %d values from stuck analysers", blanked)
     out = []
     for pollutant, spec in model["species"].items():
         N, n_st = network_24h(rows, pollutant, window_end)

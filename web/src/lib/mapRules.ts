@@ -389,23 +389,24 @@ export function nearestStationTo(
   return best
 }
 
-export type WardDataStatus = 'station_backed' | 'nearest_station_proxy' | 'no_station_data'
+export type WardDataStatus = 'station_backed' | 'model_estimate' | 'no_station_data'
 
 export const WARD_DATA_STATUS_LABEL: Record<WardDataStatus, string> = {
   station_backed: 'Station-backed',
-  nearest_station_proxy: 'Nearest-station proxy',
+  model_estimate: 'Model estimate',
   no_station_data: 'No station-backed data',
 }
 
-/** Which of the 3 honest states a clicked ward boundary is in - never a
- *  4th "confident guess" state. station_backed: a real station's own
- *  ward_id points at this ward. nearest_station_proxy: no direct station,
- *  but a real distance to the closest one is computable. no_station_data:
- *  neither - the true state for a ward with an unset/invalid centroid, or
- *  when no station anywhere has a valid coordinate. */
+/** Which of the 3 honest states a clicked ward boundary is in.
+ *  station_backed: a real station's own ward_id points at this ward.
+ *  model_estimate: no monitor in the ward; the panel shows the validated
+ *  ward model (ward_estimates: live network x the ward's usual ratio, with
+ *  a 90% range), and the nearest station only as labelled context.
+ *  no_station_data: no station anywhere has a valid coordinate, so there is
+ *  no live network for the estimate either. */
 export function wardDataStatus(hasDirectStation: boolean, hasNearestStation: boolean): WardDataStatus {
   if (hasDirectStation) return 'station_backed'
-  if (hasNearestStation) return 'nearest_station_proxy'
+  if (hasNearestStation) return 'model_estimate'
   return 'no_station_data'
 }
 

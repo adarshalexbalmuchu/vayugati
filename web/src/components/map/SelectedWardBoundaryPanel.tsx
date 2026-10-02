@@ -2,6 +2,7 @@ import { AlertTriangle, MapPin, X } from 'lucide-react'
 import type { ForecastPoint } from '../../lib/data'
 import { WARD_DATA_STATUS_LABEL, type MapTimeMode, type WardDataStatus } from '../../lib/mapRules'
 import NowcastBlock from './NowcastBlock'
+import WardEstimateBlock from './WardEstimateBlock'
 
 type JurisdictionType = 'mcd' | 'ndmc' | 'cantonment'
 
@@ -19,7 +20,7 @@ const JURISDICTION_NOTE: Record<JurisdictionType, string> = {
 
 const DATA_STATUS_TONE: Record<WardDataStatus, string> = {
   station_backed: 'text-status-success ring-status-success/40',
-  nearest_station_proxy: 'text-status-warning ring-status-warning/40',
+  model_estimate: 'text-status-warning ring-status-warning/40',
   no_station_data: 'text-slate-500 ring-slate-300',
 }
 
@@ -146,9 +147,15 @@ export default function SelectedWardBoundaryPanel({
       {directStation && <StationRefBlock label="Assigned station" station={directStation} metricLabel={selectedMetricLabel} />}
 
       {!directStation && nearestStation && (
+        <div className="mt-3">
+          <WardEstimateBlock wardId={detail.id} />
+        </div>
+      )}
+
+      {!directStation && nearestStation && (
         <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px]">
           <p className="font-semibold text-slate-700">
-            Nearest station: {nearestStation.name} <span className="font-normal text-slate-400">({fmtDistance(nearestStation.distanceMeters)} away)</span>
+            For reference, nearest station: {nearestStation.name} <span className="font-normal text-slate-400">({fmtDistance(nearestStation.distanceMeters)} away)</span>
           </p>
           <p className="mt-0.5 text-slate-500">
             {selectedMetricLabel} {nearestStation.value ?? '—'}
@@ -156,7 +163,7 @@ export default function SelectedWardBoundaryPanel({
             {nearestStation.isStale && <span className="ml-1 font-semibold text-status-warning">(stale reading)</span>}
           </p>
           <p className="mt-1 text-[10px] text-slate-400">
-            This is a nearby-station reading, not a reading assigned to this ward specifically.
+            That station's own reading, not this ward's. The estimate above is this ward's.
           </p>
         </div>
       )}

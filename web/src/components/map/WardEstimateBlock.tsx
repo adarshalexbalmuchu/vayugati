@@ -16,11 +16,13 @@ function bandOf(v: number, breaks: number[]): number {
 }
 
 /** Validated accuracy of a daily estimate at an unmonitored spot inside a
- *  monitored city (2 km-group cross-validation on Indo-Gangetic-plain
- *  monitors, Sept 2026; see ingest/scripts/species/export_ward_model.py). */
+ *  monitored city: 2 km-group cross-validation, scored at held-out monitors
+ *  within 40 km of Delhi (stuck-analyser days removed), Sept 2026; see
+ *  ingest/app/data/ward_level_ratios.json "validation" and
+ *  ingest/scripts/species/export_ward_model.py. */
 const VALIDATION: Record<WardEstimate['pollutant'], string> = {
-  pm25: 'R² 0.72, typical error ±16 µg/m³',
-  no2: 'R² 0.35, typical error ±11 µg/m³',
+  pm25: 'R² 0.82, typical error ±18 µg/m³',
+  no2: 'R² 0.34, typical error ±15 µg/m³',
 }
 
 /** Model estimate of 24h PM2.5 and NO₂ for a ward, mainly for the wards with

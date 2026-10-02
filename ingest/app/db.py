@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from supabase import Client, create_client
 
-from . import config
+from . import config, stuck_sensors
 
 
 @lru_cache(maxsize=1)
@@ -191,7 +191,7 @@ def upsert_readings_hourly(rows: list[dict], chunk: int = 500) -> None:
                         .upsert(batch, on_conflict="station_id,ts").execute())
 
 
-def get_hourly_history(hours: int = 24 * 30) -> list[dict]:
+def get_hourly_history(hours: int = 24 * 30, include_archive: bool = False) -> list[dict]:
     """Real hourly concentrations from readings_hourly, in exactly
     get_readings_history()'s shape ([{ts, ward_id, pm25, ..., aqi}]) so
     forecasting and attribution can switch source without other changes.
@@ -200,6 +200,11 @@ def get_hourly_history(hours: int = 24 * 30) -> list[dict]:
     averages, not hourly values (value_basis='naqi_window'). A model trained
     on those learns a smoothed, lagged series. aqi is None here: AQI is
     defined on 24h averages, not on single hours.
+
+    include_archive=True prepends the local training archive
+    (history_archive.py) for hours before the database's own earliest row in
+    the window, so the forecaster can train on every season without the
+    database holding them.
     """
     stations = _with_retry(lambda: client().table("stations").select("id, ward_id").execute().data) or []
     sid_to_ward = {s["id"]: s["ward_id"] for s in stations if s.get("ward_id") is not None}
@@ -214,6 +219,15 @@ def get_hourly_history(hours: int = 24 * 30) -> list[dict]:
         .order("ts")
         .order("station_id")
     )
+    if include_archive:
+        from . import history_archive
+        first = rows[0]["ts"] if rows else datetime.now(timezone.utc).isoformat()
+        older = [r for r in history_archive.rows_before(datetime.fromisoformat(first), set(sid_to_ward))
+                 if r["ts"] >= cutoff]
+        rows = older + rows
+    rows, blanked = stuck_sensors.drop_stuck(rows, ("pm25", "pm10", "no2", "so2", "co", "o3"))
+    if blanked:
+        _db_log.info("hourly history: dropped %d values from stuck analysers", blanked)
     return [
         {"ts": r["ts"], "ward_id": sid_to_ward[r["station_id"]], "pm25": r["pm25"], "pm10": r["pm10"],
          "no2": r["no2"], "so2": r["so2"], "co": r["co"], "o3": r["o3"], "aqi": None}
@@ -459,17 +473,10 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
       O3 / CO:
         Maximum 8h rolling average of hourly means, minimum 6 distinct clock-hours.
 
-    WHY HOURLY AGGREGATION MATTERS
-    ──────────────────────────────
-    The ingest cycle runs every 15 min, so a station that reports once per hour
-    generates 4 identical readings in our DB for that hour. Without aggregation,
-    each reading gets equal weight and hours with 4 reads dominate hours with 1.
-    More critically, DPCC stations frequently go offline 11 PM–7 AM (maintenance/
-    power), so the DB holds only the high-PM2.5 daytime readings. Averaging raw
-    readings gives a daytime-biased "24h average" that is 30–80 AQI units higher
-    than CPCB's true 24h figure — which includes overnight clean-air periods.
-    Aggregating to one value per clock-hour before averaging assigns equal weight
-    to every hour of the day, matching CPCB's calculation.
+    Every clock-hour gets equal weight, matching CPCB's calculation. DPCC
+    stations often go offline 11 PM–7 AM, so the hours present skew to the
+    polluted daytime; the minimum-hours check below is what keeps that from
+    inflating the AQI.
 
     WHY THE MINIMUM-HOURS CHECK MATTERS
     ─────────────────────────────────────
@@ -479,18 +486,24 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
     Below the minimum, the pollutant is excluded from AQI so its sub-index is
     absent rather than artificially inflated by sparse coverage.
 
-    CO is normalised to mg/m³ before windowing (CPCB stores mg/m³; OpenAQ µg/m³)."""
+    SOURCE: readings_hourly only (true OpenAQ hourly means, hour-start
+    labels, CO already mg/m³), with the same stuck-analyser filter the models
+    use. Not `readings`: its CPCB rows are already 24h/8h window averages
+    (value_basis='naqi_window'), and its OpenAQ rows are provisional
+    end-of-hour snapshots labelled one hour later than the same hour in
+    readings_hourly. Averaging those together mixed three bases."""
     if not station_ids:
         return {}
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     rows = _with_retry(lambda: client()
-        .table("readings")
-        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, nh3, ingest_source")
+        .table("readings_hourly")
+        .select("station_id, ts, pm25, pm10, no2, so2, co, o3")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
         .order("ts")
         .execute()
     ).data or []
+    rows, _ = stuck_sensors.drop_stuck(rows, ("pm25", "pm10", "no2", "so2", "co", "o3"))
 
     by_station: dict[int, list[dict]] = {}
     for row in rows:
@@ -498,7 +511,7 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
 
     result: dict[int, dict] = {}
     for sid, readings in by_station.items():
-        # ── Step 1: aggregate to one value per clock-hour per pollutant ──────
+        # ── Step 1: one value per clock-hour per pollutant ───────────────────
         # hr_key = ts[:13] e.g. "2026-08-26T14" — unique per UTC hour.
         hourly_buckets: dict[str, dict[str, list[float]]] = {}
         for r in readings:
@@ -506,22 +519,10 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
             if not hr_key:
                 continue
             bucket = hourly_buckets.setdefault(hr_key, {})
-            for col in ("pm25", "pm10", "no2", "so2", "nh3", "o3"):
+            for col in ("pm25", "pm10", "no2", "so2", "nh3", "o3", "co"):
                 v = r.get(col)
                 if v is not None:
                     bucket.setdefault(col, []).append(float(v))
-            co = r.get("co")
-            if co is not None:
-                # readings.co is stored in mg/m³ for every ingest_source
-                # (bug fix, Sept 2026: _ingest_station_openaq() in ingest.py
-                # used to store the OpenAQ path's raw µg/m³ figure instead
-                # of the mg/m³ value it separately computed for its own AQI
-                # calc; this line's `source != "cpcb" → /1000` branch was
-                # compensating for that here, which — now that the value is
-                # stored correctly at ingest time — would silently
-                # over-divide it again. See latest_readings.py's matching
-                # fix for the full history.)
-                bucket.setdefault("co", []).append(float(co))
 
         # ── Step 2: mean within each clock-hour (one float per hour) ─────────
         # sorted() ensures the hourly_means list is time-ordered (required by

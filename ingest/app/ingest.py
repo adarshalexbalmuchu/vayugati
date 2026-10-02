@@ -167,7 +167,6 @@ def _ingest_from_cpcb(
         # sub-indices into concentrations, with CO in mg/m³ (unit "MG/M3");
         # the ug->mg branch below stays only as a guard for a future feed change.
         # NOTE: We intentionally write raw CO (mg/m³) into readings.co — NOT µg/m³.
-        # get_24h_avg_concentrations() knows this and passes co directly as co_mg.
         co_raw = pollutants.get("co") or {}
         co_val = row.get("co")
         co_mg: float | None = None
@@ -243,9 +242,9 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
 
     WHAT get_24h_avg_concentrations() NOW DOES (corrected methodology)
     ───────────────────────────────────────────────────────────────────
-    1. Groups all stored readings into one mean per UTC clock-hour (prevents
-       daytime-heavy reporting bias — DPCC stations often go offline 11 PM–7 AM,
-       and without hourly aggregation, daytime readings dominate the average).
+    1. Reads the station's true hourly means from readings_hourly (never the
+       CPCB 24h-window rows or the provisional snapshots in `readings`), one
+       value per UTC clock-hour, stuck analysers removed.
     2. Computes the 24h simple average across the clock-hour means (equal weight
        per hour of the day, matching CPCB's methodology).
     3. Applies the CPCB minimum data-availability rule: 16+ distinct hours for
@@ -261,9 +260,7 @@ def _recompute_24h_aqi(station_ts: dict[int, str]) -> int:
         ts = station_ts.get(sid)
         if ts is None:
             continue
-        # readings.co is stored in mg/m³ for CPCB rows (see NOTE above);
-        # get_24h_avg_concentrations() normalises OpenAQ µg/m³ rows to mg/m³,
-        # so avg["co"] is always mg/m³ and goes straight to co_mg.
+        # readings_hourly.co is mg/m³, so avg["co"] goes straight to co_mg.
         corrected = aqi.compute_cpcb_aqi(
             avg.get("pm25"), avg.get("pm10"),
             no2=avg.get("no2"), so2=avg.get("so2"),

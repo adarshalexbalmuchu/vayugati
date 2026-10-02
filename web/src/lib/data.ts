@@ -12,6 +12,7 @@ import {
   type ForecastRunLike,
 } from './forecastTrustRules'
 import { supabase } from './supabase'
+import { summarizeCityWeather, type CityWeather, type WeatherRow } from './weatherRules'
 
 /** Enum types come from the generated schema, so a DB change surfaces as a
  *  compile error here rather than a runtime 400 from PostgREST. */
@@ -140,6 +141,22 @@ export async function fetchCurrentWeather(wardId: number): Promise<Weather | nul
     .limit(1)
     .maybeSingle()
   return data ?? null
+}
+
+/** City-wide temperature and humidity now, for the header: each ward's
+ *  latest reading from the last 3 h, then the median across wards (see
+ *  summarizeCityWeather). null when weather ingest has nothing that recent. */
+export async function fetchCityWeatherNow(): Promise<CityWeather | null> {
+  const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('weather')
+    .select('ward_id, ts, temp_c, humidity')
+    .gte('ts', since)
+    .lte('ts', new Date().toISOString())
+    .order('ts', { ascending: false })
+    .limit(2000)
+  if (error) throw new Error(error.message)
+  return summarizeCityWeather((data ?? []) as WeatherRow[])
 }
 
 export interface WindFieldPoint {
@@ -795,6 +812,15 @@ export interface ForecastPoint {
    *  both "validated to 12h" and "not validated at all." */
   maxValidatedHorizonHours: number | null
   beatsPersistence: boolean | null
+  /** Chance that the value at horizon_ts reaches exceedThreshold (the city's
+   *  alert threshold), from a separate calibrated classifier (Oct 2026). Null
+   *  where that classifier showed no skill in validation. */
+  exceedThreshold: number | null
+  exceedProb: number | null
+  /** 'elevated' when a severe-level episode (PM2.5 >= 250) is plausible at
+   *  horizon_ts; deliberately coarse, since precise probabilities at that
+   *  level were overconfident in validation. */
+  severeRisk: 'elevated' | null
 }
 
 /**
@@ -821,6 +847,9 @@ interface _ForecastRow {
   nowcast_method: string | null
   nowcast_backtest_samples: number | null
   nowcast_backtest_passed: boolean | null
+  exceed_threshold?: number | null
+  exceed_prob?: number | null
+  severe_risk?: string | null
   forecast_runs: {
     training_period_end: string | null
     generated_at: string
@@ -852,11 +881,14 @@ function _mapForecastRow(row: _ForecastRow): ForecastPoint {
     dataQualityStatus: row.forecast_runs?.data_quality_status ?? null,
     maxValidatedHorizonHours: row.forecast_runs?.max_validated_horizon_hours ?? null,
     beatsPersistence: row.forecast_runs?.beats_persistence ?? null,
+    exceedThreshold: row.exceed_threshold ?? null,
+    exceedProb: row.exceed_prob ?? null,
+    severeRisk: row.severe_risk === 'elevated' ? 'elevated' : null,
   }
 }
 
 const FORECAST_ROW_SELECT =
-  'horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, is_nowcast_point, lower_bound, upper_bound, nowcast_method, nowcast_backtest_samples, nowcast_backtest_passed, forecast_runs(training_period_end, generated_at, method, data_quality_status, max_validated_horizon_hours, beats_persistence)'
+  'horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, is_nowcast_point, lower_bound, upper_bound, nowcast_method, nowcast_backtest_samples, nowcast_backtest_passed, exceed_threshold, exceed_prob, severe_risk, forecast_runs(training_period_end, generated_at, method, data_quality_status, max_validated_horizon_hours, beats_persistence)'
 
 export async function fetchForecast(wardId: number): Promise<ForecastPoint[]> {
   const { data } = await supabase
