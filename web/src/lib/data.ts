@@ -1710,3 +1710,60 @@ export async function fetchWardEstimates(wardId: number): Promise<WardEstimate[]
   }
   return (['pm25', 'no2'] as const).map((p) => latest.get(p)).filter((e): e is WardEstimate => e != null)
 }
+
+/** One lead of a ward's forecast AQI (aqi_forecasts, ingest/app/forecast_aqi.py):
+ *  CPCB's own AQI rule applied to observed hours plus the six pollutants'
+ *  forecasts. Only leads the backtest validated are ever written. */
+export interface AqiForecastPoint {
+  wardId: number
+  leadHours: number
+  originTs: string
+  targetTs: string
+  aqi: number
+  aqiLow: number
+  aqiHigh: number
+  dominantPollutant: string
+  generatedAt: string
+}
+
+const AQI_FORECAST_SELECT = 'ward_id, lead_hours, origin_ts, target_ts, aqi, aqi_low, aqi_high, dominant_pollutant, generated_at'
+
+type AqiForecastRow = {
+  ward_id: number; lead_hours: number; origin_ts: string; target_ts: string; aqi: number
+  aqi_low: number; aqi_high: number; dominant_pollutant: string; generated_at: string
+}
+
+function toAqiForecastPoint(r: AqiForecastRow): AqiForecastPoint {
+  return {
+    wardId: r.ward_id, leadHours: r.lead_hours, originTs: r.origin_ts, targetTs: r.target_ts, aqi: r.aqi,
+    aqiLow: r.aqi_low, aqiHigh: r.aqi_high, dominantPollutant: r.dominant_pollutant, generatedAt: r.generated_at,
+  }
+}
+
+/** Each ward's forecast AQI for the hour nearest `hoursFromNow` (within
+ *  ±3 h), for the map. Wards without one are simply absent. */
+export async function fetchAqiForecastsNear(hoursFromNow: number, nowMs: number = Date.now()): Promise<Map<number, AqiForecastPoint>> {
+  const target = nowMs + hoursFromNow * 3_600_000
+  const { data } = await supabase
+    .from('aqi_forecasts')
+    .select(AQI_FORECAST_SELECT)
+    .gte('target_ts', new Date(target - 3 * 3_600_000).toISOString())
+    .lte('target_ts', new Date(target + 3 * 3_600_000).toISOString())
+  const best = new Map<number, AqiForecastPoint>()
+  for (const r of (data ?? []) as AqiForecastRow[]) {
+    const p = toAqiForecastPoint(r)
+    const cur = best.get(p.wardId)
+    if (!cur || Math.abs(Date.parse(p.targetTs) - target) < Math.abs(Date.parse(cur.targetTs) - target)) best.set(p.wardId, p)
+  }
+  return best
+}
+
+/** A ward's whole forecast AQI path (up to 48 leads), oldest lead first. */
+export async function fetchWardAqiForecast(wardId: number): Promise<AqiForecastPoint[]> {
+  const { data } = await supabase
+    .from('aqi_forecasts')
+    .select(AQI_FORECAST_SELECT)
+    .eq('ward_id', wardId)
+    .order('lead_hours', { ascending: true })
+  return ((data ?? []) as AqiForecastRow[]).map(toAqiForecastPoint)
+}

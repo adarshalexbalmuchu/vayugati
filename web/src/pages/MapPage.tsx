@@ -25,6 +25,7 @@ import ToolResultsPanel from '../components/map/ToolResultsPanel'
 import { DEFAULT_BASEMAP_MODE, maptilerKey, resolveStyleUrl, type BasemapMode } from '../lib/basemaps'
 import {
   fetchAllForecasts,
+  fetchAqiForecastsNear,
   fetchAllOpenReports,
   fetchAllStationsWithReadings,
   fetchAllWardBoundaries,
@@ -41,6 +42,7 @@ import {
   type Report,
   type StationMarker,
   type WardBoundary,
+  type AqiForecastPoint,
   type WardForecastSummary,
   type WardSummary,
 } from '../lib/data'
@@ -129,6 +131,7 @@ const EMPTY_DATA: [WardSummary[], StationMarker[], Incident[], Report[], Station
 
 const EMPTY_BOUNDARIES: WardBoundary[] = []
 const EMPTY_FORECASTS: Map<number, WardForecastSummary> = new Map()
+const EMPTY_AQI_FORECASTS: Map<number, AqiForecastPoint> = new Map()
 
 function fmtAge(minutes: number): string {
   if (minutes < 2) return 'just now'
@@ -362,6 +365,16 @@ export default function MapPage() {
   })
   const forecasts = (forecastSuppressed ? new Map() : forecastsState.data) ?? EMPTY_FORECASTS
 
+  // The real forecast AQI (aqi_forecasts) for AQI mode's forecast horizons;
+  // a ward without one falls back to the labelled PM2.5 stand-in above.
+  const aqiHorizonHours = pollutant === 'aqi' && timeMode === '1h' ? 1 : null   // published to AQI_FORECAST_MAX_LEAD_H (12 h) only
+  const aqiForecastsState = useAsync(
+    () => (aqiHorizonHours == null ? Promise.resolve(new Map()) : fetchAqiForecastsNear(aqiHorizonHours)),
+    [aqiHorizonHours],
+    { enabled: aqiHorizonHours != null, cacheKey: `map:aqi-forecasts:${aqiHorizonHours}` },
+  )
+  const aqiForecasts = (forecastSuppressed || aqiHorizonHours == null ? null : aqiForecastsState.data) ?? EMPTY_AQI_FORECASTS
+
   // Ward boundary polygons are ~8MB of real OSM-derived GeoJSON across all
   // 250+ wards (measured) - loaded separately from the rest of the page's
   // data, not inside the `Promise.all` above, so the whole console no
@@ -532,7 +545,7 @@ export default function MapPage() {
             .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
             .map((w) => {
               const forecast = forecasts.get(w.id)
-              const reading = resolveWardReading(w, pollutant, timeMode, forecast)
+              const reading = resolveWardReading(w, pollutant, timeMode, forecast, aqiForecasts.get(w.id))
               const colorOverride =
                 layers.sourceAttribution && w.dominant_source
                   ? (SOURCE_CATEGORY_HEX[w.dominant_source as SourceCategory] ?? null)
@@ -545,7 +558,7 @@ export default function MapPage() {
                 lat: w.lat as number,
                 lng: w.lng as number,
                 label: w.name,
-                aqi: w.aqi,
+                aqi: reading.colorMode === 'aqi' && reading.aqiForColor != null ? reading.aqiForColor : w.aqi,
                 badgeText: reading.value != null ? String(Math.round(reading.value)) : '-',
                 pulsing: layers.predictedHotspots && severeWardIds.has(w.id),
                 colorOverride,
@@ -553,7 +566,7 @@ export default function MapPage() {
               }
             })
         : [],
-    [layers.wardMarkers, wards, forecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
+    [layers.wardMarkers, wards, forecasts, aqiForecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
   )
 
   const stationMarkers: MapMarker[] = useMemo(

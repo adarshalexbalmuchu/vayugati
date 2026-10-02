@@ -1369,6 +1369,7 @@ def run(city_code: str | None = None) -> dict:
         # Empty Series when FIRMS key is absent or fire_counts table is empty.
         fire_counts_series = _daily_fire_counts(db.get_fire_counts_history(days=45))
 
+        served_by_pollutant: dict[str, dict] = {}   # for the forecast AQI (forecast_aqi.py)
         for pollutant in cfg["enabled_pollutants"]:
             readings_df = _hourly_ward_pollutant(readings, pollutant)
             if readings_df.empty:
@@ -1392,6 +1393,7 @@ def run(city_code: str | None = None) -> dict:
                 if gm is not None:
                     served_global = forecast_global.serve(gm, readings_df_long, weather_long, F=F_live,
                                                           severe_threshold=severe)
+                    served_by_pollutant[pollutant] = served_global
             except Exception:
                 log.exception("global forecaster failed for %s — per-ward models only", pollutant)
 
@@ -1573,6 +1575,19 @@ def run(city_code: str | None = None) -> dict:
                 summary["runs"] += 1
                 if result["beats_persistence"]:
                     summary["beats_persistence"] += 1
+
+        # Forecast AQI from all pollutants' forecasts, by CPCB's own rule.
+        try:
+            from . import forecast_aqi
+            observed = {p: {w: g.set_index("ts")["value"].sort_index()
+                            for w, g in _hourly_ward_pollutant(readings, p).groupby("ward_id")}
+                        for p in forecast_aqi.POLLUTANTS}
+            summary["aqi"] = forecast_aqi.publish(
+                [w["id"] for w in city_wards if any(w["id"] in observed[p] for p in observed)],
+                observed, served_by_pollutant, datetime.now(timezone.utc), MAX_ORIGIN_AGE_H,
+                db.replace_aqi_forecasts)
+        except Exception:
+            log.exception("forecast AQI failed for city %s", city["city_code"])
 
         # Part C: score shadow predictions whose valid_at has now passed,
         # once per city (using that city's own freshly-fetched readings —

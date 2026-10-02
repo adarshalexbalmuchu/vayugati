@@ -389,6 +389,53 @@ export type Database = {
           },
         ]
       }
+      aqi_forecasts: {
+        Row: {
+          aqi: number
+          aqi_high: number
+          aqi_low: number
+          dominant_pollutant: string
+          generated_at: string
+          lead_hours: number
+          model_version: string
+          origin_ts: string
+          target_ts: string
+          ward_id: number
+        }
+        Insert: {
+          aqi: number
+          aqi_high: number
+          aqi_low: number
+          dominant_pollutant: string
+          generated_at?: string
+          lead_hours: number
+          model_version: string
+          origin_ts: string
+          target_ts: string
+          ward_id: number
+        }
+        Update: {
+          aqi?: number
+          aqi_high?: number
+          aqi_low?: number
+          dominant_pollutant?: string
+          generated_at?: string
+          lead_hours?: number
+          model_version?: string
+          origin_ts?: string
+          target_ts?: string
+          ward_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aqi_forecasts_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attributions: {
         Row: {
           breakdown: Json | null

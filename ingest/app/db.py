@@ -431,35 +431,6 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
-def _max_8h_rolling_avg(hourly_means: list[float]) -> float:
-    """Maximum of all 8-hour rolling averages from a time-ordered list of
-    HOURLY MEANS (one value per clock-hour). CPCB uses this window for O3
-    and CO instead of a 24h simple average.
-
-    Callers must pass hourly-aggregated values — NOT raw readings — so that
-    each clock-hour has equal weight regardless of intra-hour reporting frequency.
-    Returns 0.0 when the list is empty; the minimum-hours check in the caller
-    prevents this from feeding into AQI when coverage is insufficient."""
-    n = len(hourly_means)
-    if n == 0:
-        return 0.0
-    window = min(8, n)
-    best = 0.0
-    for i in range(n - window + 1):
-        avg = sum(hourly_means[i : i + window]) / window
-        if avg > best:
-            best = avg
-    return best
-
-
-# CPCB National AQI 2014 Technical Document, Appendix I (Data Availability Criteria):
-# "A valid 24h AQI requires data for at least 75% of the averaging period."
-# 75% × 24h = 16 clock-hours; 75% × 8h window = 6 clock-hours (O3/CO).
-# Below these thresholds CPCB marks the AQI as "Insufficient Data" — we
-# return nothing for that pollutant so it doesn't inflate the max sub-index.
-_MIN_HOURS_24H: int = 16
-_MIN_HOURS_8H: int = 6
-
 import logging as _log_module
 _db_log = _log_module.getLogger("ingest.db")
 
@@ -533,31 +504,9 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
                 if vals:
                     hourly_means.setdefault(col, []).append(sum(vals) / len(vals))
 
-        # ── Step 3: 24h simple average with minimum-hours check ───────────────
-        # Pollutants with fewer than _MIN_HOURS_24H are returned as absent (not
-        # None) so compute_aqi() ignores them rather than treating 0 as a real
-        # reading. Logs a debug line so low-coverage stations are diagnosable.
-        avg: dict[str, float] = {}
-        for col in ("pm25", "pm10", "no2", "so2", "nh3"):
-            hrs = hourly_means.get(col, [])
-            if len(hrs) >= _MIN_HOURS_24H:
-                avg[col] = sum(hrs) / len(hrs)
-            elif hrs:
-                _db_log.debug(
-                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 24h AQI",
-                    sid, col, len(hrs), _MIN_HOURS_24H,
-                )
-
-        # ── Step 4: max 8h rolling average (O3, CO) on hourly means ──────────
-        for col in ("o3", "co"):
-            hrs = hourly_means.get(col, [])
-            if len(hrs) >= _MIN_HOURS_8H:
-                avg[col] = _max_8h_rolling_avg(hrs)
-            elif hrs:
-                _db_log.debug(
-                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 8h AQI",
-                    sid, col, len(hrs), _MIN_HOURS_8H,
-                )
+        # ── Step 3: CPCB windows (24h mean; max 8h for O3/CO) with the
+        # 75% availability minimum (aqi.window_concentrations) ─────────────
+        avg = aqi.window_concentrations(hourly_means)
 
         result[sid] = avg
     return result
@@ -634,6 +583,14 @@ def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:
     _with_retry(lambda: client().table("forecasts").delete().eq("ward_id", ward_id).eq("pollutant", pollutant).execute())
     if rows:
         _with_retry(lambda: client().table("forecasts").insert(rows).execute())
+
+
+def replace_aqi_forecasts(ward_id: int, rows: list[dict]) -> None:
+    """Swap in a ward's forecast AQI (aqi_forecasts: one row per lead). An
+    empty list removes the ward's rows, so a stale forecast never lingers."""
+    _with_retry(lambda: client().table("aqi_forecasts").delete().eq("ward_id", ward_id).execute())
+    if rows:
+        _with_retry(lambda: client().table("aqi_forecasts").insert(rows).execute())
 
 
 def insert_forecast_run(row: dict) -> int:

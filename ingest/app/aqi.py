@@ -192,3 +192,50 @@ def compute_cpcb_aqi(
     if present < 3 or (pm25 is None and pm10 is None):
         return None
     return compute_aqi(pm25, pm10, no2=no2, so2=so2, o3=o3, co_mg=co_mg, nh3=nh3)
+
+
+# ── AQI from hourly values (one 24h window) ─────────────────────────────────
+# CPCB National AQI 2014 Technical Document, Appendix I: 24h means for
+# PM2.5/PM10/NO2/SO2/NH3, the maximum 8h mean for O3/CO, and 75% data
+# availability (16 of 24 hours; 6 of 8). Below that the pollutant is left
+# out rather than averaged from a few, usually daytime, hours.
+MIN_HOURS_24H = 16
+MIN_HOURS_8H = 6
+WINDOW_24H = ("pm25", "pm10", "no2", "so2", "nh3")
+WINDOW_8H = ("o3", "co")
+
+
+def max_8h_mean(hourly: list[float]) -> float:
+    """Largest 8-hour rolling mean of a time-ordered list of hourly means
+    (the whole list if it is shorter than 8)."""
+    n = len(hourly)
+    if n == 0:
+        return 0.0
+    w = min(8, n)
+    return max(sum(hourly[i : i + w]) / w for i in range(n - w + 1))
+
+
+def window_concentrations(hourly: dict[str, list[float]]) -> dict[str, float]:
+    """{pollutant: time-ordered hourly means over one 24h window} -> the
+    concentrations CPCB's breakpoints apply to (CO in mg/m³). Pollutants
+    below the availability minimum are absent."""
+    out = {}
+    for col in WINDOW_24H:
+        v = hourly.get(col) or []
+        if len(v) >= MIN_HOURS_24H:
+            out[col] = sum(v) / len(v)
+    for col in WINDOW_8H:
+        v = hourly.get(col) or []
+        if len(v) >= MIN_HOURS_8H:
+            out[col] = max_8h_mean(v)
+    return out
+
+
+def aqi_from_window(conc: dict[str, float]) -> tuple[int | None, str | None]:
+    """(CPCB AQI, the pollutant setting it) from window_concentrations()."""
+    a = compute_cpcb_aqi(conc.get("pm25"), conc.get("pm10"), no2=conc.get("no2"), so2=conc.get("so2"),
+                         o3=conc.get("o3"), co_mg=conc.get("co"), nh3=conc.get("nh3"))
+    if a is None:
+        return None, None
+    dominant = max(conc, key=lambda p: _sub_index(conc[p], SUB_INDEX_BREAKPOINTS[p]))
+    return a, dominant

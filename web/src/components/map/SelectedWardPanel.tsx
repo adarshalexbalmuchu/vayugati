@@ -1,6 +1,7 @@
 import { ChevronRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Attribution, VayuTraceAttribution, WardForecastSummary, WardSummary } from '../../lib/data'
+import AqiForecastBlock from './AqiForecastBlock'
 import ForecastOutlook from './ForecastOutlook'
 import { confidenceTierLabel, forecastFallbackStatus, FORECAST_METHOD_LABEL, type ForecastMethod } from '../../lib/incidentRules'
 import { hotspotStatus, HOTSPOT_STATUS_LABEL, type TimeWindowHours } from '../../lib/overviewRules'
@@ -117,6 +118,7 @@ export default function SelectedWardPanel({
         </div>
       </dl>
       <ForecastOutlook points={forecast?.points} />
+      <AqiForecastBlock wardId={ward.id} />
 
       <div className="mt-3">
         {/* Real hourly mean when one is fresh (readings_hourly); otherwise the

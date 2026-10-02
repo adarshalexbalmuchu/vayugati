@@ -30,6 +30,7 @@ import {
 } from '../../lib/overviewRules'
 import { confidenceTierLabel, FORECAST_METHOD_LABEL, forecastFallbackStatus } from '../../lib/incidentRules'
 import { Card } from '../ui'
+import AqiForecastBlock from '../map/AqiForecastBlock'
 import ForecastOutlook from '../map/ForecastOutlook'
 
 const POLLUTANT_OPTIONS: MapPollutant[] = ['aqi', 'pm25', 'pm10', 'no2', 'so2', 'co', 'o3']
@@ -987,6 +988,7 @@ function WardDetailPanel({
         </div>
         <ForecastChart points={forecastPoints} pollutant={pollutant} />
         <ForecastOutlook points={forecastPoints} />
+        {!forecastSuppressed && <AqiForecastBlock wardId={ward.id} />}
         {forecastMethod && (
           <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
             {forecastFallbackStatus(forecastMethod, forecastMethod === 'lightgbm')}

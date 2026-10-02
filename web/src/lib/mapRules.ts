@@ -5,7 +5,7 @@
  */
 import { haversineMeters, POLLUTANT_LABEL } from './incidentRules'
 import { hotspotStatus, type HotspotStatus, type TimeWindowHours } from './overviewRules'
-import type { ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
+import type { AqiForecastPoint, ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
 import type { FreshnessClass } from './dataQualityRules'
 
 // All 6 pollutants the data model supports (see incidentRules.ts's
@@ -243,8 +243,8 @@ export interface WardReadingResult {
   aqiForColor: number | null
   status: HotspotStatus | null
   /** True when the value shown is a different pollutant's real forecast
-   *  used as an honestly-labelled stand-in - only ever true for AQI (which
-   *  forecast.py never computes), never a fabricated AQI forecast. */
+   *  used as an honestly-labelled stand-in - only for AQI, and only for a
+   *  ward with no forecast AQI (aqi_forecasts) at that lead. */
   isProxy: boolean
   /** Ward-level nowcasting (+1h) only - null in every other timeMode.
    *  Anchor provenance is a nowcast-specific concept: at 24h/48h the model
@@ -300,7 +300,23 @@ export function resolveWardReading(
   pollutant: MapPollutant,
   timeMode: MapTimeMode,
   forecast: WardForecastSummary | undefined,
+  aqiForecast?: AqiForecastPoint | null,
 ): WardReadingResult {
+  if (pollutant === 'aqi' && timeMode !== 'now' && aqiForecast) {
+    // The real forecast AQI (CPCB rule over all pollutants' forecasts), so
+    // it takes the ordinary AQI colour scale - no stand-in needed.
+    return {
+      value: aqiForecast.aqi,
+      unit: 'AQI (forecast)',
+      colorMode: 'aqi',
+      aqiForColor: aqiForecast.aqi,
+      status: null,
+      isProxy: false,
+      anchorFreshness: null,
+      anchorObservedAt: null,
+    }
+  }
+
   if (timeMode === 'now') {
     const value =
       pollutant === 'aqi' ? ward.aqi : pollutant === 'pm25' ? ward.pm25 : pollutant === 'pm10' ? ward.pm10 : ward.no2
@@ -432,12 +448,12 @@ export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMod
     // live/historical readings) - both distinctions need to be explicit here
     // since this is the only place this mode's meaning is communicated.
     return pollutant === 'aqi'
-      ? "Ward markers: number shows the predicted PM2.5 concentration 1h from now (µg/m³), used as a risk signal - AQI itself is not forecast; colour still reflects the ward's current AQI category. Station markers are unaffected and continue showing live readings."
+      ? "Ward markers: forecast AQI 1h from now (CPCB method, from all pollutants' forecasts). A ward without one shows its PM2.5 forecast (µg/m³) instead, labelled as a risk signal. Station markers are unaffected and continue showing live readings."
       : `Ward markers: number shows the predicted ${MAP_POLLUTANT_LABEL[pollutant]} concentration 1h from now (µg/m³); colour reflects current AQI. Station markers are unaffected and continue showing live readings.`
   }
   const horizonLabel = timeMode === '24h' ? '24h' : '48h'
   if (pollutant === 'aqi') {
-    return `Markers show ${horizonLabel} forecast PM2.5 peak (µg/m³), used as a risk signal - AQI itself is not forecast.`
+    return `AQI is forecast only up to 12 h ahead (beyond that it did not beat "today's AQI holds" in testing), so markers show the ${horizonLabel} forecast PM2.5 peak (µg/m³) as a risk signal.`
   }
   return `Markers show ${horizonLabel} forecast peak for ${MAP_POLLUTANT_LABEL[pollutant]} (µg/m³).`
 }

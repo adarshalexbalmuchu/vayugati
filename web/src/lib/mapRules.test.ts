@@ -150,7 +150,22 @@ describe('resolveWardReading', () => {
     expect(resolveWardReading(ward, 'pm10', '24h', f).value).toBe(150)
   })
 
-  it('flags AQI forecast mode as a proxy (real PM2.5 forecast, not a fabricated AQI forecast), and only that mode', () => {
+  it('shows the real forecast AQI on the AQI colour scale when the ward has one', () => {
+    const f = forecast({ pollutant: 'pm25', points: [point({ horizon_ts: hoursFromNow(24), predicted_value: 150 })] })
+    const aqiFc = {
+      wardId: 1, leadHours: 24, originTs: hoursFromNow(0), targetTs: hoursFromNow(24), aqi: 312, aqiLow: 260,
+      aqiHigh: 370, dominantPollutant: 'pm25', generatedAt: hoursFromNow(0),
+    }
+    for (const mode of ['1h', '24h', '48h'] as const) {
+      const r = resolveWardReading(ward, 'aqi', mode, f, aqiFc)
+      expect(r).toMatchObject({ value: 312, unit: 'AQI (forecast)', colorMode: 'aqi', aqiForColor: 312, isProxy: false })
+    }
+    // never for 'now' or a single pollutant
+    expect(resolveWardReading(ward, 'aqi', 'now', f, aqiFc).value).toBe(ward.aqi)
+    expect(resolveWardReading(ward, 'pm25', '24h', f, aqiFc).value).toBe(150)
+  })
+
+  it('flags AQI forecast mode as a proxy only when the ward has no forecast AQI', () => {
     const f = forecast({ pollutant: 'pm25', points: [point({ horizon_ts: hoursFromNow(24), predicted_value: 150 })] })
     expect(resolveWardReading(ward, 'aqi', '24h', f).isProxy).toBe(true)
     expect(resolveWardReading(ward, 'aqi', '24h', f).unit).toMatch(/risk signal/i)
@@ -315,11 +330,12 @@ describe('markerMeaningLabel', () => {
     expect(markerMeaningLabel('pm10', 'now')).toMatch(/µg\/m³/)
   })
 
-  it('is honest about AQI having no real forecast - names the proxy pollutant and "risk signal"', () => {
+  it('says AQI is forecast to 12 h only, and labels the PM2.5 stand-in at 24h/48h', () => {
     const line = markerMeaningLabel('aqi', '24h')
+    expect(line).toMatch(/12 h/)
     expect(line).toMatch(/pm2\.5/i)
     expect(line).toMatch(/risk signal/i)
-    expect(line).not.toMatch(/forecast aqi/i)
+    expect(markerMeaningLabel('aqi', '1h')).toMatch(/forecast aqi/i)
   })
 
   it('names the real forecast pollutant and horizon for a non-AQI selection', () => {
