@@ -5,10 +5,19 @@
  */
 import { haversineMeters, POLLUTANT_LABEL } from './incidentRules'
 import { hotspotStatus, type HotspotStatus, type TimeWindowHours } from './overviewRules'
-import type { ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
+import type { AqiForecastPoint, ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
 import type { FreshnessClass } from './dataQualityRules'
 
-export type MapPollutant = 'aqi' | 'pm25' | 'pm10' | 'no2'
+// All 6 pollutants the data model supports (see incidentRules.ts's
+// POLLUTANTS) plus the composite AQI - so2/co/o3 have real ward-level current
+// readings (fetchAllWardsAqi already selects them) but no forecast.py output
+// yet (DEFAULT_ENABLED_POLLUTANTS in ingest/app/forecast.py is still
+// pm25/pm10/no2 only) - forecastPollutantFor() below falls them back to pm25
+// the same way it already does for 'aqi', rather than pretending a forecast
+// exists. nh3 is deliberately excluded: it has no ward-level query anywhere
+// in lib/data.ts yet (only the raw DB row shape), so it isn't "pulled" at
+// this layer the way the other 6 are.
+export type MapPollutant = 'aqi' | 'pm25' | 'pm10' | 'no2' | 'so2' | 'co' | 'o3'
 export type MapTimeMode = 'now' | '1h' | '24h' | '48h'
 
 /** Historical observation slot — 'now' means live readings; the others scrub
@@ -64,20 +73,34 @@ export const CHANGE_DIRECTION_HEX: Record<ChangeDirection, string> = {
   strong_improving: '#16a34a',
 }
 
-/** |Δ| ≤ this → 'stable' (per pollutant). */
+/** |Δ| ≤ this → 'stable' (per pollutant).
+ *  so2/co/o3 thresholds are provisional — scaled off CPCB's published
+ *  "Satisfactory" band width for each pollutant (SO2/O3 in µg/m³, CO in
+ *  mg/m³ per how this schema stores it — see ingest/app/db.py's co_mg
+ *  conversion), the same order-of-magnitude reasoning as pm25/pm10/no2
+ *  above, not measured against real Delhi change data the way those three
+ *  were. Treat as a starting point to revisit once so2/co/o3 have been live
+ *  long enough to see real day-to-day deltas. */
 export const CHANGE_STABLE_THRESHOLD: Record<MapPollutant, number> = {
   aqi: 10,
   pm25: 5,
   pm10: 5,
   no2: 5,
+  so2: 5,
+  co: 0.5,
+  o3: 10,
 }
 
-/** |Δ| between stable and this → 'worsening'/'improving'; above → 'strong_*'. */
+/** |Δ| between stable and this → 'worsening'/'improving'; above → 'strong_*'.
+ *  so2/co/o3: same provisional-threshold caveat as CHANGE_STABLE_THRESHOLD above. */
 export const CHANGE_MODERATE_THRESHOLD: Record<MapPollutant, number> = {
   aqi: 30,
   pm25: 15,
   pm10: 15,
   no2: 15,
+  so2: 15,
+  co: 1.5,
+  o3: 30,
 }
 
 export function classifyChangeDirection(delta: number, pollutant: MapPollutant): ChangeDirection {
@@ -102,13 +125,35 @@ export function changeMarkerBadge(delta: number | null, direction: ChangeDirecti
  *  to the target time are excluded so a 5h-old row never stands in for a −3h slot. */
 export const HISTORICAL_TOLERANCE_MS = 2 * 3_600_000
 
-/** AQI itself is never forecast (forecast.py only forecasts pollutant
- *  concentrations, not the composite index) - every other selectable
- *  pollutant has real forecast.py output. Used everywhere a forecast fetch
- *  or forecast display needs to know which underlying pollutant's real data
- *  to use/label, including when the user has AQI selected. */
+/** AQI itself is never forecast — it's a composite index recomputed from
+ *  several pollutants' sub-indices, not a single measured quantity
+ *  forecast.py could train a model on directly, so it will always fall
+ *  back to pm25's forecast (the pollutant that most often drives Delhi's
+ *  AQI) rather than claim a forecast that can't exist without also
+ *  forecasting every other pollutant and recomputing the AQI formula from
+ *  all of them simultaneously.
+ *
+ *  so2/co/o3 DID fall back to pm25 the same way (Sept 2026, until this
+ *  fix) — but that was a pure gap in DEFAULT_ENABLED_POLLUTANTS/
+ *  db.get_readings_history() in ingest/app/forecast.py+db.py, not a real
+ *  data-availability limit: readings.so2/co/o3 and the forecast_runs/
+ *  forecasts schema already supported all six pollutants; the Python
+ *  pipeline just never trained on so2/co/o3. Now fixed — those three have
+ *  a genuine forecast of their own, same as pm25/pm10/no2. */
 export function forecastPollutantFor(pollutant: MapPollutant): ForecastPollutant {
   return pollutant === 'aqi' ? 'pm25' : pollutant
+}
+
+/** True for every pollutant forecast.py actually forecasts — every
+ *  MapPollutant except 'aqi' (a composite index, see forecastPollutantFor's
+ *  own comment for why that one can't be forecast directly). Distinct from
+ *  `forecastSuppressed` (pipeline health) - this is "does this pollutant
+ *  have a forecast at all", not "is the forecast pipeline healthy right
+ *  now". Callers use this to disable 1h/24h/48h time modes and to keep
+ *  marker labels honest, instead of silently mislabeling a PM2.5 forecast
+ *  (the forecastPollutantFor fallback above) as some other pollutant's own. */
+export function pollutantHasForecast(pollutant: MapPollutant): boolean {
+  return pollutant !== 'aqi'
 }
 
 /** Delhi MVP viewport - the only city this pilot serves today (see
@@ -138,6 +183,35 @@ export const MAP_POLLUTANT_LABEL: Record<MapPollutant, string> = {
   pm25: POLLUTANT_LABEL.pm25,
   pm10: POLLUTANT_LABEL.pm10,
   no2: POLLUTANT_LABEL.no2,
+  so2: POLLUTANT_LABEL.so2,
+  co: POLLUTANT_LABEL.co,
+  o3: POLLUTANT_LABEL.o3,
+}
+
+/** CO is stored/ingested in mg/m³ (see ingest/app/db.py's co_mg conversion);
+ *  every other pollutant here is µg/m³. Marker-copy strings below hard-coded
+ *  "(µg/m³)" for any non-AQI pollutant before CO existed as an option — this
+ *  is the one place that needs to know the exception. */
+export function mapPollutantUnit(pollutant: MapPollutant): string {
+  return pollutant === 'co' ? 'mg/m³' : 'µg/m³'
+}
+
+/** A ward's own reading for whichever of the 7 map pollutants is selected —
+ *  the same per-pollutant field lookup HotspotsRiskTable.tsx's
+ *  CurrentReadingBadge already did inline (moved here, Sept 2026, so a
+ *  second consumer — that table's own row ranking — can share the exact
+ *  same mapping instead of risking a second, differently-wrong copy of it).
+ *  `aqi` maps to ward.aqi, matching every other pollutant's own-named field. */
+export function wardPollutantValue(ward: WardSummary, pollutant: MapPollutant): number | null {
+  switch (pollutant) {
+    case 'aqi': return ward.aqi
+    case 'pm25': return ward.pm25
+    case 'pm10': return ward.pm10
+    case 'no2': return ward.no2
+    case 'so2': return ward.so2
+    case 'co': return ward.co
+    case 'o3': return ward.o3
+  }
 }
 
 /** "Now" reads straight off the ward/station's own live fields; "24h"/"48h"
@@ -169,8 +243,8 @@ export interface WardReadingResult {
   aqiForColor: number | null
   status: HotspotStatus | null
   /** True when the value shown is a different pollutant's real forecast
-   *  used as an honestly-labelled stand-in - only ever true for AQI (which
-   *  forecast.py never computes), never a fabricated AQI forecast. */
+   *  used as an honestly-labelled stand-in - only for AQI, and only for a
+   *  ward with no forecast AQI (aqi_forecasts) at that lead. */
   isProxy: boolean
   /** Ward-level nowcasting (+1h) only - null in every other timeMode.
    *  Anchor provenance is a nowcast-specific concept: at 24h/48h the model
@@ -226,7 +300,23 @@ export function resolveWardReading(
   pollutant: MapPollutant,
   timeMode: MapTimeMode,
   forecast: WardForecastSummary | undefined,
+  aqiForecast?: AqiForecastPoint | null,
 ): WardReadingResult {
+  if (pollutant === 'aqi' && timeMode !== 'now' && aqiForecast) {
+    // The real forecast AQI (CPCB rule over all pollutants' forecasts), so
+    // it takes the ordinary AQI colour scale - no stand-in needed.
+    return {
+      value: aqiForecast.aqi,
+      unit: 'AQI (forecast)',
+      colorMode: 'aqi',
+      aqiForColor: aqiForecast.aqi,
+      status: null,
+      isProxy: false,
+      anchorFreshness: null,
+      anchorObservedAt: null,
+    }
+  }
+
   if (timeMode === 'now') {
     const value =
       pollutant === 'aqi' ? ward.aqi : pollutant === 'pm25' ? ward.pm25 : pollutant === 'pm10' ? ward.pm10 : ward.no2
@@ -315,23 +405,24 @@ export function nearestStationTo(
   return best
 }
 
-export type WardDataStatus = 'station_backed' | 'nearest_station_proxy' | 'no_station_data'
+export type WardDataStatus = 'station_backed' | 'model_estimate' | 'no_station_data'
 
 export const WARD_DATA_STATUS_LABEL: Record<WardDataStatus, string> = {
   station_backed: 'Station-backed',
-  nearest_station_proxy: 'Nearest-station proxy',
+  model_estimate: 'Model estimate',
   no_station_data: 'No station-backed data',
 }
 
-/** Which of the 3 honest states a clicked ward boundary is in - never a
- *  4th "confident guess" state. station_backed: a real station's own
- *  ward_id points at this ward. nearest_station_proxy: no direct station,
- *  but a real distance to the closest one is computable. no_station_data:
- *  neither - the true state for a ward with an unset/invalid centroid, or
- *  when no station anywhere has a valid coordinate. */
+/** Which of the 3 honest states a clicked ward boundary is in.
+ *  station_backed: a real station's own ward_id points at this ward.
+ *  model_estimate: no monitor in the ward; the panel shows the validated
+ *  ward model (ward_estimates: live network x the ward's usual ratio, with
+ *  a 90% range), and the nearest station only as labelled context.
+ *  no_station_data: no station anywhere has a valid coordinate, so there is
+ *  no live network for the estimate either. */
 export function wardDataStatus(hasDirectStation: boolean, hasNearestStation: boolean): WardDataStatus {
   if (hasDirectStation) return 'station_backed'
-  if (hasNearestStation) return 'nearest_station_proxy'
+  if (hasNearestStation) return 'model_estimate'
   return 'no_station_data'
 }
 
@@ -357,12 +448,12 @@ export function markerMeaningLabel(pollutant: MapPollutant, timeMode: MapTimeMod
     // live/historical readings) - both distinctions need to be explicit here
     // since this is the only place this mode's meaning is communicated.
     return pollutant === 'aqi'
-      ? "Ward markers: number shows the predicted PM2.5 concentration 1h from now (µg/m³), used as a risk signal - AQI itself is not forecast; colour still reflects the ward's current AQI category. Station markers are unaffected and continue showing live readings."
+      ? "Ward markers: forecast AQI 1h from now (CPCB method, from all pollutants' forecasts). A ward without one shows its PM2.5 forecast (µg/m³) instead, labelled as a risk signal. Station markers are unaffected and continue showing live readings."
       : `Ward markers: number shows the predicted ${MAP_POLLUTANT_LABEL[pollutant]} concentration 1h from now (µg/m³); colour reflects current AQI. Station markers are unaffected and continue showing live readings.`
   }
   const horizonLabel = timeMode === '24h' ? '24h' : '48h'
   if (pollutant === 'aqi') {
-    return `Markers show ${horizonLabel} forecast PM2.5 peak (µg/m³), used as a risk signal - AQI itself is not forecast.`
+    return `AQI is forecast only up to 12 h ahead (beyond that it did not beat "today's AQI holds" in testing), so markers show the ${horizonLabel} forecast PM2.5 peak (µg/m³) as a risk signal.`
   }
   return `Markers show ${horizonLabel} forecast peak for ${MAP_POLLUTANT_LABEL[pollutant]} (µg/m³).`
 }

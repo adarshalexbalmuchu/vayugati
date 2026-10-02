@@ -29,7 +29,10 @@ const EXAMPLE_QUESTIONS = [
   'Switch to PM2.5, last 24 hours',
 ]
 
-function pollutantValue(entity: { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null }, pollutant: MapPollutant): number | null {
+function pollutantValue(
+  entity: { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null; so2: number | null; co: number | null; o3: number | null },
+  pollutant: MapPollutant,
+): number | null {
   return entity[pollutant]
 }
 

@@ -58,7 +58,19 @@ MODEL_VERSION_DIURNAL = "diurnal_persistence_v2"
 # persistence flaky across environments (passed locally, failed in CI) since
 # "beats persistence by >=5%" is a threshold a marginal difference can flip.
 LGB_RANDOM_STATE = 42
-DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2")
+# Extended Sept 2026 from ("pm25", "pm10", "no2") to all six pollutants this
+# platform tracks. This was a pure gap, not a real data-availability limit:
+# readings.so2/co/o3 (db.get_readings_history()) and the forecast_runs/
+# forecasts schema's `pollutant IN ('pm25','pm10','no2','so2','co','o3')`
+# CHECK constraint already supported all six — confirmed live this session,
+# ~50-61k non-null so2/co/o3 rows exist, comparable in volume to pm25/no2,
+# not sparse. The whole pipeline below (_forecast_ward_pollutant,
+# pollutant_thresholds, the forecast_runs/forecasts write) is already
+# pollutant-parameterized and needed no other change. This is what took
+# forecastPollutantFor() in web/src/lib/mapRules.ts from "so2/co/o3 always
+# fall back to displaying PM2.5's forecast, labelled (proxy)" to each having
+# a genuine forecast of its own.
+DEFAULT_ENABLED_POLLUTANTS = ("pm25", "pm10", "no2", "so2", "co", "o3")
 DEFAULT_MIN_MAE_IMPROVEMENT_PCT = 5.0
 # Gaussian fallback Z-score (80% two-sided interval) — used only when the
 # quantile models below cannot be trained (diurnal fallback path).
@@ -75,6 +87,23 @@ UNCERTAINTY_Z = 1.28
 # `forecasts.horizon_ts` values `future_idx` already produces, not a new
 # horizon added to the validation set.
 NOWCAST_TARGET_HOURS = 1
+# History the forecaster reads. 90 days (was 30) since forecasts moved to
+# readings_hourly: the global model pools wards and needs a validation window
+# of its own (forecast_global.VALIDATION_DAYS) on top of the training span.
+GLOBAL_HISTORY_DAYS = 90
+# The global forecaster trains on every season it has seen (forecast lab, Oct
+# 2026: winter PM2.5 error -5.5 to -6.6% at 12-48 h vs a 90-day window). Older
+# hours come from the local archives (history_archive.py, weather_archive.py),
+# not the database.
+GLOBAL_TRAIN_DAYS = 730
+# PM2.5's severe level: a coarse "elevated" flag, never a precise probability
+# (lab: high classifier probabilities were overconfident at this level).
+SEVERE_THRESHOLD = {"pm25": 250.0}
+# A forecast whose origin (the ward's newest observation) is older than this
+# is not published. During an upstream outage the forecaster otherwise wrote
+# "next 48h" runs starting two days in the past, dated today, which also
+# cleared the UI's "forecast stale" banner (Sept 2026).
+MAX_ORIGIN_AGE_H = 6
 NOWCAST_TOLERANCE_MINUTES = 30
 NOWCAST_BACKTEST_WINDOW_DAYS = 30
 MIN_NOWCAST_VALIDATION_SAMPLES = 72  # ~3 days at one backtest-origin/hour, comfortably below the ~700 a 30-day blocked backtest yields
@@ -91,9 +120,18 @@ STAGNATION_THRESHOLD_MS: float = 2.0
 
 # Diwali main-day lookup (Indian lunar calendar; source: Press Information Bureau).
 # A ±DIWALI_WINDOW_DAYS window around each date is flagged as is_diwali=1.
-# Literature: Kumar et al. (2021) Environ. Res.; Tiwari et al. (2019) Sci. Rep.;
-# Singh et al. (2022) ACP — firecracker burning peaks PM2.5 5–10× above the
-# seasonal background; ML models systematically underpredict without this flag.
+# Firecracker burning produces a large, well-documented PM2.5 spike relative
+# to the seasonal background — real published figures vary widely year to
+# year (e.g. multi-city Indo-Gangetic-Plain studies reporting 3-10x over the
+# 24h guideline in some years, one extreme site reporting ~16x, and one
+# Delhi-specific 2021 measurement showing roughly 2.8x). "5-10x" here is a
+# reasonable middle estimate for that range, not a figure traceable to one
+# specific paper (revised Sept 2026 — the previous "Kumar et al. (2021)
+# Environ. Res.; Tiwari et al. (2019) Sci. Rep.; Singh et al. (2022) ACP"
+# citations could not be independently verified as the specific source of
+# this number and have been removed rather than repeated as confirmed).
+# Regardless of the exact multiplier in any given year, ML models
+# systematically underpredict without this flag.
 DIWALI_WINDOW_DAYS: int = 2
 _DIWALI_MAIN_DAYS: frozenset[tuple[int, int, int]] = frozenset({
     (2022, 10, 24), (2023, 11, 12), (2024, 11, 1),
@@ -120,6 +158,7 @@ def _forecasting_config(city_row: dict) -> dict:
         "enabled_pollutants": cfg.get("enabled_pollutants") or list(DEFAULT_ENABLED_POLLUTANTS),
         "horizons_hours": tuple(cfg.get("horizons_hours") or HORIZONS_H),
         "min_mae_improvement_pct": cfg.get("min_mae_improvement_pct", DEFAULT_MIN_MAE_IMPROVEMENT_PCT),
+        "retraining_frequency_hours": cfg.get("retraining_frequency_hours", 24),
         "pollutant_thresholds": ((city_row.get("config") or {}).get("anomaly_detection") or {}).get(
             "pollutant_thresholds", {}
         ),
@@ -278,19 +317,38 @@ def _make_features(
 
       temp_lag24 — 24h surface temperature change (ΔT/24h). A falling ΔT signals
         the radiative-cooling onset that precedes nocturnal inversion and PBLH
-        collapse (Aerosol Sci Tech 2025; JGR Atmospheres 2021). Complements the
-        level features `temp_c` and `pblh`.
+        collapse. Complements the level features `temp_c` and `pblh`.
 
-      pblh — boundary layer height (m). Inverse power-law with PM2.5; top-5 SHAP
-        importance in every IGP ML study 2022–2025 (AMT 2019, JGR 2021).
+      pblh — boundary layer height (m). A lower boundary layer traps
+        emissions closer to the surface, giving PM2.5 an inverse relationship
+        with PBLH that is well-established qualitatively (independently
+        confirmed against real published PM2.5/PBLH data during a Sept 2026
+        literature review — e.g. PM2.5 of ~94 µg/m³ at PBLH≈393m in winter vs.
+        ~10 µg/m³ at PBLH≈1970m in summer at comparable sites, and PBLH
+        ranking as a top-importance ML feature in independent studies).
+        NOTE (Sept 2026 correction): the specific citations previously here
+        ("AMT 2019", "JGR Atmospheres 2021", journal+year only, no author/
+        title) could not be traced to verifiable, specific papers during that
+        review and have been removed rather than left implying a confirmed
+        source. The underlying scientific claim is credible; the citation
+        format was not.
 
       pblh_trend — 3h PBLH change (Δm over 3h). A collapsing PBLH (−200 m/3h)
         predicts a spike even when the current level is moderate; the rate of
-        change is more actionable than the level alone (JGR Atmospheres 2021).
+        change is more actionable than the level alone. (Same Sept 2026 note
+        as `pblh` above — the prior "JGR Atmospheres 2021" citation here was
+        removed as unverifiable, not because the underlying claim is doubted.)
 
       vc — ventilation coefficient = PBLH × wind_speed (m²/s). VC < 6000 m²/s
-        is India's SAFAR/CPCB "unfavourable dispersion" threshold (Theoretical
-        and Applied Climatology 2025, IMDAA reanalysis).
+        is used here as an "unfavourable dispersion" threshold, following the
+        general order-of-magnitude convention referenced in Indian
+        meteorological/SAFAR-adjacent literature. NOTE (Sept 2026): the
+        specific "Theoretical and Applied Climatology 2025" citation
+        previously here could not be independently verified as a specific,
+        traceable paper during a literature review and has been removed;
+        treat the 6000 m²/s threshold as a reasonable, literature-consistent
+        working value pending a citable source, not a confirmed official
+        SAFAR/CPCB published number.
 
       vc_unfavourable — binary: 1 when VC < 6000 m²/s. Captures the non-linear
         threshold response that the continuous vc feature cannot: PM2.5
@@ -330,9 +388,19 @@ def _make_features(
 
       fire_count_lag1d — VIIRS SNPP NRT regional active-fire pixel count for
         Punjab + Haryana (distance > 50 km from Delhi), 1 calendar day prior.
-        Stubble burning contributes 30–60% of Delhi's PM2.5 during Oct 15 –
-        Nov 25; models without this feature systematically under-predict
-        transport episodes (Gupta et al. 2021 JGR; Singh et al. 2022 ACP).
+        Stubble burning's contribution to Delhi's PM2.5 during Oct 15 – Nov 25
+        is NOT a fixed number — it is highly year/wind-dependent: Cusworth et
+        al. (2020) ES&T reports 7–78% (median ~20%); the npj Climate and
+        Atmospheric Science (2025) CUPI-G+WRF-Chem study found only ~14% for
+        Oct–Nov 2022 specifically because wind alignment was poor that year
+        (fire counts ≠ surface PM2.5 delivered to Delhi). Regardless of the
+        exact fraction in any given year, models without this feature
+        systematically under-predict transport episodes when a burning-and-
+        favorable-wind event does occur — that qualitative signal is why the
+        feature is included, not a specific percentage. (Revised Sept 2026 —
+        the original "30–60%" figure here overstated a contested range; see
+        vayutrace_kernel.py's own regional_fraction_nowcast() for the fuller,
+        already-corrected literature treatment of this exact question.)
         Fetched daily; NaN outside the FIRMS key window or before first fetch.
 
       fire_count_lag2d — same, 2 calendar days prior. Smoke from Punjab takes
@@ -957,9 +1025,18 @@ def _forecast_ward_pollutant(
         # bounds are too narrow at the high tail (episodic events) and too wide
         # in clean air. LightGBM quantile objective captures this asymmetry
         # directly, without assuming any parametric form.
-        # Literature: Papadopoulos et al. (2022) Environ. Sci. Technol.;
-        # Mallet et al. (2021) ACP; STOTEN 2023 — all show 15–20% better
-        # coverage vs. Gaussian for right-skewed AQ distributions.
+        # Quantile regression (pinball-loss-based prediction intervals) is a
+        # well-established, published alternative to naive symmetric Gaussian
+        # bounds for skewed distributions like PM2.5 — independently
+        # confirmed during a Sept 2026 literature review as a real, credible,
+        # and preferred technique in the air-quality-forecasting literature.
+        # NOTE: the specific "Papadopoulos et al. (2022) Environ. Sci.
+        # Technol.", "Mallet et al. (2021) ACP", and "STOTEN 2023" citations
+        # previously here (including the specific "15-20% better coverage"
+        # figure attributed to them) could not be traced to verifiable
+        # papers during that review and have been removed. The underlying
+        # methodological choice is sound; those specific citations were not
+        # independently confirmable and should not be repeated as verified.
         try:
             model_q10 = lgb.LGBMRegressor(objective="quantile", alpha=0.10, **_lgb_kw)
             model_q10.fit(feats[FEATURE_COLS], feats["y"])
@@ -1027,6 +1104,107 @@ def _forecast_ward_pollutant(
         "nowcast_target_ts": nowcast_target_ts,
         "nowcast_status": nowcast_status,
         "nowcast_candidates": nowcast_candidates,
+    }
+
+
+def _forecast_ward_pollutant_global(
+    ward: dict,
+    pollutant: str,
+    readings_df: pd.DataFrame,
+    served: dict,
+    gm,
+    threshold: float | None,
+) -> dict | None:
+    """Result dict (same shape as _forecast_ward_pollutant) from the global,
+    horizon-gated forecaster (forecast_global.py). Its forecast is of TOTAL
+    concentration; it is expressed here as an offset from the city median
+    at the origin (latest_baseline), because run() writes
+    predicted = latest_baseline + excess and every downstream consumer
+    (bands, nowcast, forecasts rows) is built on that decomposition."""
+    from . import forecast_global
+
+    ward_id = int(ward["id"])
+    df = _with_local_excess(readings_df)
+    w = _ward_series(df, ward_id)
+    if w.empty:
+        return None
+    origin = served["origin"]
+    latest_baseline = float(w["baseline"].get(origin, w["baseline"].iloc[-1]))
+    future_idx = served["future_idx"]
+    preds = served["total"] - latest_baseline
+    preds_q10 = served["q10"] - latest_baseline
+    preds_q90 = served["q90"] - latest_baseline
+    if np.isnan(preds).any():
+        return None
+
+    n = len(w)
+    expected_hours = max((w.index.max() - w.index.min()).total_seconds() / 3600.0, 1)
+    completeness = min(1.0, float(w["value"].notna().sum()) / expected_hours)
+    data_quality_status = "ok" if completeness >= 0.5 else "stale_inputs"
+
+    validation_metrics, max_validated = forecast_global.ward_validation_metrics(
+        gm, ward_id, HORIZONS_H, lambda m, a: _threshold_metrics(m, a, threshold))
+    beats_persistence = max_validated is not None
+    model_served = any(src == "model" for src in served["source"])
+    confidence = 0.5
+    if beats_persistence and max_validated:
+        confidence = float(np.clip(0.4 + 0.1 * HORIZONS_H.index(max_validated), 0.4, 0.9))
+    residual_std = (validation_metrics.get(str(HORIZONS_H[-1])) or {}).get("rmse")
+
+    excess_hist = list(w["local_excess"].astype(float).to_numpy())
+    generated_at = datetime.now(timezone.utc)
+    nowcast_idx, nowcast_tolerance_ok = _select_nowcast_point(future_idx, generated_at)
+    nowcast_target_ts = generated_at + timedelta(hours=NOWCAST_TARGET_HOURS)
+    nowcast_candidates: dict[str, dict] = {}
+    if nowcast_tolerance_ok:
+        by_hour_nowcast = w["local_excess"].astype(float).groupby(w.index.hour).mean()
+        use_model_1h = served["source"][0] == "model"
+        nowcast_candidates = _nowcast_candidate_predictions(
+            excess_hist, future_idx, by_hour_nowcast, nowcast_idx,
+            lgb_point_pred=preds if use_model_1h else None,
+            lgb_lower=preds_q10 if use_model_1h else None,
+            lgb_upper=preds_q90 if use_model_1h else None,
+        )
+    if nowcast_idx == -1:
+        nowcast_status = "stale_anchor"
+    elif not nowcast_tolerance_ok:
+        nowcast_status = "no_point_within_tolerance"
+    elif not nowcast_candidates:
+        nowcast_status = "no_eligible_candidate"
+    else:
+        nowcast_status = "available"
+
+    return {
+        "ward_id": ward_id,
+        "pollutant": pollutant,
+        # forecast_runs.method is CHECK-constrained to these two values; the
+        # model_version says which forecaster produced the run.
+        "method": "lightgbm" if model_served else "diurnal_persistence",
+        "model_version": forecast_global.MODEL_VERSION_GLOBAL,
+        "generated_at": generated_at,
+        "training_period_start": gm.train_start.to_pydatetime(),
+        "training_period_end": gm.train_end.to_pydatetime(),
+        "training_rows": gm.n_rows,
+        "data_completeness": round(completeness, 3),
+        "data_quality_status": data_quality_status,
+        "validation_metrics": validation_metrics,
+        "max_validated_horizon_hours": max_validated,
+        "beats_persistence": beats_persistence,
+        "latest_baseline": latest_baseline,
+        "future_idx": future_idx,
+        "preds": preds,
+        "preds_q10": preds_q10,
+        "preds_q90": preds_q90,
+        "confidence": confidence,
+        "residual_std": residual_std,
+        "nowcast_idx": nowcast_idx,
+        "nowcast_tolerance_ok": nowcast_tolerance_ok,
+        "nowcast_target_ts": nowcast_target_ts,
+        "nowcast_status": nowcast_status,
+        "nowcast_candidates": nowcast_candidates,
+        "exceed_threshold": threshold if threshold in served.get("p_exceed", {}) else None,
+        "exceed_probs": served.get("p_exceed", {}).get(threshold),
+        "severe_elevated": served.get("severe_elevated"),
     }
 
 
@@ -1110,6 +1288,44 @@ def _score_pending_nowcast_shadows(hourly_by_pollutant: dict[str, pd.DataFrame])
     return scored
 
 
+def _long_weather(weather_df: pd.DataFrame) -> pd.DataFrame:
+    """The weather table (from 2026-07-14) plus the local ERA5 archive for
+    older hours, so the long-history forecaster sees origin weather throughout."""
+    from . import weather_archive
+    try:
+        first = weather_df["ts"].min() if not weather_df.empty else pd.Timestamp.now(tz="UTC")
+        old = weather_archive.frame_before(first)
+    except Exception:
+        log.warning("weather archive unreadable; training without older weather", exc_info=True)
+        return weather_df
+    if old.empty:
+        return weather_df
+    return pd.concat([old, weather_df], ignore_index=True)
+
+
+def _forecast_weather_frames(city_wards: list[dict], readings: list[dict]):
+    """(training frames, serving frames) of ECMWF forecasts for the wards with
+    readings, or (None, None) if Open-Meteo cannot be reached: the forecaster
+    then trains and serves without forecast-weather inputs, as before."""
+    from . import forecast_weather
+    from .vayutrace_kernel import boundary_area_centroid
+    with_data = {r["ward_id"] for r in readings}
+    cells = {}
+    for w in city_wards:
+        if w["id"] not in with_data:
+            continue
+        c = (w["lat"], w["lng"]) if w.get("lat") is not None else boundary_area_centroid(w.get("boundary"))
+        if c:
+            cells[w["id"]] = forecast_weather.cell(float(c[0]), float(c[1]))
+    if not cells:
+        return None, None
+    try:
+        return forecast_weather.Frames(cells, live=False), forecast_weather.Frames(cells, live=True)
+    except Exception:
+        log.warning("forecast weather unavailable; forecasting without it this cycle", exc_info=True)
+        return None, None
+
+
 def run(city_code: str | None = None) -> dict:
     """Compute and store a validated, multi-pollutant forecast per ward.
     Idempotent (replaces per ward+pollutant)."""
@@ -1132,8 +1348,17 @@ def run(city_code: str | None = None) -> dict:
         # Fetch once per city (not per pollutant) — all three pollutants read
         # the same 30-day window; re-fetching inside the loop triples the
         # number of large paginated DB requests for no benefit.
-        readings = db.get_readings_history(hours=24 * 30)
-        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * 30))
+        # Real hourly values (readings_hourly), not `readings`: CPCB's rows
+        # there are 24h averages since 2026-08-11, and a forecaster trained
+        # on a 24h running mean learns a smoothed, lagged series.
+        readings_long = db.get_hourly_history(hours=24 * GLOBAL_TRAIN_DAYS, include_archive=True)
+        # per-ward fallback keeps its 90-day window, counted back from the newest reading
+        newest = max((pd.Timestamp(r["ts"]) for r in readings_long), default=None)
+        readings = readings_long if newest is None else [
+            r for r in readings_long if pd.Timestamp(r["ts"]) >= newest - pd.Timedelta(days=GLOBAL_HISTORY_DAYS)]
+        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * GLOBAL_HISTORY_DAYS))
+        weather_long = _long_weather(weather_df)
+        F_train, F_live = _forecast_weather_frames(city_wards, readings_long)
         last_forecast_times = db.get_last_forecast_times(city["id"])
         # NO2 hourly series (built once per city) — used as a co-pollutant lag
         # feature when forecasting PM2.5 and PM10. Passed as None when NO2 is
@@ -1144,12 +1369,33 @@ def run(city_code: str | None = None) -> dict:
         # Empty Series when FIRMS key is absent or fire_counts table is empty.
         fire_counts_series = _daily_fire_counts(db.get_fire_counts_history(days=45))
 
+        served_by_pollutant: dict[str, dict] = {}   # for the forecast AQI (forecast_aqi.py)
         for pollutant in cfg["enabled_pollutants"]:
             readings_df = _hourly_ward_pollutant(readings, pollutant)
             if readings_df.empty:
                 log.info("no %s readings yet for city %s — nothing to forecast", pollutant, city["city_code"])
                 continue
             threshold = cfg["pollutant_thresholds"].get(pollutant)
+
+            # Global, horizon-gated forecaster (forecast_global.py): one pooled
+            # model per pollutant, refit at most every retraining_frequency_hours.
+            # Wards it cannot serve fall back to the per-ward path below.
+            served_global: dict = {}
+            gm = None
+            try:
+                from . import forecast_global
+                readings_df_long = _hourly_ward_pollutant(readings_long, pollutant)
+                severe = SEVERE_THRESHOLD.get(pollutant)
+                gm = forecast_global.fit_cached(
+                    pollutant, readings_df_long, weather_long, cfg["min_mae_improvement_pct"],
+                    max_age_h=cfg.get("retraining_frequency_hours", 24), F=F_train,
+                    thresholds={"alert": threshold, "severe": severe})
+                if gm is not None:
+                    served_global = forecast_global.serve(gm, readings_df_long, weather_long, F=F_live,
+                                                          severe_threshold=severe)
+                    served_by_pollutant[pollutant] = served_global
+            except Exception:
+                log.exception("global forecaster failed for %s — per-ward models only", pollutant)
 
             for ward in city_wards:
                 # Skip retraining if no new readings have arrived since the last
@@ -1167,11 +1413,23 @@ def run(city_code: str | None = None) -> dict:
                                 ward["id"], pollutant, last_forecast.isoformat(),
                             )
                             continue
-                result = _forecast_ward_pollutant(
-                    ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
-                    no2_readings_df=no2_readings_df if pollutant != "no2" else None,
-                    fire_counts=fire_counts_series if not fire_counts_series.empty else None,
-                )
+                ward_obs = readings_df[readings_df["ward_id"] == ward["id"]]
+                if not ward_obs.empty:
+                    origin_age_h = (datetime.now(timezone.utc) - pd.Timestamp(ward_obs["ts"].max())).total_seconds() / 3600
+                    if origin_age_h > MAX_ORIGIN_AGE_H:
+                        summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant,
+                                                   "reason": f"stale_origin_{origin_age_h:.0f}h"})
+                        continue
+                result = None
+                if ward["id"] in served_global:
+                    result = _forecast_ward_pollutant_global(
+                        ward, pollutant, readings_df, served_global[ward["id"]], gm, threshold)
+                if result is None:
+                    result = _forecast_ward_pollutant(
+                        ward, pollutant, readings_df, weather_df, threshold, cfg["min_mae_improvement_pct"],
+                        no2_readings_df=no2_readings_df if pollutant != "no2" else None,
+                        fire_counts=fire_counts_series if not fire_counts_series.empty else None,
+                    )
                 if result is None:
                     summary["skipped"].append({"ward_id": ward["id"], "pollutant": pollutant})
                     continue
@@ -1266,11 +1524,25 @@ def run(city_code: str | None = None) -> dict:
                         "upper_bound": upper_bound,
                         "forecast_run_id": run_id,
                         "is_nowcast_point": is_nowcast_row,
+                        # `forecasts.nowcast_backtest_passed` is NOT NULL default
+                        # false — must be present with a real bool on every row,
+                        # not just the nowcast row. A bulk PostgREST insert
+                        # normalizes missing keys across the batch to explicit
+                        # JSON null (not "omit, use column default"), so leaving
+                        # this out for non-nowcast rows sent an explicit null
+                        # and violated the NOT NULL constraint on every insert.
+                        "nowcast_backtest_passed": nowcast_backtest_passed if is_nowcast_row else False,
                     }
+                    probs, sev = result.get("exceed_probs"), result.get("severe_elevated")
+                    if probs is not None and i < len(probs) and np.isfinite(probs[i]):
+                        row["exceed_threshold"] = result["exceed_threshold"]
+                        row["exceed_prob"] = round(float(probs[i]), 3)
+                    else:
+                        row["exceed_threshold"] = row["exceed_prob"] = None
+                    row["severe_risk"] = "elevated" if sev is not None and i < len(sev) and bool(sev[i]) else None
                     if is_nowcast_row:
                         row["nowcast_method"] = nowcast_method
                         row["nowcast_backtest_samples"] = nowcast_backtest_samples
-                        row["nowcast_backtest_passed"] = nowcast_backtest_passed
                     if pollutant == "pm25":
                         # legacy column, kept populated for backward
                         # compatibility with fetchForecast/ForecastChart.
@@ -1303,6 +1575,19 @@ def run(city_code: str | None = None) -> dict:
                 summary["runs"] += 1
                 if result["beats_persistence"]:
                     summary["beats_persistence"] += 1
+
+        # Forecast AQI from all pollutants' forecasts, by CPCB's own rule.
+        try:
+            from . import forecast_aqi
+            observed = {p: {w: g.set_index("ts")["value"].sort_index()
+                            for w, g in _hourly_ward_pollutant(readings, p).groupby("ward_id")}
+                        for p in forecast_aqi.POLLUTANTS}
+            summary["aqi"] = forecast_aqi.publish(
+                [w["id"] for w in city_wards if any(w["id"] in observed[p] for p in observed)],
+                observed, served_by_pollutant, datetime.now(timezone.utc), MAX_ORIGIN_AGE_H,
+                db.replace_aqi_forecasts)
+        except Exception:
+            log.exception("forecast AQI failed for city %s", city["city_code"])
 
         # Part C: score shadow predictions whose valid_at has now passed,
         # once per city (using that city's own freshly-fetched readings —

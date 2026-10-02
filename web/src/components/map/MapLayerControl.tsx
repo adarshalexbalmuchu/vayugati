@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, Layers2 } from 'lucide-react'
 
 export type MapLayerKey =
@@ -20,10 +20,7 @@ export type MapLayerKey =
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
-  'aqiExtrusion',
   'aqiHeatmap',
-  'buildings3D',
-  'vegetation3D',
   'landUse',
   'windFlow',
   'wardMarkers',
@@ -34,17 +31,26 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'sensorFreshness',
   'predictedHotspots',
   'sourceAttribution',
+  'aqiExtrusion',
+  'buildings3D',
+  'vegetation3D',
 ]
 
 /** Groups define the UI structure. Order within each group matches LAYER_ORDER.
  *  `subtitle` marks a group as something other than a set of independent
- *  layers — currently only "Highlights", whose 3 entries recolor/decorate
- *  markers that another layer already rendered, rather than adding new
- *  geometry to the map. */
+ *  layers — "Highlights" recolors markers another layer already rendered
+ *  rather than adding new geometry; "Visual style" is 3D decoration with no
+ *  analytical payoff (extruded buildings/vegetation/AQI-as-height) — kept
+ *  working (nothing deleted) but demoted out of "Air quality" so it stops
+ *  sitting at equal visual weight next to genuinely analytical layers like
+ *  ward boundaries, the AQI heat map, and land use zones (Sept 2026 — a
+ *  review of this page from a researcher/policy-maker's perspective flagged
+ *  these three as visual flourish that competes for attention with real
+ *  data layers, not that they're broken or should be removed). */
 const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
-    keys: ['wardBoundaries', 'aqiExtrusion', 'aqiHeatmap', 'buildings3D', 'vegetation3D', 'landUse', 'windFlow', 'wardMarkers', 'stations'],
+    keys: ['wardBoundaries', 'aqiHeatmap', 'landUse', 'windFlow', 'wardMarkers', 'stations'],
   },
   {
     label: 'Operations',
@@ -58,6 +64,11 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
     label: 'Highlights',
     subtitle: 'Recolors existing markers — not separate layers',
     keys: ['sensorFreshness', 'predictedHotspots', 'sourceAttribution'],
+  },
+  {
+    label: 'Visual style',
+    subtitle: '3D decoration only — no analytical value beyond what the layers above already show',
+    keys: ['aqiExtrusion', 'buildings3D', 'vegetation3D'],
   },
 ]
 
@@ -153,11 +164,22 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   citizenReports: false,
   sensorFreshness: false,
   transitActivity: false,
-  aqiExtrusion: false,
+  // On by default (Sept 2026) — the page should load already in its 3D
+  // perspective per direct request; this is the only "Visual style" layer
+  // that also drives the initial camera pitch/bearing (see MapView.tsx's
+  // show3D), not just decorative geometry, so it's the one exception to the
+  // "Visual style" group's opt-in-by-default rule above.
+  aqiExtrusion: true,
   windFlow: false,
-  buildings3D: true,
+  // Sept 2026: demoted from default-on to default-off along with the
+  // "Visual style" regrouping above — these render real extruded 3D
+  // geometry at real cost (building footprints at zoom 13+ especially)
+  // for a page whose stated audience needs legible spatial data, not a
+  // skyline. Still fully available, just opt-in like every other
+  // non-essential layer instead of loading unasked-for on every visit.
+  buildings3D: false,
   aqiHeatmap: true,
-  vegetation3D: true,
+  vegetation3D: false,
   landUse: false,
 }
 
@@ -200,6 +222,10 @@ export default function MapLayerControl({
   vegetation3DAvailable = false,
   landUseAvailable = false,
   forecastSuppressed = false,
+  open,
+  onOpenChange,
+  hideTrigger = false,
+  onActiveCountChange,
 }: {
   layers: Record<MapLayerKey, boolean>
   onToggle: (key: MapLayerKey) => void
@@ -220,10 +246,37 @@ export default function MapLayerControl({
   /** True when a vector basemap is loaded — same gate as buildings. */
   landUseAvailable?: boolean
   forecastSuppressed?: boolean
+  /** Controlled open state (Sept 2026 addition) — lets a caller (MapPage's
+   *  header-embedded trigger button) drive whether the panel shows,
+   *  instead of this component's own internal button toggling it. Falls
+   *  back to internal state when omitted, so existing standalone usage is
+   *  unaffected. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Skip rendering this component's own trigger button entirely — for
+   *  when the caller renders its own trigger elsewhere (the header) and
+   *  only wants the expanded panel's content from this component. */
+  hideTrigger?: boolean
+  /** Reports the same activeCount this component's own trigger badge would
+   *  show, so a caller rendering its own trigger (hideTrigger=true) can
+   *  display the identical number without recomputing the availability-
+   *  gating logic (effectiveMeta) itself — a second, separately-computed
+   *  count would risk drifting out of sync with this one. */
+  onActiveCountChange?: (count: number) => void
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(LAYER_GROUPS.map((g) => [g.label, g.label !== 'Air quality'])),
   )
+
+  // Whole-panel open/closed (Sept 2026 fix) — this used to always render
+  // full-height, permanently covering the entire left edge of the map
+  // canvas from top to bottom. A slim button now stands in for it until a
+  // viewer actually wants to touch layer settings, so map area isn't spent
+  // on a settings panel by default. Same collapse-to-icon pattern the
+  // per-group ChevronRight/ChevronDown toggles below already use.
+  const [internalPanelOpen, setInternalPanelOpen] = useState(false)
+  const panelOpen = open ?? internalPanelOpen
+  const setPanelOpen = onOpenChange ?? setInternalPanelOpen
 
   // Compute effective meta for each key (same logic as before, now used in
   // grouped rendering below).
@@ -266,17 +319,53 @@ export default function MapLayerControl({
     return meta.available && layers[key]
   }).length
 
+  useEffect(() => {
+    onActiveCountChange?.(activeCount)
+  }, [activeCount, onActiveCountChange])
+
+  if (!panelOpen) {
+    // hideTrigger (Sept 2026 addition): when the caller (MapPage's header)
+    // renders its own trigger button, this component has nothing left to
+    // show while closed.
+    if (hideTrigger) return null
+    return (
+      <button
+        type="button"
+        onClick={() => setPanelOpen(true)}
+        title="Show map layers"
+        aria-label="Show map layers"
+        aria-expanded={false}
+        className="focus-ring flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-card transition hover:bg-slate-50"
+      >
+        <Layers2 className="h-3.5 w-3.5 text-accent-600" strokeWidth={2} aria-hidden />
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Layers</span>
+        {activeCount > 0 && (
+          <span className="rounded-full bg-accent-100 px-1.5 py-0.5 text-[9px] font-semibold text-accent-700">
+            {activeCount}
+          </span>
+        )}
+      </button>
+    )
+  }
+
   return (
     <div className="w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-card">
-      <div className="flex items-center gap-1.5 px-1.5 py-1">
+      <button
+        type="button"
+        onClick={() => setPanelOpen(false)}
+        aria-expanded={true}
+        title="Hide map layers"
+        className="focus-ring flex w-full items-center gap-1.5 rounded px-1.5 py-1 hover:bg-slate-50"
+      >
         <Layers2 className="h-3 w-3 text-accent-600" strokeWidth={2} aria-hidden />
-        <p className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Layers</p>
+        <p className="flex-1 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Layers</p>
         {activeCount > 0 && (
           <span className="rounded-full bg-accent-100 px-1.5 py-0.5 text-[9px] font-semibold text-accent-700">
             {activeCount} active
           </span>
         )}
-      </div>
+        <ChevronDown className="h-2.5 w-2.5 flex-shrink-0 text-slate-400" aria-hidden />
+      </button>
 
       {LAYER_GROUPS.map((group) => {
         const collapsed = collapsedGroups[group.label]

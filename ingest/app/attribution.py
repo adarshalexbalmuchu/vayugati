@@ -36,7 +36,9 @@ def run() -> dict:
         "skipped": [],
     }
 
-    readings = db.get_readings_history(hours=24 * 30)
+    # Hourly values: the pollution rose pairs each hour's PM2.5 with that
+    # hour's wind, which a 24h running mean (CPCB rows in `readings`) blurs.
+    readings = db.get_hourly_history(hours=24 * 30)
     weather = db.get_weather_history(hours=24 * 30)
     if not readings or not weather:
         log.warning("insufficient readings/weather for attribution")

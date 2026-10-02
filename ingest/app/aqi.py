@@ -85,6 +85,43 @@ NH3_BREAKPOINTS = [
 ]
 
 
+SUB_INDEX_BREAKPOINTS: dict[str, list[tuple]] = {
+    "pm25": PM25_BREAKPOINTS,
+    "pm10": PM10_BREAKPOINTS,
+    "no2": NO2_BREAKPOINTS,
+    "so2": SO2_BREAKPOINTS,
+    "o3": O3_BREAKPOINTS,
+    "co": CO_BREAKPOINTS_MG,
+    "nh3": NH3_BREAKPOINTS,
+}
+
+
+def concentration_from_sub_index(pollutant: str, index: float | None) -> float | None:
+    """Inverse of _sub_index: a CPCB AQI sub-index -> the concentration it
+    stands for (ug/m3; mg/m3 for CO), by the same piecewise-linear breakpoints.
+
+    Why this exists: data.gov.in's real-time feed publishes each pollutant's
+    SUB-INDEX in avg_value/min_value/max_value, not a concentration. Measured
+    Sept 2026 against OpenAQ's hourly archive for the same Delhi stations:
+    the feed equals the NAQI sub-index of the trailing-24h mean concentration
+    (NO2: ratio 1.25 below 80 ug/m3 falling to 1.14 at 130-180, exactly the
+    breakpoint slopes; PM2.5: 1.67 below 60, 2.0 at 60-90; corr 0.98-0.99).
+
+    Sub-indices are published as integers, so a recovered concentration is
+    exact to within half an index step of its bucket (e.g. +/-0.4 ug/m3 for
+    NO2 below 80). Returns None for an unknown pollutant or missing value.
+    """
+    bps = SUB_INDEX_BREAKPOINTS.get(pollutant)
+    if bps is None or index is None:
+        return None
+    if index <= 0:
+        return 0.0
+    for c_lo, c_hi, i_lo, i_hi in bps:
+        if index <= i_hi:
+            return c_lo + (index - i_lo) * (c_hi - c_lo) / (i_hi - i_lo)
+    return float(bps[-1][1])  # index above 500 -> top of the scale
+
+
 def co_ug_to_mg(value: float) -> float:
     """Convert CO from µg/m³ to mg/m³ before passing to compute_aqi."""
     return value / 1000.0
@@ -131,3 +168,74 @@ def compute_aqi(
     if nh3 is not None:
         subs.append(_sub_index(nh3, NH3_BREAKPOINTS))
     return max(subs) if subs else None
+
+
+def compute_cpcb_aqi(
+    pm25: float | None,
+    pm10: float | None,
+    no2: float | None = None,
+    so2: float | None = None,
+    o3: float | None = None,
+    co_mg: float | None = None,
+    nh3: float | None = None,
+) -> int | None:
+    """The AQI CPCB would report: compute_aqi, but only when at least THREE
+    pollutants are available and one of them is PM2.5 or PM10 (CPCB National
+    AQI rule). Otherwise None: an index from, say, CO and O3 alone reads as
+    "Good" on a day PM made the air Poor. That produced false dips in stored
+    AQI (Sept 2026), e.g. a Mundka row with only SO2/CO/O3 stored AQI 49
+    between hours of ~120.
+
+    compute_aqi stays the raw max-sub-index helper."""
+    vals = [pm25, pm10, no2, so2, o3, co_mg, nh3]
+    present = sum(v is not None for v in vals)
+    if present < 3 or (pm25 is None and pm10 is None):
+        return None
+    return compute_aqi(pm25, pm10, no2=no2, so2=so2, o3=o3, co_mg=co_mg, nh3=nh3)
+
+
+# ── AQI from hourly values (one 24h window) ─────────────────────────────────
+# CPCB National AQI 2014 Technical Document, Appendix I: 24h means for
+# PM2.5/PM10/NO2/SO2/NH3, the maximum 8h mean for O3/CO, and 75% data
+# availability (16 of 24 hours; 6 of 8). Below that the pollutant is left
+# out rather than averaged from a few, usually daytime, hours.
+MIN_HOURS_24H = 16
+MIN_HOURS_8H = 6
+WINDOW_24H = ("pm25", "pm10", "no2", "so2", "nh3")
+WINDOW_8H = ("o3", "co")
+
+
+def max_8h_mean(hourly: list[float]) -> float:
+    """Largest 8-hour rolling mean of a time-ordered list of hourly means
+    (the whole list if it is shorter than 8)."""
+    n = len(hourly)
+    if n == 0:
+        return 0.0
+    w = min(8, n)
+    return max(sum(hourly[i : i + w]) / w for i in range(n - w + 1))
+
+
+def window_concentrations(hourly: dict[str, list[float]]) -> dict[str, float]:
+    """{pollutant: time-ordered hourly means over one 24h window} -> the
+    concentrations CPCB's breakpoints apply to (CO in mg/m³). Pollutants
+    below the availability minimum are absent."""
+    out = {}
+    for col in WINDOW_24H:
+        v = hourly.get(col) or []
+        if len(v) >= MIN_HOURS_24H:
+            out[col] = sum(v) / len(v)
+    for col in WINDOW_8H:
+        v = hourly.get(col) or []
+        if len(v) >= MIN_HOURS_8H:
+            out[col] = max_8h_mean(v)
+    return out
+
+
+def aqi_from_window(conc: dict[str, float]) -> tuple[int | None, str | None]:
+    """(CPCB AQI, the pollutant setting it) from window_concentrations()."""
+    a = compute_cpcb_aqi(conc.get("pm25"), conc.get("pm10"), no2=conc.get("no2"), so2=conc.get("so2"),
+                         o3=conc.get("o3"), co_mg=conc.get("co"), nh3=conc.get("nh3"))
+    if a is None:
+        return None, None
+    dominant = max(conc, key=lambda p: _sub_index(conc[p], SUB_INDEX_BREAKPOINTS[p]))
+    return a, dominant

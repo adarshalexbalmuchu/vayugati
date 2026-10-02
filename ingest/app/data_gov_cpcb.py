@@ -16,7 +16,7 @@ import logging
 
 import httpx
 
-from . import config
+from . import aqi, config
 
 RESOURCE_ID = "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
 BASE_URL = f"https://api.data.gov.in/resource/{RESOURCE_ID}"
@@ -120,12 +120,22 @@ def group_by_station(records: list[dict]) -> dict[str, dict]:
             },
         )
         pollutant_key = POLLUTANT_MAP.get((r.get("pollutant_id") or "").strip().upper())
-        avg = _parse_float(r.get("avg_value"))
-        if pollutant_key and avg is not None:
+        avg_index = _parse_float(r.get("avg_value"))
+        if pollutant_key and avg_index is not None:
+            # The feed's values are AQI SUB-INDICES, not concentrations (see
+            # aqi.concentration_from_sub_index for the evidence). Convert
+            # here, once, so every consumer receives a real concentration:
+            # ug/m3, and mg/m3 for CO (the feed sends no unit field, and the
+            # old "UG/M3" default made ingest divide CO's index by 1000).
+            # The value is CPCB's AQI averaging window (24h; 8h for CO/O3),
+            # not an hourly reading. The raw index is kept as "sub_index".
+            def conc(v):
+                return aqi.concentration_from_sub_index(pollutant_key, v)
             entry["pollutants"][pollutant_key] = {
-                "avg": avg,
-                "min": _parse_float(r.get("min_value")),
-                "max": _parse_float(r.get("max_value")),
-                "unit": (r.get("pollutant_unit") or "UG/M3").strip().upper(),
+                "avg": conc(avg_index),
+                "min": conc(_parse_float(r.get("min_value"))),
+                "max": conc(_parse_float(r.get("max_value"))),
+                "unit": "MG/M3" if pollutant_key == "co" else "UG/M3",
+                "sub_index": avg_index,
             }
     return grouped

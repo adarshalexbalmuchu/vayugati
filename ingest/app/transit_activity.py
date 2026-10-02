@@ -48,21 +48,43 @@ def summarize_activity(
     buffer_km: float = WARD_BUFFER_KM,
 ) -> dict:
     """`vehicles`: [{vehicle_id, trip_id, route_id, lat, lng, timestamp}, ...]
-    (VehiclePosition.as_dict() shape). `wards`: [{id, name, lat, lng}, ...] -
-    only wards with real lat/lng are scored (matches the frontend's own
-    "never fabricate a missing centroid" rule for wards, e.g. WardBoundary in
-    data.ts).
+    (VehiclePosition.as_dict() shape). `wards`: [{id, name, lat, lng,
+    boundary}, ...].
+
+    Bug fix (Sept 2026): this used to skip any ward with lat/lng=None,
+    which was ALL BUT 13 of Delhi's 265 wards — confirmed live this
+    session, get_hotspot_wards() (the only caller's ward source) queried
+    is_hotspot=true, so the transit-activity panel only ever reported
+    vehicle activity for the original 13 "hotspot" wards, with the other
+    252 silently absent from `per_ward` entirely (not degraded — missing).
+    The doc comment here used to justify this as matching "the frontend's
+    own 'never fabricate a missing centroid' rule" — but that frontend
+    rule was itself upgraded elsewhere in this codebase to use a boundary-
+    centroid fallback instead of skipping (see OverviewChoroplethMap.tsx's
+    boundingBoxCenter(), dataQualityRules.ts's geometryCentroid(), and this
+    same session's vayutrace_kernel.py fix), so this module was the one
+    place still using the old skip-only behaviour. Now uses the same
+    boundary_area_centroid() fallback vayutrace_kernel.py's dispersion
+    kernel already relies on for exactly this — one shared implementation,
+    not a third independently-written approximation of the same geometry.
 
     Returns a fully-derived, non-identifying summary: counts and per-ward
     buckets only - no raw vehicle-level data leaves this function, and
     nothing here is written to disk by any caller (see delhi_otd.py)."""
+    from .vayutrace_kernel import boundary_area_centroid  # noqa: PLC0415 — avoids a module-load-order/import-cycle risk; only needed here
+
     live_buses_tracked = len(vehicles)
     active_routes = len({v["route_id"] for v in vehicles if v.get("route_id")})
 
     per_ward = []
     for ward in wards:
-        if ward.get("lat") is None or ward.get("lng") is None:
-            continue
+        wlat, wlng = ward.get("lat"), ward.get("lng")
+        if wlat is None or wlng is None:
+            fallback = boundary_area_centroid(ward.get("boundary"))
+            if fallback is None:
+                continue  # genuinely no usable position — still skipped, not fabricated
+            wlat, wlng = fallback
+        ward = {**ward, "lat": wlat, "lng": wlng}
         nearby = sum(
             1
             for v in vehicles

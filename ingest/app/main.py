@@ -254,7 +254,13 @@ def run_transit() -> dict:
             )
         else:
             try:
-                wards = db.get_hotspot_wards()
+                # Bug fix (Sept 2026): was db.get_hotspot_wards() (the
+                # original 13 is_hotspot=true wards only) — see
+                # transit_activity.summarize_activity()'s own doc comment
+                # for the full story. get_wards_with_city() returns all 265
+                # (with `boundary`, so summarize_activity's own centroid
+                # fallback can score every ward, not just the 13).
+                wards = db.get_wards_with_city()
                 _last_transit = transit_activity.summarize_activity([v.as_dict() for v in vehicles], wards)
             except Exception:
                 logging.getLogger("ingest").exception("transit activity ward lookup failed")
@@ -262,6 +268,67 @@ def run_transit() -> dict:
         return _last_transit
     finally:
         _transit_lock.release()
+
+
+_hourly_lock = threading.Lock()
+
+
+def run_hourly_readings() -> dict:
+    """Real hourly concentrations -> readings_hourly (hourly_readings.py).
+    CPCB's feed carries only 24h averages, so this is the platform's hourly
+    series; forecasts train on it."""
+    from . import hourly_readings
+
+    if not _hourly_lock.acquire(blocking=False):
+        raise RuntimeError("hourly readings sync already running")
+    try:
+        return hourly_readings.sync()
+    finally:
+        _hourly_lock.release()
+
+
+_ward_est_lock = threading.Lock()
+
+
+def run_ward_estimates() -> dict:
+    """24h PM2.5/NO2 estimates for every ward (ward_estimates.py)."""
+    from . import ward_estimates
+
+    if not _ward_est_lock.acquire(blocking=False):
+        raise RuntimeError("ward estimates already running")
+    try:
+        return ward_estimates.run()
+    finally:
+        _ward_est_lock.release()
+
+
+_gates_lock = threading.Lock()
+
+
+def run_forecast_gates() -> dict:
+    """Weekly rolling backtest of the forecaster -> the gates file every
+    refit reads (scripts/forecast_rolling_backtest.py --write-gates; see
+    forecast_global.load_gates). A niced subprocess: ~40 min of CPU that
+    must not stall the scheduler's own threads. If it fails for three weeks
+    running, forecast_global falls back to its single-window gate and logs so."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    if not _gates_lock.acquire(blocking=False):
+        raise RuntimeError("forecast gates backtest already running")
+    try:
+        root = Path(__file__).resolve().parents[1]
+        proc = subprocess.run(
+            ["nice", "-n", "10", sys.executable, "scripts/forecast_rolling_backtest.py", "--write-gates", "--refresh"],
+            cwd=root, capture_output=True, text=True, timeout=3 * 3600,
+        )
+        tail = [ln for ln in proc.stdout.splitlines() if "=>" in ln or "wrote" in ln]
+        if proc.returncode != 0:
+            raise RuntimeError(f"forecast gates backtest failed: {proc.stderr[-2000:]}")
+        return {"lines": tail}
+    finally:
+        _gates_lock.release()
 
 
 def run_fire_counts() -> dict:
@@ -424,10 +491,51 @@ async def lifespan(app: FastAPI):
     # every 15 minutes: data.gov.in CPCB feed refreshes on the same cadence,
     # so we can capture sub-hourly readings. Timestamps are 15-min-floored in
     # ingest.py, so each 15-min window gets its own (station_id, ts) row.
+    #
+    # KNOWN RISK (Sept 2026, accepted deliberately, not yet mitigated):
+    # ingest.run()'s weather step was extended this session from 13 to up
+    # to 265 wards (boundary-centroid fallback for wards with no captured
+    # point — see vayutrace_kernel.boundary_bbox_center() and this file's
+    # own run_ingest()). That step is ~530 sequential, uncached, unbatched
+    # HTTP calls to MET Norway + Open-Meteo (neither offers a real batch
+    # endpoint) — a live timed run this session took 446.8s (~7.5 min) for
+    # a full, error-free cycle. run_ingest() already has overlap protection
+    # (_lock.acquire(blocking=False) raises "ingest already running" rather
+    # than stacking runs), so this fails SAFELY — a run that overruns 15
+    # min causes the NEXT scheduled cycle to be skipped entirely, not
+    # corrupted data. Still a real risk: a slower network day (MET Norway
+    # retries/30s timeouts across many calls) could push a run close to or
+    # past 15 minutes, silently dropping a cycle. Deliberately left
+    # unmitigated for now (explicit decision, not an oversight) rather than
+    # add speculative complexity (a hard time budget, or splitting weather
+    # onto its own less-frequent schedule) before it's an observed problem.
+    # If ingest cycles start being skipped in practice, this is the place
+    # to revisit — see open_meteo.get_current_batch()'s own per-location
+    # timing log (every 25 locations) for diagnosing where time goes.
     scheduler.add_job(run_ingest, "interval", minutes=15)
     # once per hour: recompute forecast + attribution on the freshly-ingested data.
     # Forecast model doesn't benefit from 15-min retraining cadence.
-    scheduler.add_job(run_intel, "cron", minute=25)
+    # misfire_grace_time is explicit here (Sept 2026 fix) — a cron trigger's
+    # default grace window is much stricter than an interval trigger's, so
+    # when this process's event loop is briefly blocked (e.g. a long-running
+    # request, or the machine sleeping), run_intel was being dropped entirely
+    # for that hour instead of just running late — unlike run_ops/run_transit/
+    # cleanup_stuck_jobs above, which tolerated the same delay fine. Observed
+    # directly: three consecutive missed firings (18:25/19:25/20:25 UTC) with
+    # no fallback run, leaving forecast_runs stale for 3+ hours and triggering
+    # the frontend's "Forecast unavailable — data is stale" banner even
+    # though the forecast pipeline itself was never actually broken. A
+    # forecast that's an hour late is still useful; one silently skipped for
+    # the whole hour is not — 20 minutes of slack comfortably covers a brief
+    # stall without masking a real, sustained outage (which cleanup_stuck_jobs'
+    # own health check still surfaces independently).
+    scheduler.add_job(run_intel, "cron", minute=25, misfire_grace_time=1200)
+    # :40 — OpenAQ publishes an hour's mean some minutes after it closes; a
+    # 6h look-back fills in late hours. ~350 paced calls (~12 min), clear of
+    # ingest's own OpenAQ fallback burst.
+    scheduler.add_job(run_hourly_readings, "cron", minute=40, misfire_grace_time=1200)
+    # :55, after the hourly-means sync has landed.
+    scheduler.add_job(run_ward_estimates, "cron", minute=55, misfire_grace_time=1200)
     # every 5 minutes: drain pending notifications and escalate overdue tasks
     scheduler.add_job(run_ops, "interval", minutes=5)
     # every 5 minutes: refresh the Delhi OTD transport-activity context layer.
@@ -440,6 +548,8 @@ async def lifespan(app: FastAPI):
     # VIIRS NRT has ~3h latency; 06:00 UTC (11:30 IST) ensures yesterday's
     # full-day count is stable and complete before ingestion.
     scheduler.add_job(run_fire_counts, "cron", hour=6, minute=0)
+    # weekly, Sunday 20:30 UTC (02:00 IST Monday): rolling backtest -> forecast gates.
+    scheduler.add_job(run_forecast_gates, "cron", day_of_week="sun", hour=20, minute=30, misfire_grace_time=6 * 3600)
     scheduler.start()
 
     # first pass immediately: ingest, then download the OSM .pbf if needed,

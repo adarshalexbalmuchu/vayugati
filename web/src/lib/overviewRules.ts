@@ -7,7 +7,7 @@
  * in real columns.
  */
 import type { ActiveTaskDispatch, Incident } from './incidents'
-import { minutesUntil } from './incidentRules'
+import { minutesUntil, type ForecastMethod } from './incidentRules'
 import type { StationHealthRow } from './ops'
 import type { WardForecastSummary, WardSummary } from './data'
 
@@ -44,6 +44,31 @@ export function severeWardsWithin(
 export function confidenceAtPeak(forecast: WardForecastSummary | undefined): number | null {
   if (!forecast?.peakTs) return null
   return forecast.points.find((p) => p.horizon_ts === forecast.peakTs)?.confidence ?? null
+}
+
+/** Which method actually produced this forecast — 'lightgbm' (the trained,
+ *  backtested model) or 'diurnal_persistence' (the seasonal/hourly baseline
+ *  fallback), read from the real `model_version` string each stored
+ *  forecast row already carries (see MODEL_VERSION_LGB/MODEL_VERSION_DIURNAL
+ *  in ingest/app/forecast.py), never inferred or guessed.
+ *
+ *  Added Sept 2026 after a literature review found that the Overview page's
+ *  ward table/detail panel showed forecast-derived values (sparklines, delta
+ *  labels, the 48h chart) with NO indication of which method produced them —
+ *  even though, per the platform's own validation audit
+ *  (docs/data/forecast-validation-report.md), the LightGBM model currently
+ *  clears its own accuracy bar for only about 1% of ward+pollutant
+ *  combinations at any given time. The other ~99% of the time, what's shown
+ *  is a simple seasonal baseline wearing the same visual presentation as a
+ *  validated model prediction — a real risk of overstating precision to a
+ *  commander making a decision. FORECAST_METHOD_LABEL / forecastFallbackStatus
+ *  in incidentRules.ts already existed and were already used on the Map
+ *  page's ward/station panels; this just extends the same honest labeling to
+ *  the Overview page, which had none. */
+export function forecastMethodFor(forecast: WardForecastSummary | undefined): ForecastMethod | null {
+  const version = forecast?.points.find((p) => p.model_version != null)?.model_version
+  if (!version) return null
+  return version.startsWith('diurnal') ? 'diurnal_persistence' : 'lightgbm'
 }
 
 export interface WindowedPeak {
@@ -132,6 +157,55 @@ export function hotspotStatus(
   if (row.peakExcess != null && row.peakExcess >= 10) return 'watch'
   if (row.aqi != null) return 'stable'
   return 'no_data'
+}
+
+/** Rank used to order the risk table by urgency rather than raw current AQI
+ *  (Sept 2026): a ward forecast to cross Severe soon is a bigger commander
+ *  priority than one that's simply high-AQI-and-flat right now, even if the
+ *  flat one's current number is larger. Lower rank = more urgent = sorts
+ *  first. Mirrors hotspotStatus's own severe > stale > watch > stable >
+ *  no_data ordering, since that's already the vetted priority the badges
+ *  communicate — this just makes the row ORDER agree with the badge instead
+ *  of only the current-AQI column determining position. */
+const HOTSPOT_STATUS_RANK: Record<HotspotStatus, number> = {
+  severe: 0,
+  stale: 1,
+  watch: 2,
+  stable: 3,
+  no_data: 4,
+}
+
+export interface UrgencySortInput {
+  status: HotspotStatus
+  /** Hours until Severe/Very Poor, whichever is sooner — the "how soon"
+   *  half of urgency within the same status tier. null = not forecast to
+   *  cross either within the fetched horizon. */
+  hoursToThreshold: number | null
+  /** Tiebreaker only, when status/hoursToThreshold are equal (e.g. two
+   *  'stable' wards) — despite the field name (kept for now to avoid
+   *  touching every call site), this is NOT always AQI: HotspotsRiskTable
+   *  passes whichever of the 7 pollutant tabs is currently selected (Sept
+   *  2026 bug fix — see that component's own comment), so the tie-break
+   *  order matches the pollutant actually being viewed, not always AQI. */
+  aqi: number | null
+}
+
+/** Comparator for Array.prototype.sort — ward A before ward B when this
+ *  returns negative. Status tier first (severe wards always outrank watch,
+ *  which always outranks stable), then soonest hoursToThreshold within the
+ *  same tier, then current AQI as a last-resort tiebreaker. */
+export function compareByUrgency(a: UrgencySortInput, b: UrgencySortInput): number {
+  const rankDiff = HOTSPOT_STATUS_RANK[a.status] - HOTSPOT_STATUS_RANK[b.status]
+  if (rankDiff !== 0) return rankDiff
+  if (a.hoursToThreshold != null || b.hoursToThreshold != null) {
+    if (a.hoursToThreshold == null) return 1
+    if (b.hoursToThreshold == null) return -1
+    if (a.hoursToThreshold !== b.hoursToThreshold) return a.hoursToThreshold - b.hoursToThreshold
+  }
+  if (a.aqi === null && b.aqi === null) return 0
+  if (a.aqi === null) return 1
+  if (b.aqi === null) return -1
+  return b.aqi - a.aqi
 }
 
 /** How many wards currently warrant a commander's attention - severe within

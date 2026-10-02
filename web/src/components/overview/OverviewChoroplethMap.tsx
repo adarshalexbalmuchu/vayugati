@@ -1,10 +1,31 @@
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from 'geojson'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Maximize2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import CityKpiRow from './CityKpiRow'
+import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
 import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
+import { HOTSPOT_READING_STALE_MINUTES } from '../../lib/overviewRules'
+
+/** Hover badge text: the ward name, plus the reading's age when it's stale.
+ *  (MapLibre hands feature properties back as plain JSON, hence the loose type.) */
+function hoverLabel(props: Record<string, unknown> | null | undefined): string | null {
+  const name = (props?.name as string | undefined) ?? null
+  if (!name) return null
+  return props?.stale && props?.ageLabel ? `${name} · ${props.ageLabel as string}` : name
+}
+
+function readingAge(ts: string | null | undefined): { stale: boolean; ageLabel: string | null } {
+  if (!ts) return { stale: false, ageLabel: null }
+  const minutes = (Date.now() - new Date(ts).getTime()) / 60000
+  if (!Number.isFinite(minutes) || minutes <= HOTSPOT_READING_STALE_MINUTES) return { stale: false, ageLabel: null }
+  const h = Math.round(minutes / 60)
+  return { stale: true, ageLabel: h >= 48 ? `last reading ${Math.round(h / 24)}d ago` : `last reading ${h}h ago` }
+}
 
 const DELHI_CENTER: [number, number] = [77.209, 28.6139]
 const DELHI_ZOOM = 9.6
@@ -21,7 +42,17 @@ const LINE   = 'ov-ward-line'
 const CSRC   = 'ov-ward-centers'
 const CIRCLE = 'ov-ward-circle'
 
-type WardFeatureProps = { id: number; name: string; aqi: number | null; isMonitored: boolean }
+type WardFeatureProps = {
+  id: number
+  name: string
+  aqi: number | null
+  isMonitored: boolean
+  /** Reading older than HOTSPOT_READING_STALE_MINUTES: drawn faded, and the
+   *  hover badge says how old it is, so a last-known value shown during an
+   *  upstream outage is never mistaken for a current one. */
+  stale: boolean
+  ageLabel: string | null
+}
 type WardGeoJSON = FeatureCollection<Polygon | MultiPolygon, WardFeatureProps>
 type CenterGeoJSON = FeatureCollection<Point, WardFeatureProps>
 
@@ -46,17 +77,54 @@ const LEGEND_ITEMS = [
   { label: 'Severe',       color: '#af2d24' },
 ]
 
+/** Bounding-box centre of a polygon/multipolygon — good enough for a flyTo
+ *  target (doesn't need to be a true area centroid). Only 13 of ~250 wards
+ *  have a real captured lat/lng point (see WardBoundary's own doc comment in
+ *  lib/data.ts); this is the honest fallback for the rest, computed from
+ *  geometry that's already fetched and rendered rather than fabricating a
+ *  coordinate or silently doing nothing on click. */
+function boundingBoxCenter(geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon): [number, number] | null {
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+  const rings = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
+  for (const polygon of rings) {
+    for (const ring of polygon) {
+      for (const [lng, lat] of ring) {
+        if (lng < minLng) minLng = lng
+        if (lng > maxLng) maxLng = lng
+        if (lat < minLat) minLat = lat
+        if (lat > maxLat) maxLat = lat
+      }
+    }
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null
+  return [(minLng + maxLng) / 2, (minLat + maxLat) / 2]
+}
+
 export default function OverviewChoroplethMap({
   wards,
   selectedWardId,
   onSelectWard,
   latestReadingsByWard,
+  reviewCount,
+  openReportCount,
+  coverage,
+  latestReadingAgeMinutes,
+  onWardsFlaggedClick,
 }: {
   wards: WardSummary[]
   selectedWardId: number | null
   onSelectWard: (wardId: number | null) => void
   latestReadingsByWard?: Map<number, LatestReadingReconciliation>
+  /** The 4 city KPIs, rendered as a glass bar over the bottom of the map
+   *  (Sept 2026 — moved off the page header). Same props CityKpiRow has
+   *  always taken; passed straight through from HotspotsRiskTable. */
+  reviewCount: number
+  openReportCount: number
+  coverage: { fresh: number; total: number } | null
+  latestReadingAgeMinutes?: number | null
+  onWardsFlaggedClick?: () => void
 }) {
+  const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -82,12 +150,17 @@ export default function OverviewChoroplethMap({
     })
   }, [])
 
+
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   const setHoveredNameRef = useRef(setHoveredName)
 
   // Stable ward ref for flyTo — avoids re-triggering selection effect on every poll.
   const wardsForFlyRef = useRef(wards)
   useEffect(() => { wardsForFlyRef.current = wards }, [wards])
+  // Same pattern for boundaries — needed by the flyTo fallback below (most
+  // wards have no wards.lat/lng; see boundariesForFlyRef's use site).
+  const boundariesForFlyRef = useRef(boundaries)
+  useEffect(() => { boundariesForFlyRef.current = boundaries }, [boundaries])
 
   // Polygon GeoJSON — real ward boundaries, colored by AQI where monitored.
   // `wards` (the fetchAllWardsAqi() result) now covers every ward with an
@@ -115,10 +188,20 @@ export default function OverviewChoroplethMap({
             preferred?.sourceUsed === 'cpcb' && preferred.cpcbAqi != null
               ? preferred.cpcbAqi
               : (ward?.aqi ?? preferred?.openaqAqi ?? null)
+          // Bug fix (Sept 2026): `ward != null` used to BE the monitored
+          // signal, back when fetchAllWardsAqi() only returned monitored
+          // wards (so mere presence in `wards` meant monitored). That
+          // function now returns every ward (so VayuTrace attribution -
+          // which needs no station - is reachable everywhere); presence
+          // alone no longer implies monitored, so this must check the
+          // explicit isMonitored field instead.
           return {
             type: 'Feature',
             id: b.id,
-            properties: { id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward != null },
+            properties: {
+              id: b.id, name: formatWardName(b.name), aqi, isMonitored: ward?.isMonitored ?? false,
+              ...(aqi != null ? readingAge(ward?.ts) : { stale: false, ageLabel: null }),
+            },
             geometry: b.geometry,
           }
         }),
@@ -132,8 +215,16 @@ export default function OverviewChoroplethMap({
   const boundaryWardIds = useMemo(() => new Set(boundaries.map(b => b.id)), [boundaries])
   const centersGeoJSON = useMemo<CenterGeoJSON>(() => ({
     type: 'FeatureCollection',
+    // Bug fix (Sept 2026): `wards` used to contain ONLY monitored wards, so
+    // `w.lat != null && w.lng != null` (a real captured point) was itself
+    // sufficient to imply monitored — hardcoding isMonitored: true below
+    // was safe. Now that fetchAllWardsAqi() returns every ward, that's no
+    // longer true (confirmed live: Mayapuri, id 12, has a real point but
+    // is NOT monitored) — filter on the explicit isMonitored field too, or
+    // this circle layer would wrongly render an unmonitored ward as if it
+    // had a live reading.
     features: !boundariesLoaded ? [] : wards
-      .filter(w => w.lat != null && w.lng != null && !boundaryWardIds.has(w.id))
+      .filter(w => w.isMonitored && w.lat != null && w.lng != null && !boundaryWardIds.has(w.id))
       .map((w): Feature<Point, WardFeatureProps> => {
         const preferred = latestReadingsByWard?.get(w.id)
         const aqi =
@@ -143,11 +234,15 @@ export default function OverviewChoroplethMap({
         return {
           type: 'Feature',
           id: w.id,
-          properties: { id: w.id, name: formatWardName(w.name), aqi, isMonitored: true },
+          properties: {
+            id: w.id, name: formatWardName(w.name), aqi, isMonitored: true,
+            ...(aqi != null ? readingAge(w.ts) : { stale: false, ageLabel: null }),
+          },
           geometry: { type: 'Point', coordinates: [w.lng!, w.lat!] },
         }
       }),
   }), [wards, latestReadingsByWard, boundaryWardIds, boundariesLoaded])
+
 
   // Mount the map once.
   useEffect(() => {
@@ -192,6 +287,7 @@ export default function OverviewChoroplethMap({
             'case',
             ['boolean', ['feature-state', 'selected'], false], 0.92,
             ['boolean', ['feature-state', 'hover'], false], 0.85,
+            ['all', ['boolean', ['get', 'isMonitored'], false], ['boolean', ['get', 'stale'], false]], 0.35,
             ['boolean', ['get', 'isMonitored'], false], 0.75,
             0.22,
           ] as maplibregl.ExpressionSpecification,
@@ -249,10 +345,12 @@ export default function OverviewChoroplethMap({
             'case',
             ['boolean', ['feature-state', 'selected'], false], 1,
             ['boolean', ['feature-state', 'hover'], false], 0.95,
+            ['boolean', ['get', 'stale'], false], 0.45,
             0.88,
           ] as maplibregl.ExpressionSpecification,
         },
       })
+
     }
 
     if (map.isStyleLoaded()) addLayers()
@@ -296,7 +394,7 @@ export default function OverviewChoroplethMap({
       if (id != null) {
         hoveredCircleId = id
         if (map.getSource(CSRC)) map.setFeatureState({ source: CSRC, id }, { hover: true })
-        setHoveredNameRef.current(feat?.properties?.name as string ?? null)
+        setHoveredNameRef.current(hoverLabel(feat?.properties))
       }
     })
     map.on('mouseleave', CIRCLE, () => {
@@ -330,7 +428,7 @@ export default function OverviewChoroplethMap({
       if (id != null) {
         hoveredFillId = id
         if (map.getSource(SRC)) map.setFeatureState({ source: SRC, id }, { hover: true })
-        setHoveredNameRef.current(feat.properties?.name as string ?? null)
+        setHoveredNameRef.current(hoverLabel(feat.properties))
       }
     })
     map.on('mouseleave', FILL, () => {
@@ -353,39 +451,35 @@ export default function OverviewChoroplethMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Fit map to monitored wards once when data first loads.
-  const hasFittedRef = useRef(false)
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || hasFittedRef.current || wards.length === 0) return
+  // Previously: fit map to monitored wards' bounding box once on first
+  // load. Removed (Sept 2026, direct request) — that fit zoomed in tighter
+  // (up to zoom 11) than DELHI_ZOOM's own 9.6, so the page always opened
+  // cropped to just the monitored-ward cluster instead of showing the full
+  // NCR context (Bahadurgarh–Ghaziabad–Noida–Gurugram–Faridabad) the fixed
+  // center/zoom below is tuned for. The map now simply opens at
+  // DELHI_CENTER/DELHI_ZOOM and stays there — a viewer can always zoom in
+  // themselves if they want a tighter view.
 
-    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
-    for (const w of wards) {
-      if (w.lng == null || w.lat == null) continue
-      if (w.lng < minLng) minLng = w.lng
-      if (w.lng > maxLng) maxLng = w.lng
-      if (w.lat < minLat) minLat = w.lat
-      if (w.lat > maxLat) maxLat = w.lat
-    }
-    if (!isFinite(minLng)) return
-
-    const doFit = () => {
-      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 48, maxZoom: 11, duration: 800 })
-      hasFittedRef.current = true
-    }
-    if (mapReadyRef.current) doFit()
-    else map.once('load', doFit)
-  }, [wards])
-
-  // Fly to selected ward centroid on selection change.
+  // Fly to selected ward on selection change. Prefers the ward's own
+  // captured lat/lng when it has one; falls back to its boundary polygon's
+  // bounding-box centre otherwise — only 13 of ~250 wards have a real point,
+  // so without this fallback flyTo silently did nothing for the other ~237
+  // (the bug reported Sept 2026: "works but only for a few").
   useEffect(() => {
     const map = mapRef.current
     if (!map || selectedWardId === null) return
     const ward = wardsForFlyRef.current.find(w => w.id === selectedWardId)
-    if (!ward || ward.lng == null || ward.lat == null) return
+    const boundary = boundariesForFlyRef.current.find(b => b.id === selectedWardId)
+    const center: [number, number] | null =
+      ward?.lng != null && ward?.lat != null
+        ? [ward.lng, ward.lat]
+        : boundary
+        ? boundingBoxCenter(boundary.geometry)
+        : null
+    if (!center) return
 
     const doFly = () => {
-      map.flyTo({ center: [ward.lng!, ward.lat!], zoom: Math.max(map.getZoom(), 11.5), duration: 500 })
+      map.flyTo({ center, zoom: Math.max(map.getZoom(), 11.5), duration: 500 })
     }
     if (mapReadyRef.current) doFly()
     else map.once('load', doFly)
@@ -415,6 +509,7 @@ export default function OverviewChoroplethMap({
     else map.once('load', apply)
   }, [centersGeoJSON])
 
+
   // Sync selected feature state on both sources.
   useEffect(() => {
     const map = mapRef.current
@@ -441,25 +536,86 @@ export default function OverviewChoroplethMap({
 
       {/* Hovered ward name badge */}
       {hoveredName && (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[160px] truncate rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[260px] truncate rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm">
           {hoveredName}
         </div>
       )}
 
-      {/* Compact AQI legend — bottom-right, clear of zoom controls */}
-      <div className="absolute bottom-10 right-14 z-10 rounded-lg border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-sm backdrop-blur-sm">
-        <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">AQI</p>
-        <div className="space-y-[3px]">
-          {LEGEND_ITEMS.map((l) => (
-            <div key={l.label} className="flex items-center gap-1.5">
-              <span
-                className="h-2.5 w-3 flex-shrink-0 rounded-[2px]"
-                style={{ backgroundColor: l.color }}
-              />
-              <span className="text-[9px] font-medium text-slate-600">{l.label}</span>
+      {/* Ward summary card removed (Sept 2026, 3rd pass) — its AQI number,
+          NAQI label, and ward name were the exact same three facts already
+          shown as the left list's top row and the right detail panel's own
+          hero, per direct feedback that it was "repetitive, everything" on
+          top of those two. The default-worst-ward click-to-select shortcut
+          this card also provided is not lost: the worst ward is already the
+          left list's top row (also clickable) whenever nothing is selected. */}
+
+      {/* Open full Map page (Sept 2026) — top-right, above the AQI legend.
+          This Overview map is a compact preview (no time-mode scrubber, no
+          GeoAI, no source-attribution tools); clicking here takes a viewer
+          who wants the full toolset straight to /map instead of leaving them
+          to find it via the side nav. */}
+      <button
+        type="button"
+        onClick={() => navigate('/map')}
+        title="Open full map"
+        aria-label="Open full map"
+        className="focus-ring absolute right-2 top-2 z-10 rounded-lg border border-slate-200/80 bg-white/90 p-1.5 text-slate-500 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-accent-600"
+      >
+        <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+      </button>
+
+      {/* Compact AQI legend — sits below the fullscreen button, top-right,
+          clear of the hovered-ward badge (top-left) and the zoom controls
+          (bottom-right). Same real liquid-glass <GlassSurface> as the KPI
+          bar below and the Map page toolbar (Sept 2026), replacing the
+          earlier flat bg-white/90 + backdrop-blur-sm approximation. */}
+      <div className="absolute right-2 top-10 z-10">
+        <GlassSurface radiusClassName="rounded-lg" className="px-2 py-1.5">
+          <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-500">AQI</p>
+          <div className="space-y-[3px]">
+            {LEGEND_ITEMS.map((l) => (
+              <div key={l.label} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-3 flex-shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: l.color }}
+                />
+                <span className="text-[9px] font-medium text-slate-700">{l.label}</span>
+              </div>
+            ))}
+          </div>
+          {/* Only shown when it applies: explains the faded fill a last-known
+              reading gets during an upstream outage (see readingAge above). */}
+          {geojson.features.some((f) => f.properties.stale) && (
+            <div className="mt-1.5 flex items-center gap-1.5 border-t border-slate-200/70 pt-1.5">
+              <span className="h-2.5 w-3 flex-shrink-0 rounded-[2px] bg-[#fff833] opacity-40" />
+              <span className="text-[9px] font-medium text-slate-500">Faded: reading &gt;3h old</span>
             </div>
-          ))}
-        </div>
+          )}
+        </GlassSurface>
+      </div>
+
+      {/* City KPI bar — real Apple-style "liquid glass" (Sept 2026, 2nd
+          pass): the first pass here was a flat translucent+blur
+          approximation, same as the Map page toolbar's own first pass,
+          which was rejected there as not the actual effect — swapped to
+          the same <GlassSurface> (SVG turbulence/displacement filter that
+          actually warps the map behind it) used there now, for
+          consistency. pr-14-equivalent spacing (right-14 below) still
+          clears MapLibre's own zoom control, bottom-right in this corner.
+          CityKpiRow's compact variant text colours are unchanged — dark
+          text reads correctly here since this map (unlike the Map page's
+          default dark basemap) uses the light 'terrain' style. */}
+      <div className="absolute bottom-2 left-2 right-14 z-10">
+        <GlassSurface radiusClassName="rounded-xl" className="flex items-stretch justify-between gap-1 px-1 py-1">
+          <CityKpiRow
+            reviewCount={reviewCount}
+            openReportCount={openReportCount}
+            coverage={coverage}
+            latestReadingAgeMinutes={latestReadingAgeMinutes}
+            onWardsFlaggedClick={onWardsFlaggedClick}
+            compact
+          />
+        </GlassSurface>
       </div>
     </div>
   )

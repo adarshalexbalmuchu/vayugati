@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from supabase import Client, create_client
 
-from . import config
+from . import config, stuck_sensors
 
 
 @lru_cache(maxsize=1)
@@ -17,21 +17,41 @@ def client() -> Client:
 
 
 def get_wards() -> dict[str, dict]:
-    """wards.name -> {id, lat, lng}"""
-    rows = client().table("wards").select("id, name, lat, lng").execute().data
+    """wards.name -> {id, lat, lng, boundary}.
+
+    `boundary` added Sept 2026 alongside get_wards_with_city()'s own same
+    change — see that function's doc comment. ingest.py's weather-fetch
+    step uses it to compute a boundary-centroid receptor point for the 252
+    of 265 wards with no captured lat/lng, instead of skipping them."""
+    rows = client().table("wards").select("id, name, lat, lng, boundary").execute().data
     return {r["name"]: r for r in rows}
 
 
 def get_wards_with_city() -> list[dict]:
-    """[{id, name, lat, lng, city_id}, ...] — for per-city forecasting/detection loops."""
-    return client().table("wards").select("id, name, lat, lng, city_id").execute().data
+    """[{id, name, lat, lng, city_id, boundary}, ...] — for per-city
+    forecasting/detection loops.
+
+    `boundary` (GeoJSON Polygon/MultiPolygon, null for most rows) added
+    Sept 2026 so vayutrace_kernel.run_kernel()'s boundary_bbox_center()
+    fallback can compute a receptor point for the 252 of 265 wards that
+    have no captured lat/lng — confirmed live this session that every one
+    of those 252 has a real boundary. Callers that don't need it (the
+    original use before this change) simply ignore the extra key; nothing
+    existing reads `boundary` today except vayutrace_kernel.py."""
+    return client().table("wards").select("id, name, lat, lng, city_id, boundary").execute().data
 
 
 def get_hotspot_wards() -> list[dict]:
-    """[{id, name, lat, lng}, ...] for the monitored hotspot set only (same
-    `is_hotspot=true` scope the frontend's fetchAllWardsAqi() uses) - for
-    context layers that should score against the same ward set the rest of
-    the app already treats as "the wards that matter" (transit_activity.py)."""
+    """[{id, name, lat, lng}, ...] for the ORIGINAL 13 is_hotspot=true wards
+    only. Deprecated for scoring/context-layer use (Sept 2026) — its doc
+    comment used to claim this "same scope fetchAllWardsAqi() uses," but
+    that function was itself extended to all 265 wards; this function
+    wasn't updated to match, and was the last caller (run_transit() in
+    main.py) still silently restricted to the 13. Fixed by switching that
+    caller to get_wards_with_city() (all 265, with `boundary` for the
+    centroid fallback) instead. Kept only in case a genuinely
+    hotspot-scoped query is needed again later — not currently called
+    anywhere."""
     return client().table("wards").select("id, name, lat, lng").eq("is_hotspot", True).execute().data
 
 
@@ -60,6 +80,9 @@ def get_all_stations() -> list[dict]:
     )
 
 
+LAST_KNOWN_HOURS = 72
+
+
 def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     """station_id -> {ts, pm25, pm10, no2, so2, co, o3, aqi} for each
     station's single most recent reading. Uses one IN query to fetch recent
@@ -67,20 +90,22 @@ def get_latest_readings_by_station(station_ids: list[int]) -> dict[int, dict]:
     replaces N sequential round-trips (one per station) with one request."""
     if not station_ids:
         return {}
-    # Fetch the latest 24 hours of readings for all stations in one query.
-    # 24h (not 2h) so that the last-known reading is always returned even
-    # during a prolonged ingest outage — reconcile_latest() uses this to
-    # display stale-but-real values rather than blanks.
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    rows = (
-        client()
+    # Look back LAST_KNOWN_HOURS (72h, the same horizon the frontend's
+    # last-known fallback uses: web/src/lib/data.ts LAST_KNOWN_READING_HOURS)
+    # so a prolonged upstream outage still returns each station's last real
+    # reading. With 24h, the Sept 2026 data.gov.in outage passed that mark
+    # after a day, every station came back empty, and the dashboard blanked
+    # every ward's AQI. Paged: 72h x ~40 stations x up to 4 rows/h can exceed
+    # PostgREST's 1000-row page.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=LAST_KNOWN_HOURS)).isoformat()
+    rows = _fetch_all(
+        lambda: client()
         .table("readings")
         .select("station_id, ts, pm25, pm10, no2, so2, co, o3, aqi, ingest_source")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
         .order("ts", desc=True)
-        .execute()
-        .data
+        .order("station_id")
     )
     # Keep only the first (latest) row per station.
     out: dict[int, dict] = {}
@@ -147,8 +172,92 @@ def bulk_upsert_readings(rows: list[dict], chunk: int = 500) -> int:
     return written
 
 
+def upsert_readings_hourly(rows: list[dict], chunk: int = 500) -> None:
+    """Real hourly concentrations (OpenAQ) — see migration
+    20260927010000_readings_hourly.sql for why they are kept apart from
+    `readings`, whose CPCB rows are 24h averages.
+
+    Rows carry only the pollutants seen for that hour. A bulk upsert fills
+    missing columns with NULL, which would wipe values an earlier run stored
+    for the same hour. So rows are batched by their exact column set: every
+    row in a batch has the same columns, and none are nulled."""
+    groups: dict[frozenset, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(frozenset(r), []).append(r)
+    for batch_rows in groups.values():
+        for i in range(0, len(batch_rows), chunk):
+            batch = batch_rows[i : i + chunk]
+            _with_retry(lambda batch=batch: client().table("readings_hourly")
+                        .upsert(batch, on_conflict="station_id,ts").execute())
+
+
+def get_hourly_history(hours: int = 24 * 30, include_archive: bool = False) -> list[dict]:
+    """Real hourly concentrations from readings_hourly, in exactly
+    get_readings_history()'s shape ([{ts, ward_id, pm25, ..., aqi}]) so
+    forecasting and attribution can switch source without other changes.
+
+    Why not `readings`: since 2026-08-11 its CPCB rows are 24h (8h CO/O3)
+    averages, not hourly values (value_basis='naqi_window'). A model trained
+    on those learns a smoothed, lagged series. aqi is None here: AQI is
+    defined on 24h averages, not on single hours.
+
+    include_archive=True prepends the local training archive
+    (history_archive.py) for hours before the database's own earliest row in
+    the window, so the forecaster can train on every season without the
+    database holding them.
+    """
+    stations = _with_retry(lambda: client().table("stations").select("id, ward_id").execute().data) or []
+    sid_to_ward = {s["id"]: s["ward_id"] for s in stations if s.get("ward_id") is not None}
+    if not sid_to_ward:
+        return []
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = _fetch_all(
+        lambda: client()
+        .table("readings_hourly")
+        .select("ts, station_id, pm25, pm10, no2, so2, co, o3")
+        .gte("ts", cutoff)
+        .order("ts")
+        .order("station_id")
+    )
+    if include_archive:
+        from . import history_archive
+        first = rows[0]["ts"] if rows else datetime.now(timezone.utc).isoformat()
+        older = [r for r in history_archive.rows_before(datetime.fromisoformat(first), set(sid_to_ward))
+                 if r["ts"] >= cutoff]
+        rows = older + rows
+    rows, blanked = stuck_sensors.drop_stuck(rows, ("pm25", "pm10", "no2", "so2", "co", "o3"))
+    if blanked:
+        _db_log.info("hourly history: dropped %d values from stuck analysers", blanked)
+    return [
+        {"ts": r["ts"], "ward_id": sid_to_ward[r["station_id"]], "pm25": r["pm25"], "pm10": r["pm10"],
+         "no2": r["no2"], "so2": r["so2"], "co": r["co"], "o3": r["o3"], "aqi": None}
+        for r in rows if r["station_id"] in sid_to_ward
+    ]
+
+
 def upsert_weather(row: dict) -> None:
     _with_retry(lambda: client().table("weather").upsert(row, on_conflict="ward_id,ts").execute())
+
+
+def bulk_upsert_weather(rows: list[dict], chunk: int = 500) -> int:
+    """Chunked upsert for weather rows, returning the number written.
+
+    Added Sept 2026 for the ERA5 history backfill
+    (scripts/backfill_weather_history.py), which writes on the order of
+    40k+ rows — one HTTP round-trip per row via upsert_weather() above
+    would take hours. Mirrors bulk_upsert_readings()'s existing contract:
+    same on_conflict key, same retry wrapper, chunked to stay under
+    PostgREST's request-size limits.
+    """
+    written = 0
+    for i in range(0, len(rows), chunk):
+        batch = rows[i:i + chunk]
+        _with_retry(
+            lambda b=batch: client().table("weather")
+            .upsert(b, on_conflict="ward_id,ts").execute()
+        )
+        written += len(batch)
+    return written
 
 
 # ── history reads (for forecast + attribution) ───────────────────────────────
@@ -222,11 +331,24 @@ def _fetch_all(query_factory, page_size: int = 1000) -> list[dict]:
 
 
 def get_readings_history(hours: int = 24 * 30) -> list[dict]:
-    """Flattened readings joined to their ward: [{ts, ward_id, pm25, pm10, no2, aqi}].
+    """Flattened readings joined to their ward:
+    [{ts, ward_id, pm25, pm10, no2, so2, co, o3, aqi}].
 
     no2 was added in Phase 8 (unified forecasting, plan §1's "keep NO2 as
     optional/supporting") — additive to the returned dict, so the existing
     attribution.py caller (which only reads pm25/wind_dir) is unaffected.
+
+    so2/co/o3 added Sept 2026 so forecast.py could stop hardcoding
+    DEFAULT_ENABLED_POLLUTANTS to just (pm25, pm10, no2) — this was the
+    actual reason AQI/SO2/CO/O3 had no forecast of their own and silently
+    fell back to displaying PM2.5's curve labelled "(proxy)" everywhere in
+    the frontend (see forecastPollutantFor() in web/src/lib/mapRules.ts):
+    the readings.so2/co/o3 columns, the forecast_runs/forecasts CHECK
+    constraints (pollutant IN (..., 'so2','co','o3')), and the anomaly-
+    detection SQL all already supported these three pollutants — the
+    Python forecasting pipeline was simply never given the readings data
+    to train against. Confirmed live this session: ~50-61k non-null rows
+    each for so2/co/o3, comparable in volume to pm25/no2, not sparse.
 
     station_id → ward_id is resolved in Python from a single small stations
     query rather than via a PostgREST embedded join on every paginated row —
@@ -244,9 +366,12 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     rows = _fetch_all(
         lambda: client()
         .table("readings")
-        .select("ts, station_id, pm25, pm10, no2, aqi")
+        .select("ts, station_id, pm25, pm10, no2, so2, co, o3, aqi")
         .gte("ts", cutoff)
+        # (ts, station_id), not ts alone: many rows share a ts, and range
+        # paging over a non-unique order can skip or repeat rows (Sept 2026).
         .order("ts")
+        .order("station_id")
     )
     out = []
     for r in rows:
@@ -260,6 +385,9 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
                 "pm25": r["pm25"],
                 "pm10": r["pm10"],
                 "no2": r["no2"],
+                "so2": r["so2"],
+                "co": r["co"],
+                "o3": r["o3"],
                 "aqi": r["aqi"],
             }
         )
@@ -303,35 +431,6 @@ def get_last_forecast_times(city_id: int) -> dict[tuple[int, str], datetime]:
     return seen
 
 
-def _max_8h_rolling_avg(hourly_means: list[float]) -> float:
-    """Maximum of all 8-hour rolling averages from a time-ordered list of
-    HOURLY MEANS (one value per clock-hour). CPCB uses this window for O3
-    and CO instead of a 24h simple average.
-
-    Callers must pass hourly-aggregated values — NOT raw readings — so that
-    each clock-hour has equal weight regardless of intra-hour reporting frequency.
-    Returns 0.0 when the list is empty; the minimum-hours check in the caller
-    prevents this from feeding into AQI when coverage is insufficient."""
-    n = len(hourly_means)
-    if n == 0:
-        return 0.0
-    window = min(8, n)
-    best = 0.0
-    for i in range(n - window + 1):
-        avg = sum(hourly_means[i : i + window]) / window
-        if avg > best:
-            best = avg
-    return best
-
-
-# CPCB National AQI 2014 Technical Document, Appendix I (Data Availability Criteria):
-# "A valid 24h AQI requires data for at least 75% of the averaging period."
-# 75% × 24h = 16 clock-hours; 75% × 8h window = 6 clock-hours (O3/CO).
-# Below these thresholds CPCB marks the AQI as "Insufficient Data" — we
-# return nothing for that pollutant so it doesn't inflate the max sub-index.
-_MIN_HOURS_24H: int = 16
-_MIN_HOURS_8H: int = 6
-
 import logging as _log_module
 _db_log = _log_module.getLogger("ingest.db")
 
@@ -345,17 +444,10 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
       O3 / CO:
         Maximum 8h rolling average of hourly means, minimum 6 distinct clock-hours.
 
-    WHY HOURLY AGGREGATION MATTERS
-    ──────────────────────────────
-    The ingest cycle runs every 15 min, so a station that reports once per hour
-    generates 4 identical readings in our DB for that hour. Without aggregation,
-    each reading gets equal weight and hours with 4 reads dominate hours with 1.
-    More critically, DPCC stations frequently go offline 11 PM–7 AM (maintenance/
-    power), so the DB holds only the high-PM2.5 daytime readings. Averaging raw
-    readings gives a daytime-biased "24h average" that is 30–80 AQI units higher
-    than CPCB's true 24h figure — which includes overnight clean-air periods.
-    Aggregating to one value per clock-hour before averaging assigns equal weight
-    to every hour of the day, matching CPCB's calculation.
+    Every clock-hour gets equal weight, matching CPCB's calculation. DPCC
+    stations often go offline 11 PM–7 AM, so the hours present skew to the
+    polluted daytime; the minimum-hours check below is what keeps that from
+    inflating the AQI.
 
     WHY THE MINIMUM-HOURS CHECK MATTERS
     ─────────────────────────────────────
@@ -365,18 +457,24 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
     Below the minimum, the pollutant is excluded from AQI so its sub-index is
     absent rather than artificially inflated by sparse coverage.
 
-    CO is normalised to mg/m³ before windowing (CPCB stores mg/m³; OpenAQ µg/m³)."""
+    SOURCE: readings_hourly only (true OpenAQ hourly means, hour-start
+    labels, CO already mg/m³), with the same stuck-analyser filter the models
+    use. Not `readings`: its CPCB rows are already 24h/8h window averages
+    (value_basis='naqi_window'), and its OpenAQ rows are provisional
+    end-of-hour snapshots labelled one hour later than the same hour in
+    readings_hourly. Averaging those together mixed three bases."""
     if not station_ids:
         return {}
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     rows = _with_retry(lambda: client()
-        .table("readings")
-        .select("station_id, ts, pm25, pm10, no2, so2, co, o3, nh3, ingest_source")
+        .table("readings_hourly")
+        .select("station_id, ts, pm25, pm10, no2, so2, co, o3")
         .in_("station_id", station_ids)
         .gte("ts", cutoff)
         .order("ts")
         .execute()
     ).data or []
+    rows, _ = stuck_sensors.drop_stuck(rows, ("pm25", "pm10", "no2", "so2", "co", "o3"))
 
     by_station: dict[int, list[dict]] = {}
     for row in rows:
@@ -384,7 +482,7 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
 
     result: dict[int, dict] = {}
     for sid, readings in by_station.items():
-        # ── Step 1: aggregate to one value per clock-hour per pollutant ──────
+        # ── Step 1: one value per clock-hour per pollutant ───────────────────
         # hr_key = ts[:13] e.g. "2026-08-26T14" — unique per UTC hour.
         hourly_buckets: dict[str, dict[str, list[float]]] = {}
         for r in readings:
@@ -392,15 +490,10 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
             if not hr_key:
                 continue
             bucket = hourly_buckets.setdefault(hr_key, {})
-            for col in ("pm25", "pm10", "no2", "so2", "nh3", "o3"):
+            for col in ("pm25", "pm10", "no2", "so2", "nh3", "o3", "co"):
                 v = r.get(col)
                 if v is not None:
                     bucket.setdefault(col, []).append(float(v))
-            co = r.get("co")
-            if co is not None:
-                source = r.get("ingest_source") or "openaq"
-                co_mg = float(co) if source == "cpcb" else float(co) / 1000.0
-                bucket.setdefault("co", []).append(co_mg)
 
         # ── Step 2: mean within each clock-hour (one float per hour) ─────────
         # sorted() ensures the hourly_means list is time-ordered (required by
@@ -411,31 +504,9 @@ def get_24h_avg_concentrations(station_ids: list[int]) -> dict[int, dict]:
                 if vals:
                     hourly_means.setdefault(col, []).append(sum(vals) / len(vals))
 
-        # ── Step 3: 24h simple average with minimum-hours check ───────────────
-        # Pollutants with fewer than _MIN_HOURS_24H are returned as absent (not
-        # None) so compute_aqi() ignores them rather than treating 0 as a real
-        # reading. Logs a debug line so low-coverage stations are diagnosable.
-        avg: dict[str, float] = {}
-        for col in ("pm25", "pm10", "no2", "so2", "nh3"):
-            hrs = hourly_means.get(col, [])
-            if len(hrs) >= _MIN_HOURS_24H:
-                avg[col] = sum(hrs) / len(hrs)
-            elif hrs:
-                _db_log.debug(
-                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 24h AQI",
-                    sid, col, len(hrs), _MIN_HOURS_24H,
-                )
-
-        # ── Step 4: max 8h rolling average (O3, CO) on hourly means ──────────
-        for col in ("o3", "co"):
-            hrs = hourly_means.get(col, [])
-            if len(hrs) >= _MIN_HOURS_8H:
-                avg[col] = _max_8h_rolling_avg(hrs)
-            elif hrs:
-                _db_log.debug(
-                    "station %s: %s has only %d distinct hours — below %d minimum, excluded from 8h AQI",
-                    sid, col, len(hrs), _MIN_HOURS_8H,
-                )
+        # ── Step 3: CPCB windows (24h mean; max 8h for O3/CO) with the
+        # 75% availability minimum (aqi.window_concentrations) ─────────────
+        avg = aqi.window_concentrations(hourly_means)
 
         result[sid] = avg
     return result
@@ -512,6 +583,14 @@ def replace_forecasts(ward_id: int, pollutant: str, rows: list[dict]) -> None:
     _with_retry(lambda: client().table("forecasts").delete().eq("ward_id", ward_id).eq("pollutant", pollutant).execute())
     if rows:
         _with_retry(lambda: client().table("forecasts").insert(rows).execute())
+
+
+def replace_aqi_forecasts(ward_id: int, rows: list[dict]) -> None:
+    """Swap in a ward's forecast AQI (aqi_forecasts: one row per lead). An
+    empty list removes the ward's rows, so a stale forecast never lingers."""
+    _with_retry(lambda: client().table("aqi_forecasts").delete().eq("ward_id", ward_id).execute())
+    if rows:
+        _with_retry(lambda: client().table("aqi_forecasts").insert(rows).execute())
 
 
 def insert_forecast_run(row: dict) -> int:

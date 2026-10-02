@@ -621,7 +621,7 @@ none is invented without a citation.
 | `hour_cos` | cos(2π × hour / 24) | Same |
 | `dow` | Day of week (0=Mon) | Captures weekly traffic/activity cycle |
 | `month` | Calendar month (1–12) | Seasonal proxy — coarser than season flags but always non-null |
-| `is_diwali` | 1 for Diwali main day ±2d | Firecracker burning spikes PM2.5 5–10× above seasonal background; Kumar et al. (2021) *Environ. Res.*; Tiwari et al. (2019) *Sci. Rep.*; Singh et al. (2022) *ACP* |
+| `is_diwali` | 1 for Diwali main day ±2d | Firecracker burning spikes PM2.5 well above seasonal background — real published multipliers vary widely by year and city (roughly 3–10× the 24h guideline in some studies, up to ~16× at one extreme site, ~2.8× at one Delhi-specific 2021 measurement); "5–10×" is a reasonable middle estimate, not one specific study's figure. **Correction (Sept 2026):** the "Kumar et al. (2021) *Environ. Res.*", "Tiwari et al. (2019) *Sci. Rep.*", and "Singh et al. (2022) *ACP*" citations previously here could not be independently verified as the source of this specific number and have been removed |
 | `is_monsoon` | 1 for June–September | SW monsoon: wet deposition dominates PM2.5 removal; PBLH/stagnation signal interpretation changes fundamentally; Kumar et al. (2014) *Atm. Env.*; Tiwari et al. (2015) *Atm. Env.* |
 | `is_fog_season` | 1 for December–February | Dense-fog radiation-inversion season: pollutants trapped even at moderate PBLH; Tiwari et al. (2015); IMDAA reanalysis (2025) |
 | `temp_c` | Surface temperature (°C) | Standard met predictor |
@@ -631,13 +631,13 @@ none is invented without a citation.
 | `wind_dir_sin` | sin(wind_dir_degrees) | Circular wind-direction encoding — preserves N–S continuity |
 | `wind_dir_cos` | cos(wind_dir_degrees) | Same |
 | `precipitation` | Rainfall (mm/h) | Wet scavenging of PM2.5 and PM10 |
-| `pblh` | Planetary boundary layer height (m) | Inverse power-law with PM2.5; top-5 SHAP importance in every IGP ML study 2022–2025; AMT (2019); JGR Atmospheres (2021); Aerosol Sci. Tech. (2025) |
-| `pblh_trend` | PBLH change over 3h (m/3h) | Rate of collapse is more actionable than level alone: −200 m/3h predicts a spike even when current PBLH is moderate; JGR Atmospheres (2021) |
-| `vc` | Ventilation coefficient = PBLH × wind_speed (m²/s) | SAFAR/CPCB combined dispersion index; Theoretical and Applied Climatology (2025); IMDAA reanalysis |
-| `stagnation_hours` | Consecutive hours wind < 2 m/s (capped at 24) | #1 cited meteorological predictor of Delhi/IGP AQ episodes; captures accumulation dynamics that current wind speed alone cannot; Guttikunda & Gurjar (2012) *Atm. Env.*; CPCB GRAP (2023) science note |
-| `vc_unfavourable` | 1 when VC < 6000 m²/s | SAFAR/CPCB "unfavourable dispersion" threshold; PM2.5 accumulation accelerates non-linearly below this value; linear `vc` cannot capture this threshold effect; Theoretical and Applied Climatology (2025) |
+| `pblh` | Planetary boundary layer height (m) | Lower boundary layer traps emissions near the surface, giving an inverse PM2.5 relationship — independently confirmed against real published PM2.5/PBLH data in a Sept 2026 literature review. **Correction (Sept 2026):** the "AMT (2019)", "JGR Atmospheres (2021)", and "Aerosol Sci. Tech. (2025)" citations previously here (journal+year only, no author/title) could not be traced to verifiable papers and have been removed; the underlying claim is credible, those specific citations were not |
+| `pblh_trend` | PBLH change over 3h (m/3h) | Rate of collapse is more actionable than level alone: −200 m/3h predicts a spike even when current PBLH is moderate. (Same Sept 2026 citation correction as `pblh` above — the prior "JGR Atmospheres (2021)" citation was removed as unverifiable) |
+| `vc` | Ventilation coefficient = PBLH × wind_speed (m²/s) | Combined dispersion index following the general convention referenced in Indian meteorological literature. **Correction (Sept 2026):** the "Theoretical and Applied Climatology (2025)" citation previously here could not be independently verified and has been removed |
+| `stagnation_hours` | Consecutive hours wind < 2 m/s (capped at 24) | #1 cited meteorological predictor of Delhi/IGP AQ episodes; captures accumulation dynamics that current wind speed alone cannot; Guttikunda & Gurjar (2012) *Environmental Monitoring and Assessment* 184:3199–3211 (journal corrected Sept 2026 — previously misattributed to *Atmospheric Environment*); CPCB GRAP (2023) science note |
+| `vc_unfavourable` | 1 when VC < 6000 m²/s | Used as an "unfavourable dispersion" working threshold following the general order-of-magnitude convention in Indian meteorological literature — treat as a reasonable estimate pending a citable source, not a confirmed official published number (the "Theoretical and Applied Climatology (2025)" citation previously here was removed Sept 2026 as unverifiable). PM2.5 accumulation accelerates non-linearly below this value; linear `vc` cannot capture this threshold effect |
 | `no2_lag1` | NO2 concentration at t−1 (µg/m³) | Proxy for fresh combustion/traffic; rising NO2 precedes PM2.5 accumulation by 1–3h in urban IGP; ~8% RMSE reduction for Delhi PM2.5; Chen et al. (2022) *Sci. Total Environ.*; Bai et al. (2022) *Environ. Sci. Technol.* |
-| `fire_count_lag1d` | VIIRS regional fire count, 1 calendar day prior | Stubble burning (Punjab+Haryana) contributes 30–60% of Delhi PM2.5 Oct–Nov; 1-day lag captures initial transport from source regions; Gupta et al. (2021) *JGR Atmospheres*; Singh et al. (2022) *ACP* |
+| `fire_count_lag1d` | VIIRS regional fire count, 1 calendar day prior | Stubble burning's Delhi PM2.5 contribution is contested and year/wind-dependent, NOT a fixed 30–60% (corrected Sept 2026 — see the fuller literature note below and vayutrace_kernel.py's own treatment): Cusworth et al. (2020) ES&T reports 7–78% (median ~20%); npj Climate and Atmospheric Science (2025) found only ~14% for Oct–Nov 2022 specifically. 1-day lag captures initial transport from source regions when a burning-and-favorable-wind episode does occur |
 | `fire_count_lag2d` | VIIRS regional fire count, 2 calendar days prior | Smoke from Punjab takes 1–2 days to reach Delhi at typical NW wind speeds; 2-day lag adds the transport-delay signal the 1-day lag alone cannot carry; Mishra et al. (2023) *STOTEN* |
 | `city_avg_lag1` | City-wide mean pollutant value at t−1 | Spatial autocorrelation: other wards' simultaneous reading as a "nearby station" signal; plan §3 |
 
@@ -666,9 +666,17 @@ If quantile model training fails (too few training rows), the code falls
 back to the Gaussian approximation silently, so the point forecast is never
 blocked by an uncertainty-bound failure.
 
-Source: Papadopoulos et al. (2022) *Environ. Sci. Technol.*; Mallet et al.
-(2021) *ACP*; Pohoata et al. (2023) *STOTEN* — all show 15–20% better
-empirical coverage vs. Gaussian for right-skewed AQ distributions.
+Quantile regression (pinball-loss-based prediction intervals) is a
+well-established, published technique for skewed distributions like PM2.5,
+generally preferred over naive symmetric Gaussian bounds — independently
+confirmed as sound methodology during a Sept 2026 literature review.
+**Correction (Sept 2026):** the specific citations previously listed here
+("Papadopoulos et al. (2022) *Environ. Sci. Technol.*", "Mallet et al.
+(2021) *ACP*", "Pohoata et al. (2023) *STOTEN*") and the specific "15–20%
+better empirical coverage" figure attributed to them could not be traced to
+verifiable, specific papers during that review and have been removed rather
+than repeated as confirmed sources. The underlying methodological choice
+remains sound; those citations were not.
 
 **Known limitation:** the quantile regressors are NOT calibrated
 post-hoc — the empirical coverage of the [q10, q90] interval is not
@@ -706,13 +714,30 @@ persistence too.
 ### Motivation and seasonal window
 
 Punjab and Haryana paddy-residue burning (Oct 15 – Nov 25) is the dominant
-*external* PM2.5 driver for Delhi during the post-monsoon season,
-contributing an estimated 30–60% of peak-episode concentrations
-(Gupta et al. 2021 *JGR Atmospheres*; Singh et al. 2022 *ACP*; Mishra et al.
-2023 *STOTEN*). Wheat-residue burning in April–May is a secondary peak.
-The ML model without this signal systematically under-predicts transport
-episodes because no meteorological feature alone can distinguish
-"stable-atmosphere clean day" from "stable-atmosphere + 500 km of fires."
+*external* PM2.5 driver for Delhi during the post-monsoon season, but its
+quantitative contribution is genuinely contested in the literature and
+should NOT be stated as a fixed range (corrected Sept 2026 — this section
+previously said "an estimated 30–60% of peak-episode concentrations," which
+overstated a disputed figure without acknowledging more recent work that
+disputes it). What the literature actually shows:
+  - Cusworth et al. (2020) *ES&T*: GEOS-Chem modelling puts crop-residue-
+    burning contribution at 7–78% (median ~20%), explicitly "NOT a fixed
+    number" — driven by year-to-year meteorology.
+  - npj Climate and Atmospheric Science (2025), CUPI-G + WRF-Chem: found
+    only ~14% for Oct–Nov 2022 specifically, because that year's wind
+    alignment was poor — a concrete demonstration that fire counts alone
+    are not the same as delivered surface PM2.5 in Delhi.
+  - ACP (2025), NHM(WRF)-Chem + 30-sensor network: 25–35% for active
+    burning periods.
+See vayutrace_kernel.py's `regional_fraction_nowcast()` for this platform's
+fuller (and correctly cautious) treatment of the same question — the
+forecast model's fire-count feature and VayuTrace's source-attribution
+kernel should agree on this range now, where they previously did not.
+Wheat-residue burning in April–May is a secondary peak. The ML model
+without this signal systematically under-predicts transport episodes,
+regardless of the exact fraction in any given year, because no
+meteorological feature alone can distinguish "stable-atmosphere clean day"
+from "stable-atmosphere + regional fires with favorable transport wind."
 
 ### Data source
 

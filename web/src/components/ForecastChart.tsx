@@ -1,4 +1,5 @@
 import type { ForecastPoint } from '../lib/data'
+import { confidenceTierLabel } from '../lib/incidentRules'
 
 // India NAQI band colors, aligned with AqiBadge / MapView
 const BANDS = [
@@ -37,8 +38,14 @@ export default function ForecastChart({ points }: { points: ForecastPoint[] }) {
 
   const peak = data.reduce((a, b) => (b.pm25_pred > a.pm25_pred ? b : a), data[0])
   const peakIdx = data.indexOf(peak)
-  const confidence = data[0].confidence
   const isPlaceholder = data[0].model_version?.startsWith('diurnal')
+  // Was a raw "{confidence * 100}%" from data[0].confidence — that field is
+  // a hand-picked tier marker (0.4-0.9), not a calibrated probability (see
+  // confidenceTierLabel's own doc comment in incidentRules.ts). Replaced
+  // Sept 2026 with the honest version derived from the real
+  // maxValidatedHorizonHours/beatsPersistence fields the forecast_runs join
+  // already provides on every point.
+  const confidenceLabel = confidenceTierLabel(data[0].maxValidatedHorizonHours, data[0].beatsPersistence ?? false)
 
   // gridlines at NAQI thresholds that fall in range
   const gridVals = [100, 200, 300, 400].filter((v) => v <= maxV)
@@ -65,11 +72,9 @@ export default function ForecastChart({ points }: { points: ForecastPoint[] }) {
             <span className="text-gray-400"> · +{Math.round(peak.local_excess)} local</span>
           )}
         </span>
-        {confidence != null && (
-          <span className="text-gray-400">
-            {isPlaceholder ? 'baseline' : 'model'} · {Math.round(confidence * 100)}%
-          </span>
-        )}
+        <span className="text-gray-400">
+          {isPlaceholder ? 'baseline' : 'model'} · {confidenceLabel}
+        </span>
       </div>
     </div>
   )

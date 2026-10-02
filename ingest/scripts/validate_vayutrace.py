@@ -1,0 +1,679 @@
+"""VayuTrace validation harness — measure whether kernel changes actually improve it.
+
+WHY THIS EXISTS
+===============
+Every physics change to vayutrace_kernel.py (sigma values, wind factor,
+emission weights, calibration) was, before this script, unfalsifiable: we
+could confirm the numbers CHANGED but never that they got BETTER. That makes
+the whole model unimprovable in any rigorous sense, and makes any accuracy
+claim in a funding application unsupportable.
+
+WHAT CAN AND CANNOT BE VALIDATED
+================================
+CANNOT: the breakdown fractions themselves (industrial 30% / road 65% / ...).
+CPCB stations measure total PM2.5 mass, not per-source splits. Checking a
+source split requires chemical speciation (the CMB/receptor-modelling
+approach VayuTrace deliberately does not use). Nothing in this repo — and
+nothing obtainable without a speciation lab — can validate those fractions.
+Any claim that this harness validates the source split would be false.
+
+CAN: the kernel's underlying dispersion physics, via its raw `local_score`
+(the un-normalised sum of emission_weight x wind_factor x distance_decay
+over all sources, exposed by run_kernel for exactly this purpose).
+
+The falsifiable claim is:
+
+    A ward-hour that the kernel scores HIGHER should actually have a
+    HIGHER observed PM2.5 than a ward-hour it scores lower.
+
+TWO TARGETS, AND WHY BOTH ARE REPORTED
+======================================
+    local excess = ward PM2.5 - city median PM2.5 that hour
+    raw          = ward PM2.5
+
+This harness originally used local excess ONLY, on the reasoning that the
+kernel models local sources and excludes regional transport, so comparing
+against raw PM2.5 would flatter it by crediting citywide meteorology it
+never claims to predict.
+
+That reasoning was half right and cost real time. Local excess is the
+right target for "which ward is anomalous", but it discards 54% of each
+ward's hourly variance (measured: per-ward hourly std falls from 26.9 to
+12.4 ug/m3), and what it discards is exactly the citywide meteorological
+signal that dispersion physics predicts BEST. Measured over 39 wards:
+
+      predictor        vs local excess      vs raw PM2.5
+      inverse wind       -0.020 (46% pos)   +0.116 (95% pos)
+      inverse VC         -0.024 (33% pos)   +0.034 (74% pos)
+      inverse PBLH       -0.016 (44% pos)   +0.004 (56% pos)
+
+EVERY meteorological predictor scores ~0 against local excess, including
+ones with no connection to this kernel. That is the tell that the TARGET
+was the binding constraint, not the model. Reporting local excess alone
+made the kernel's meteorology look worthless when part of it demonstrably
+is not, and it is the reason several earlier "improvements" measured as
+nil.
+
+Neither target is "correct" on its own:
+  - raw rewards getting citywide meteorology right, which is real skill
+    but is NOT what distinguishes one ward from another;
+  - local excess isolates the ward-specific part, which is what the
+    source-attribution product actually needs, but is a much harder and
+    much noisier target.
+Report both. A change that moves raw but not local excess has improved
+the meteorology; one that moves local excess has improved the spatial
+attribution.
+
+THREE AXES, AND WHICH ONE ACTUALLY MATTERS
+==========================================
+    spatial  at a fixed hour, rank WARDS by local load
+    temporal within one ward, track it over HOURS
+    pooled   both at once (misleading — see below)
+
+SPATIAL is the axis a local dispersion model encodes, and it is the one to
+lead with. Measured on real data:
+
+    spatial   rho +0.330, positive in 97% of hours
+    temporal  rho +0.265, positive in 79% of wards
+
+The reason spatial is both higher and more meaningful is structural: the
+regional background shifts every ward together within a given hour, so it
+largely cancels out of a within-hour ranking, while it dominates a
+within-ward time series (see the ceiling note below). Evaluating a local
+model temporally mostly measures the regional term it never claimed to
+model. Recommended in Thunis et al. (2018, 2021) and implied by InMAP's
+own design (Tessum et al. 2017: it predicts CHANGES at annual resolution,
+not hourly absolute concentration).
+
+THE CEILING — read before calling any number here "poor"
+========================================================
+Measured directly on this deployment's data: a ward's PM2.5 timeseries is
+~80% explained (R^2) by the CITY-MEAN timeseries across all monitored
+wards. Delhi is one airshed; regional transport and synoptic meteorology
+move every ward together.
+
+A purely LOCAL model can therefore correlate with raw ward PM2.5 at most
+about sqrt(1 - 0.80) = 0.447. Against that ceiling:
+
+    kernel temporal rho 0.265  =  ~59% of attainable skill
+
+not 26% of a notional 1.0. Earlier revisions of this file reported the raw
+number without the ceiling and repeatedly concluded the model was failing.
+It was not; the metric had no reference point.
+
+For context on what else is in play:
+    1h persistence    rho 0.97   (autocorrelation of the regional airmass)
+    24h persistence   rho 0.51
+    hour-of-day alone      1.5% of variance
+Persistence is a FORECASTING baseline. This kernel answers a
+counterfactual question (what if these emissions changed), so persistence
+is not a competitor and beating it is not the goal.
+
+METRIC
+======
+Spearman rank correlation (rho) between local_score and the observed
+target. Spearman, not Pearson: local_score is in arbitrary units.
+
+Spearman, not Pearson: local_score is in arbitrary units (see its own
+comment in vayutrace_kernel.py), so only its ORDERING is meaningful. A
+Pearson r would imply a linear-in-magnitude relationship the units do not
+support.
+
+Interpretation, calibrated to what this class of model can achieve — a
+reduced-complexity dispersion kernel with no chemistry, no dust module and
+proxy emission inventories will NOT reach the correlations a full CTM does:
+    rho <= 0.0   model is no better than random (or inverted) — broken
+    0.0-0.10     essentially no skill
+    0.10-0.20    weak but real signal (the Sept 2026 sigma calibration
+                 reported rho=0.20 on a 30-day wind-stratified subset)
+    0.20-0.35    solid for this model class
+    > 0.35       strong; verify it isn't leakage before believing it
+
+HONEST LIMITATIONS OF THIS HARNESS ITSELF
+=========================================
+1. Only ~39 of 265 wards have a CPCB station, so validation can only ever
+   cover those. The other ~226 wards' outputs remain entirely unvalidated —
+   the kernel produces numbers for them that nothing here checks. State
+   this plainly rather than implying whole-city validation.
+
+2. In practice the usable set is smaller still — ~12 wards as of Sept 2026,
+   i.e. ~4.5% of the wards the kernel actually scores. The binding
+   constraint is WEATHER history, not readings:
+       - all 44 stations report healthily (~950 pm25 rows each / 60 days)
+       - but per-ward weather was only extended from the original 13
+         "hotspot" wards to all 265 in Sept 2026 (see ingest.py's
+         boundary-centroid weather fetch), so a 60-day window is dominated
+         by the era when only 13 wards had any weather at all
+       - VC/PBLH specifically postdate an even later migration
+   This is a DATA-HISTORY limitation that resolves itself as the extended
+   ingestion accumulates — not a model limitation. Re-run with a longer
+   window every few weeks; `wards_with_own_rho` in the output is the number
+   to watch. Once it approaches 39, per-ward statistics become meaningful.
+
+3. SMALL SAMPLES HERE ARE ACTIVELY MISLEADING — a worked example.
+   The dilution change first measured +0.107 within-ward on n=12 wards,
+   with a 95% bootstrap CI of [-0.022, +0.131] that already crossed zero.
+   After ERA5 backfill lifted the sample to n=39, the same change measured
+   -0.060. The apparent improvement was a small-sample artifact, exactly as
+   the wide CI warned. Never treat a result from ~12 wards as established;
+   re-run after any change to data coverage.
+
+4. THE MODEL HAS A DOMAIN OF VALIDITY, and it is narrower than "all wards".
+   Splitting the n=39 result on IDENTICAL ERA5 weather (so this is not a
+   data-provenance artifact):
+
+       original 13 "hotspot" wards   median rho  +0.052   58% positive
+       the other 26 station wards    median rho  -0.047   22% positive
+
+   Those 13 wards have ~1.7x the local-source strength (static
+   emission-weight x distance-decay geometry) of the others. That is the
+   population a LOCAL dispersion model should work for, and the only one
+   where it currently does.
+
+   The physical reading is coherent and worth stating plainly: where local
+   sources dominate, modelling local dispersion predicts variation; where
+   they do not, ward PM2.5 is driven mostly by regional background and
+   secondary chemistry, neither of which this kernel models at all (see
+   the dust/secondary gaps in its known-limitations list). This is a real
+   limit of a primary-emission transport model, not a tuning failure.
+
+   Consequence for interpretation: a single citywide median rho understates
+   performance where the model applies and overstates it where it does not.
+   Prefer reporting the split.
+5. Source inventories (OSM roads/industrial) are CURRENT, not historical —
+   we assume the road network and industrial zones did not change over the
+   validation window. Over a few months that is reasonable; over years it
+   would not be.
+6. Weather history is largely ERA5 REANALYSIS, not observation (see
+   scripts/backfill_weather_history.py). Checked directly: across-ward
+   spread of VC is essentially identical between live and ERA5 rows
+   (CV 0.399 vs 0.401), so ERA5 does not flatten the spatial signal — but
+   it remains a ~9-31 km model reconstruction, coarser than a ward.
+7. FIRMS fire data is not replayed historically here (fetch_igp_fires is a
+   live API scoped to recent days), so the fire source type is effectively
+   absent from validation. Fire-season performance is therefore NOT
+   measured by this harness.
+8. A positive rho confirms the dispersion geometry has real skill. It does
+   NOT confirm the source-split fractions, which remain unvalidatable (see
+   above).
+
+USAGE
+=====
+    python ingest/scripts/validate_vayutrace.py
+    python ingest/scripts/validate_vayutrace.py --hours 720 --json out.json
+
+Run it BEFORE and AFTER a kernel change and compare rho. That difference is
+the only evidence that a change was an improvement rather than just a
+change.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app import db  # noqa: E402
+from app.vayutrace_kernel import run_kernel  # noqa: E402
+
+
+def _spearman(xs: list[float], ys: list[float]) -> float:
+    """Spearman rank correlation. Implemented directly (no scipy dependency —
+    the ingest service deliberately keeps its dependency list minimal), with
+    average ranks for ties, which matters here because many ward-hours share
+    identical scores when a ward has no nearby sources."""
+    n = len(xs)
+    if n < 3:
+        return float("nan")
+
+    def _ranks(vals: list[float]) -> list[float]:
+        order = sorted(range(len(vals)), key=lambda i: vals[i])
+        ranks = [0.0] * len(vals)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and vals[order[j + 1]] == vals[order[i]]:
+                j += 1
+            avg = (i + j) / 2.0 + 1.0
+            for k in range(i, j + 1):
+                ranks[order[k]] = avg
+            i = j + 1
+        return ranks
+
+    rx, ry = _ranks(xs), _ranks(ys)
+    mx, my = statistics.fmean(rx), statistics.fmean(ry)
+    num = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    dx = sum((a - mx) ** 2 for a in rx)
+    dy = sum((b - my) ** 2 for b in ry)
+    if dx <= 0 or dy <= 0:
+        return float("nan")
+    return num / (dx * dy) ** 0.5
+
+
+def _hour_key(ts: str) -> str:
+    return ts[:13]  # 'YYYY-MM-DDTHH'
+
+
+def build_observations(hours: int) -> tuple[dict, dict, dict]:
+    """Returns (observed_local_excess, weather_by_hour, observed_raw_pm25).
+
+    observed_local_excess: {(ward_id, hour_key): pm25 - city_median_that_hour}
+    weather_by_hour:       {hour_key: {ward_id: {wind_dir, wind_speed}}}
+    observed_raw_pm25:     {(ward_id, hour_key): pm25}  — same keys, no
+                           city-median subtraction. See the extended note
+                           at the `observed` assignment for why both are
+                           reported.
+
+    Local excess is computed against the MEDIAN (not mean) of all wards
+    reporting in that same hour — median is robust to the one or two
+    extreme-outlier stations Delhi routinely produces, which would drag a
+    mean and make every other ward look artificially clean.
+    """
+    # Real hourly values: CPCB rows in `readings` are 24h running means since
+    # 2026-08-11, and scoring an hourly model against them (as this script did
+    # until Sept 2026) mixes two kinds of data across that date.
+    readings = db.get_hourly_history(hours=hours)
+    weather = db.get_weather_history(hours=hours)
+
+    # ward-hour -> mean pm25 (a ward can have multiple stations/readings per hour)
+    by_ward_hour: dict[tuple[int, str], list[float]] = defaultdict(list)
+    for r in readings:
+        if r.get("pm25") is None or r.get("ward_id") is None:
+            continue
+        by_ward_hour[(r["ward_id"], _hour_key(r["ts"]))].append(float(r["pm25"]))
+    ward_hour_pm25 = {k: statistics.fmean(v) for k, v in by_ward_hour.items()}
+
+    # city median per hour
+    per_hour: dict[str, list[float]] = defaultdict(list)
+    for (_wid, hk), v in ward_hour_pm25.items():
+        per_hour[hk].append(v)
+    city_median = {hk: statistics.median(v) for hk, v in per_hour.items() if len(v) >= 3}
+
+    # TWO targets, reported side by side — the choice between them turned
+    # out to matter more than any model change measured so far.
+    #
+    #   local excess = ward PM2.5 - city median that hour
+    #   raw          = ward PM2.5
+    #
+    # Local excess isolates what a ward can act on, so it is the right
+    # target for "which ward is anomalous". But it discards 54% of each
+    # ward's hourly variance (measured directly: per-ward hourly std falls
+    # from 26.9 to 12.4 ug/m3), and what it discards is precisely the
+    # city-wide meteorological signal that dispersion physics predicts
+    # best. Measured against the same 39 wards:
+    #
+    #       predictor        vs local excess      vs raw PM2.5
+    #       inverse wind       -0.020 (46% pos)   +0.116 (95% pos)
+    #       inverse VC         -0.024 (33% pos)   +0.034 (74% pos)
+    #       inverse PBLH       -0.016 (44% pos)   +0.004 (56% pos)
+    #
+    # Every meteorological predictor scores ~0 against local excess —
+    # including ones with no connection to this kernel — which is the tell
+    # that the TARGET, not the model, was the binding constraint. Reporting
+    # only local excess made the kernel's meteorology look worthless when
+    # part of it demonstrably is not.
+    observed = {
+        (wid, hk): v - city_median[hk]
+        for (wid, hk), v in ward_hour_pm25.items()
+        if hk in city_median
+    }
+    observed_raw = {
+        (wid, hk): v
+        for (wid, hk), v in ward_hour_pm25.items()
+        if hk in city_median   # same ward-hours, so the two are comparable
+    }
+
+    wx: dict[str, dict[int, dict]] = defaultdict(dict)
+    for w in weather:
+        if w.get("ward_id") is None or w.get("wind_speed") is None:
+            continue
+        hk = _hour_key(w["ts"])
+        wid = w["ward_id"]
+        cand = {
+            "wind_dir": w.get("wind_dir"),
+            "wind_speed": w.get("wind_speed"),
+            # PBLH/VC drive the kernel's dilution term — without forwarding
+            # these the harness would silently validate a no-dilution model
+            # and report the OLD behaviour's score.
+            "boundary_layer_height": w.get("boundary_layer_height"),
+            "ventilation_coefficient": w.get("ventilation_coefficient"),
+            # Drives the dust module's AP-42 precipitation correction. Same
+            # forwarding trap as PBLH/VC above: omit it and the harness
+            # silently validates a no-rain model.
+            "precipitation": w.get("precipitation"),
+        }
+        prev = wx[hk].get(wid)
+        # A ward-hour can have several weather rows (the 15-min ingest cycle
+        # writes more than one row per hour). Older rows predate the
+        # PBLH/VC migration and carry nulls for both. Taking "whichever row
+        # came last" silently discarded ALL dilution data — confirmed live
+        # Sept 2026: 0 of 2,581 sampled ward-hours had VC despite 6,496
+        # non-null VC rows existing in the same query result. Prefer a row
+        # that actually has the dilution fields.
+        if prev is not None and prev.get("ventilation_coefficient") is not None \
+                and cand.get("ventilation_coefficient") is None:
+            continue
+        wx[hk][wid] = cand
+    return observed, wx, observed_raw
+
+
+def run_validation(hours: int, max_hours_sampled: int,
+                   require_dilution: bool = False,
+                   include_dust: bool = True) -> dict:
+    wards = db.get_wards_with_city()
+    stations = db.get_stations_with_coords()
+
+    from app.vayutrace_dust import (
+        build_construction_dust_sources,
+        build_road_dust_sources,
+        precipitation_factor,
+    )
+    from app.vayutrace_osm_construction import load_delhi_construction_sites
+    from app.vayutrace_osm_industrial import load_delhi_industrial_zones
+    from app.vayutrace_osm_roads import load_delhi_roads
+
+    industrial = load_delhi_industrial_zones()
+    roads = load_delhi_roads()
+    # Construction dust is static; road dust varies hourly with rain, so it
+    # is rebuilt per hour inside the loop below.
+    construction_dust = (
+        build_construction_dust_sources(load_delhi_construction_sites())
+        if include_dust else []
+    )
+    if not industrial and not roads:
+        raise SystemExit(
+            "No emission sources loaded — is OSM_PBF_PATH set and the .pbf present?\n"
+            "Validation cannot run without a source inventory."
+        )
+
+    observed, wx_by_hour, observed_raw = build_observations(hours)
+    # Only hours where we have BOTH weather and observed local excess.
+    usable_hours = sorted({hk for (_w, hk) in observed} & set(wx_by_hour))
+    if max_hours_sampled and len(usable_hours) > max_hours_sampled:
+        # Even stride across the window rather than the first N — avoids
+        # validating only against one contiguous (possibly unrepresentative)
+        # stretch of days.
+        stride = len(usable_hours) / max_hours_sampled
+        usable_hours = [usable_hours[int(i * stride)] for i in range(max_hours_sampled)]
+
+    paired_score: list[float] = []
+    paired_obs: list[float] = []
+    per_ward: dict[int, list[tuple[float, float]]] = defaultdict(list)
+    # Same scores, scored against RAW pm25 instead of local excess.
+    per_ward_raw: dict[int, list[tuple[float, float]]] = defaultdict(list)
+    # SPATIAL: per hour, (score, observed) across wards. See the
+    # spatial-vs-temporal note in the module docstring — this is the axis
+    # the kernel actually encodes.
+    per_hour_spatial: dict[str, list[tuple[float, float]]] = defaultdict(list)
+
+    for hk in usable_hours:
+        weather_this_hour = wx_by_hour[hk]
+        if require_dilution:
+            weather_this_hour = {
+                wid: m for wid, m in weather_this_hour.items()
+                if m.get("ventilation_coefficient") is not None
+                or m.get("boundary_layer_height") is not None
+            }
+        if not weather_this_hour:
+            continue
+        month = int(hk[5:7])
+        dust: list[dict] = []
+        if include_dust:
+            # Rebuild road dust each hour so the AP-42 precipitation
+            # correction genuinely varies — that hour-to-hour signal is the
+            # main reason dust might help within-ward skill at all.
+            precips = [
+                float(m["precipitation"])
+                for m in weather_this_hour.values()
+                if m.get("precipitation") is not None
+            ]
+            city_precip = sorted(precips)[len(precips) // 2] if precips else None
+            dust = build_road_dust_sources(
+                roads, precip_factor=precipitation_factor(city_precip)
+            ) + construction_dust
+
+        results = run_kernel(
+            wards=wards,
+            weather=weather_this_hour,
+            industrial_sources=industrial,
+            fire_sources=[],           # see limitation 7 in module docstring
+            road_sources=roads,
+            cpcb_stations=stations,
+            month=month,
+            regional_fire_sources=[],
+            dust_sources=dust,
+            # Validation scores `local_score` only and discards the
+            # uncertainty bands, so computing them here is pure waste — it
+            # was making every run ~16x slower than it needed to be (a
+            # 60-hour run took 45+ minutes instead of a few). The bands
+            # still ship in production; they are just not needed to rank.
+            mc_draws=0,
+        )
+        for r in results:
+            key = (r["ward_id"], hk)
+            if key not in observed:
+                continue
+            score = r.get("local_score")
+            if score is None:
+                continue
+            paired_score.append(float(score))
+            paired_obs.append(float(observed[key]))
+            if key in observed_raw:
+                per_ward_raw[r["ward_id"]].append((float(score), float(observed_raw[key])))
+                per_hour_spatial[hk].append((float(score), float(observed_raw[key])))
+            per_ward[r["ward_id"]].append((float(score), float(observed[key])))
+
+    rho = _spearman(paired_score, paired_obs)
+
+    ward_rhos = {}
+    for wid, pairs in per_ward.items():
+        if len(pairs) >= 20:
+            ward_rhos[wid] = _spearman([p[0] for p in pairs], [p[1] for p in pairs])
+
+    finite = [v for v in ward_rhos.values() if v == v]
+
+    # Same computation against RAW pm25 — see the two-targets note in the
+    # module docstring. A change can move one and not the other, and which
+    # one it moves says what kind of improvement it was.
+    ward_rhos_raw = {}
+    for wid, pairs in per_ward_raw.items():
+        if len(pairs) >= 20:
+            ward_rhos_raw[wid] = _spearman([p[0] for p in pairs], [p[1] for p in pairs])
+    finite_raw = [v for v in ward_rhos_raw.values() if v == v]
+
+    # SPATIAL skill: at each hour independently, does the kernel rank the
+    # wards correctly? This is the axis a local dispersion model actually
+    # encodes, and the one the regional background does not contaminate —
+    # the citywide term shifts every ward together in a given hour, so it
+    # cancels out of a within-hour ranking almost entirely.
+    spatial_rhos = [
+        _spearman([p[0] for p in pairs], [p[1] for p in pairs])
+        for pairs in per_hour_spatial.values()
+        if len(pairs) >= 10
+    ]
+    spatial_rhos = [v for v in spatial_rhos if v == v]
+
+    # BETWEEN-ward skill: does the kernel rank WARDS correctly, using each
+    # ward's time-averaged score vs. its time-averaged local excess?
+    #
+    # This decomposition exists because the pooled rho above is genuinely
+    # misleading on its own (confirmed live Sept 2026: pooled rho=+0.32
+    # while the per-ward median was -0.05). Pooling mixes two very different
+    # claims:
+    #   between-ward — "wards near more sources are dirtier on average"
+    #                  (a static geography claim; easy, and largely a
+    #                  restatement of the emission inventory)
+    #   within-ward  — "THIS ward gets worse when wind/dispersion conditions
+    #                  turn against it" (the dynamic claim that actually
+    #                  requires the wind/sigma physics to be right)
+    # Only the second tests the kernel's meteorology. Reporting the pooled
+    # number alone would credit the model for skill it has not demonstrated.
+    # Split by local-source strength — see limitation 4. A ward whose static
+    # emission geometry is strong is one where a LOCAL dispersion model can
+    # plausibly work; a weak-source ward is dominated by regional background
+    # and secondary chemistry, which this kernel does not model. Reporting a
+    # single citywide median hides both facts.
+    strength = {}
+    for wid, pairs in per_ward.items():
+        if len(pairs) >= 20:
+            strength[wid] = statistics.fmean([p[0] for p in pairs])
+    split_rho: dict[str, float] = {}
+    if len(strength) >= 6:
+        ordered = sorted(strength, key=lambda w: strength[w], reverse=True)
+        half = len(ordered) // 2
+        for label, group in (("strong_source_wards", ordered[:half]),
+                             ("weak_source_wards", ordered[half:])):
+            vals = [ward_rhos[w] for w in group if w in ward_rhos and ward_rhos[w] == ward_rhos[w]]
+            split_rho[label] = statistics.median(vals) if vals else float("nan")
+            split_rho[f"{label}_n"] = len(vals)
+
+    ward_means = [
+        (statistics.fmean([p[0] for p in pairs]), statistics.fmean([p[1] for p in pairs]))
+        for pairs in per_ward.values()
+        if len(pairs) >= 5
+    ]
+    between_rho = (
+        _spearman([m[0] for m in ward_means], [m[1] for m in ward_means])
+        if len(ward_means) >= 3 else float("nan")
+    )
+    return {
+        "window_hours": hours,
+        "hours_evaluated": len(usable_hours),
+        "paired_observations": len(paired_score),
+        "wards_covered": len(per_ward),
+        # The kernel scores every ward; validation only covers those with a
+        # station AND enough matched weather. Reported so the coverage gap is
+        # impossible to overlook when quoting a rho. See limitations 1-2.
+        "wards_scored_by_kernel": len(wards),
+        "spearman_rho_overall": rho,
+        "spearman_rho_between_wards": between_rho,
+        **split_rho,
+        "wards_with_own_rho": len(finite),
+        "per_ward_rho_median": statistics.median(finite) if finite else float("nan"),
+        # Spatial: rank wards within each hour. See spatial_rhos above.
+        "spatial_rho_median": statistics.median(spatial_rhos) if spatial_rhos else float("nan"),
+        "spatial_rho_positive_fraction": (
+            sum(1 for v in spatial_rhos if v > 0) / len(spatial_rhos)
+            if spatial_rhos else float("nan")
+        ),
+        "spatial_hours": len(spatial_rhos),
+        # Against raw PM2.5 rather than local excess.
+        "per_ward_rho_median_raw": statistics.median(finite_raw) if finite_raw else float("nan"),
+        "per_ward_rho_positive_fraction_raw": (
+            sum(1 for v in finite_raw if v > 0) / len(finite_raw) if finite_raw else float("nan")
+        ),
+        "per_ward_rho_positive_fraction": (
+            sum(1 for v in finite if v > 0) / len(finite) if finite else float("nan")
+        ),
+        "per_ward_rho": {str(k): v for k, v in sorted(ward_rhos.items())},
+        "source_counts": {"industrial": len(industrial), "road": len(roads)},
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--hours", type=int, default=24 * 60,
+                    help="History window to validate over (default: 60 days)")
+    ap.add_argument("--max-hours", type=int, default=120,
+                    help="Max distinct hours to evaluate; each runs the full kernel "
+                         "over all wards, so this bounds runtime (default: 120)")
+    ap.add_argument("--json", type=str, default=None,
+                    help="Write the full result dict to this path as JSON")
+    ap.add_argument("--require-dilution", action="store_true",
+                    help="Only evaluate ward-hours that actually have "
+                         "ventilation_coefficient/PBLH. Roughly half of "
+                         "historical ward-hours predate those fields; "
+                         "including them silently applies a no-op dilution "
+                         "factor of 1.0 and dampens any measured effect of "
+                         "the dilution term, in EITHER direction.")
+    args = ap.parse_args()
+
+    res = run_validation(args.hours, args.max_hours,
+                         require_dilution=args.require_dilution)
+
+    print("=" * 66)
+    print("VayuTrace validation — dispersion skill vs. observed local excess")
+    print("=" * 66)
+    print(f"  window:                {res['window_hours']}h")
+    print(f"  hours evaluated:       {res['hours_evaluated']}")
+    print(f"  paired observations:   {res['paired_observations']}")
+    print(f"  wards covered:         {res['wards_covered']} of "
+          f"{res['wards_scored_by_kernel']} scored by the kernel "
+          f"({res['wards_covered'] / max(res['wards_scored_by_kernel'], 1):.1%})")
+    print(f"  wards w/ own rho:      {res['wards_with_own_rho']} "
+          f"(these drive the verdict; see limitations 1-3)")
+    print(f"  sources: {res['source_counts']['industrial']} industrial, "
+          f"{res['source_counts']['road']} road cells")
+    print("-" * 66)
+    print(f"  SPATIAL rho (rank wards per hour): {res['spatial_rho_median']:+.4f}"
+          f"  ({res['spatial_rho_positive_fraction']:.0%} of "
+          f"{res['spatial_hours']} hours positive)")
+    print( "    'at a given hour, which wards carry the most local load'")
+    print( "    <- the axis a local dispersion model actually encodes, and the")
+    print( "       one the regional background cannot contaminate")
+    print("-" * 66)
+    print(f"  pooled rho (MISLEADING alone):   {res['spearman_rho_overall']:+.4f}")
+    print(f"    ^ mixes the two claims below; do not quote on its own")
+    print()
+    print(f"  BETWEEN-ward rho:                {res['spearman_rho_between_wards']:+.4f}")
+    print( "    'wards near more sources are dirtier on average'")
+    print( "    (static geography — largely restates the emission inventory)")
+    print()
+    print(f"  WITHIN-ward rho (median):        {res['per_ward_rho_median']:+.4f}")
+    print(f"    'this ward worsens when conditions turn against it'")
+    print(f"    (the real test of the wind/sigma physics)")
+    print(f"    wards with enough data: {res['wards_with_own_rho']}, "
+          f"{res['per_ward_rho_positive_fraction']:.0%} positive")
+    print()
+    print(f"  WITHIN-ward vs RAW PM2.5:        {res['per_ward_rho_median_raw']:+.4f}"
+          f"  ({res['per_ward_rho_positive_fraction_raw']:.0%} positive)")
+    print( "    'this ward's absolute PM2.5 tracks the modelled load'")
+    print( "    (includes citywide meteorology; see two-targets note)")
+    if "strong_source_wards" in res:
+        print()
+        print("  WITHIN-ward, split by local-source strength (limitation 4):")
+        print(f"    strong-source wards: {res['strong_source_wards']:+.4f} "
+              f"(n={res['strong_source_wards_n']})  <- where a local model can work")
+        print(f"    weak-source wards:   {res['weak_source_wards']:+.4f} "
+              f"(n={res['weak_source_wards_n']})  <- regional/secondary dominated")
+    print("-" * 66)
+    # The verdict is driven by WITHIN-ward skill, deliberately. That is the
+    # claim the kernel's meteorology actually makes, and the one a change to
+    # sigma/wind/stability should move. Judging by the pooled number would
+    # let a purely geographic signal mask having no dynamic skill at all.
+    def _grade(r: float) -> str:
+        if r != r:
+            return "INSUFFICIENT DATA"
+        if r <= 0:
+            return "NO SKILL"
+        if r < 0.10:
+            return "ESSENTIALLY NO SKILL"
+        if r < 0.20:
+            return "WEAK BUT REAL SIGNAL"
+        if r < 0.35:
+            return "SOLID for this model class"
+        return "STRONG — check for leakage before believing it"
+
+    # Both targets get a verdict. Grading only local excess hid a real
+    # +0.10 signal against raw PM2.5 for an entire development cycle.
+    print(f"  VERDICT vs raw PM2.5:     {_grade(res['per_ward_rho_median_raw'])}"
+          f"   (meteorology / absolute load)")
+    print(f"  VERDICT vs local excess:  {_grade(res['per_ward_rho_median'])}"
+          f"   (ward-specific attribution)")
+    print("=" * 66)
+    print("  NOTE: this validates dispersion GEOMETRY only. The source-split")
+    print("  fractions (industrial/road/fire %) are NOT validated here and")
+    print("  cannot be without chemical speciation. See module docstring.")
+
+    if args.json:
+        Path(args.json).write_text(json.dumps(res, indent=2))
+        print(f"\n  wrote {args.json}")
+
+
+if __name__ == "__main__":
+    main()

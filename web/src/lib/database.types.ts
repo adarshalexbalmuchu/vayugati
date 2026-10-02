@@ -389,37 +389,90 @@ export type Database = {
           },
         ]
       }
+      aqi_forecasts: {
+        Row: {
+          aqi: number
+          aqi_high: number
+          aqi_low: number
+          dominant_pollutant: string
+          generated_at: string
+          lead_hours: number
+          model_version: string
+          origin_ts: string
+          target_ts: string
+          ward_id: number
+        }
+        Insert: {
+          aqi: number
+          aqi_high: number
+          aqi_low: number
+          dominant_pollutant: string
+          generated_at?: string
+          lead_hours: number
+          model_version: string
+          origin_ts: string
+          target_ts: string
+          ward_id: number
+        }
+        Update: {
+          aqi?: number
+          aqi_high?: number
+          aqi_low?: number
+          dominant_pollutant?: string
+          generated_at?: string
+          lead_hours?: number
+          model_version?: string
+          origin_ts?: string
+          target_ts?: string
+          ward_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aqi_forecasts_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attributions: {
         Row: {
           breakdown: Json | null
+          breakdown_uncertainty: Json | null
           confidence: number | null
           direction: string | null
           id: number
           method: string | null
           regional_fire_index: number | null
           regional_fraction_prior: number | null
+          station_proximity: number | null
           ts: string
           ward_id: number
         }
         Insert: {
           breakdown?: Json | null
+          breakdown_uncertainty?: Json | null
           confidence?: number | null
           direction?: string | null
           id?: number
           method?: string | null
           regional_fire_index?: number | null
           regional_fraction_prior?: number | null
+          station_proximity?: number | null
           ts?: string
           ward_id: number
         }
         Update: {
           breakdown?: Json | null
+          breakdown_uncertainty?: Json | null
           confidence?: number | null
           direction?: string | null
           id?: number
           method?: string | null
           regional_fire_index?: number | null
           regional_fraction_prior?: number | null
+          station_proximity?: number | null
           ts?: string
           ward_id?: number
         }
@@ -706,6 +759,9 @@ export type Database = {
         Row: {
           baseline_pred: number | null
           confidence: number | null
+          exceed_prob: number | null
+          exceed_threshold: number | null
+          severe_risk: string | null
           forecast_run_id: number | null
           generated_at: string
           horizon_ts: string
@@ -726,6 +782,9 @@ export type Database = {
         Insert: {
           baseline_pred?: number | null
           confidence?: number | null
+          exceed_prob?: number | null
+          exceed_threshold?: number | null
+          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts: string
@@ -746,6 +805,9 @@ export type Database = {
         Update: {
           baseline_pred?: number | null
           confidence?: number | null
+          exceed_prob?: number | null
+          exceed_threshold?: number | null
+          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts?: string
@@ -1687,6 +1749,7 @@ export type Database = {
           so2: number | null
           station_id: number
           ts: string
+          value_basis: string | null
         }
         Insert: {
           aqi?: number | null
@@ -1701,6 +1764,7 @@ export type Database = {
           so2?: number | null
           station_id: number
           ts: string
+          value_basis?: string | null
         }
         Update: {
           aqi?: number | null
@@ -1715,6 +1779,7 @@ export type Database = {
           so2?: number | null
           station_id?: number
           ts?: string
+          value_basis?: string | null
         }
         Relationships: [
           {
@@ -1722,6 +1787,106 @@ export type Database = {
             columns: ["station_id"]
             isOneToOne: false
             referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      readings_hourly: {
+        Row: {
+          co: number | null
+          ingested_at: string
+          nh3: number | null
+          no2: number | null
+          o3: number | null
+          pm10: number | null
+          pm25: number | null
+          so2: number | null
+          source: string
+          station_id: number
+          ts: string
+        }
+        Insert: {
+          co?: number | null
+          ingested_at?: string
+          nh3?: number | null
+          no2?: number | null
+          o3?: number | null
+          pm10?: number | null
+          pm25?: number | null
+          so2?: number | null
+          source?: string
+          station_id: number
+          ts: string
+        }
+        Update: {
+          co?: number | null
+          ingested_at?: string
+          nh3?: number | null
+          no2?: number | null
+          o3?: number | null
+          pm10?: number | null
+          pm25?: number | null
+          so2?: number | null
+          source?: string
+          station_id?: number
+          ts?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "readings_hourly_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ward_estimates: {
+        Row: {
+          created_at: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours: number
+        }
+        Insert: {
+          created_at?: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours?: number
+        }
+        Update: {
+          created_at?: string
+          estimate?: number
+          lower_90?: number
+          model_version?: string
+          n_stations?: number
+          network_mean?: number
+          pollutant?: string
+          upper_90?: number
+          ward_id?: number
+          window_end?: string
+          window_hours?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ward_estimates_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
             referencedColumns: ["id"]
           },
         ]

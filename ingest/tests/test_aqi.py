@@ -200,3 +200,72 @@ def test_compute_aqi_negative_ignored_by_caller():
     # Negative concentrations should not contribute — _sub_index returns 0 for <=0
     result = compute_aqi(-5, None)
     assert result == 0
+
+
+# ── Sub-index inverse (data.gov.in publishes sub-indices, Sept 2026) ─────────
+
+import pytest
+
+from app import aqi as _aqi
+
+
+@pytest.mark.parametrize("pollutant", sorted(_aqi.SUB_INDEX_BREAKPOINTS))
+def test_sub_index_inverse_round_trips_every_integer_index(pollutant):
+    bps = _aqi.SUB_INDEX_BREAKPOINTS[pollutant]
+    for idx in range(0, 501):
+        c = _aqi.concentration_from_sub_index(pollutant, idx)
+        assert _aqi._sub_index(c, bps) == idx, (pollutant, idx, c)
+
+
+def test_sub_index_inverse_known_points():
+    # NO2: 40 ug/m3 <-> 50, 80 <-> 100, 180 <-> 200 (CPCB NAQI 2014)
+    assert _aqi.concentration_from_sub_index("no2", 50) == pytest.approx(40)
+    assert _aqi.concentration_from_sub_index("no2", 25) == pytest.approx(20)   # slope 1.25 below 80
+    assert _aqi.concentration_from_sub_index("no2", 150) == pytest.approx(130)
+    # PM2.5: slope 5/3 below 60 -> index 50 is 30 ug/m3
+    assert _aqi.concentration_from_sub_index("pm25", 50) == pytest.approx(30)
+    # CO comes back in mg/m3: index 47 -> 0.94 mg/m3 (it was being stored as 0.047)
+    assert _aqi.concentration_from_sub_index("co", 47) == pytest.approx(0.94)
+
+
+def test_sub_index_inverse_edges():
+    assert _aqi.concentration_from_sub_index("pm25", None) is None
+    assert _aqi.concentration_from_sub_index("unknown", 50) is None
+    assert _aqi.concentration_from_sub_index("pm10", 0) == 0.0
+    assert _aqi.concentration_from_sub_index("pm10", 650) == 600.0
+
+
+def test_backfill_convert_recovers_concentrations_from_legacy_row():
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location(
+        "fix", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "fix_cpcb_subindex_rows.py")
+    fix = importlib.util.module_from_spec(spec); spec.loader.exec_module(fix)
+    legacy = {"station_id": 1, "ts": "2026-09-01T00:00:00+00:00", "pm25": 150, "pm10": 120,
+              "no2": 25, "so2": None, "o3": 30, "co": 0.047, "nh3": None, "aqi": 263}
+    out = fix.convert(legacy)
+    assert out["pm25"] == pytest.approx(75.0)
+    assert out["no2"] == pytest.approx(20.0)
+    assert out["co"] == pytest.approx(0.94)
+    assert out["aqi"] == 150                    # CPCB's AQI = max published sub-index
+    assert out["value_basis"] == "naqi_window"
+    assert "so2" not in out
+
+
+def test_backfill_pre_tag_rows_are_identified_by_integer_values_and_raw_co():
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location(
+        "fix", pathlib.Path(__file__).resolve().parents[1] / "scripts" / "fix_cpcb_subindex_rows.py")
+    fix = importlib.util.module_from_spec(spec); spec.loader.exec_module(fix)
+    cpcb_like = {"station_id": 2, "ts": "2026-08-02T07:00:00+00:00", "pm25": 88.0, "no2": 25.0, "co": 47.0}
+    openaq_like = {"station_id": 2, "ts": "2026-08-02T08:00:00+00:00", "pm25": 41.3, "no2": 18.0, "co": 0.82}
+    assert fix._all_integer(cpcb_like) and not fix._all_integer(openaq_like)
+    out = fix.convert(cpcb_like, co_index_scale=1.0)
+    assert out["co"] == pytest.approx(0.94) and out["ingest_source"] == "cpcb"
+
+
+def test_cpcb_aqi_needs_three_pollutants_including_pm():
+    from app.aqi import compute_cpcb_aqi
+    assert compute_cpcb_aqi(None, None, so2=8.8, o3=8.0, co_mg=0.98) is None   # no PM: the Mundka false dip
+    assert compute_cpcb_aqi(75.0, None, no2=20.0) is None                       # only two pollutants
+    assert compute_cpcb_aqi(75.0, None, no2=20.0, co_mg=0.9) == compute_aqi(75.0, None, no2=20.0, co_mg=0.9)
+    assert compute_cpcb_aqi(None, 120.0, no2=20.0, o3=30.0) == compute_aqi(None, 120.0, no2=20.0, o3=30.0)

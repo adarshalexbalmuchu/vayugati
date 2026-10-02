@@ -9,11 +9,37 @@ import {
   nearestForecastPoint,
   nearestStationTo,
   nowcastPoint,
+  pollutantHasForecast,
   resolveWardReading,
   stationReadingValue,
   wardDataStatus,
+  wardPollutantValue,
 } from './mapRules'
-import type { ForecastPoint, StationMarker, WardForecastSummary } from './data'
+import type { ForecastPoint, StationMarker, WardForecastSummary, WardSummary } from './data'
+
+function ward(overrides: Partial<WardSummary> = {}): WardSummary {
+  return {
+    id: 1,
+    name: 'Ward 1',
+    dominant_source: null,
+    lat: null,
+    lng: null,
+    aqi: null,
+    pm25: null,
+    pm10: null,
+    no2: null,
+    so2: null,
+    co: null,
+    o3: null,
+    ts: null,
+    station_name: null,
+    station_agency: null,
+    hourly: null,
+    valueBasis: null,
+    isMonitored: true,
+    ...overrides,
+  }
+}
 
 function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
   return {
@@ -33,6 +59,11 @@ function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
     forecastGeneratedAt: null,
     forecastMethod: null,
     dataQualityStatus: null,
+    maxValidatedHorizonHours: null,
+    beatsPersistence: null,
+    exceedThreshold: null,
+    exceedProb: null,
+    severeRisk: null,
     ...overrides,
   }
 }
@@ -119,7 +150,22 @@ describe('resolveWardReading', () => {
     expect(resolveWardReading(ward, 'pm10', '24h', f).value).toBe(150)
   })
 
-  it('flags AQI forecast mode as a proxy (real PM2.5 forecast, not a fabricated AQI forecast), and only that mode', () => {
+  it('shows the real forecast AQI on the AQI colour scale when the ward has one', () => {
+    const f = forecast({ pollutant: 'pm25', points: [point({ horizon_ts: hoursFromNow(24), predicted_value: 150 })] })
+    const aqiFc = {
+      wardId: 1, leadHours: 24, originTs: hoursFromNow(0), targetTs: hoursFromNow(24), aqi: 312, aqiLow: 260,
+      aqiHigh: 370, dominantPollutant: 'pm25', generatedAt: hoursFromNow(0),
+    }
+    for (const mode of ['1h', '24h', '48h'] as const) {
+      const r = resolveWardReading(ward, 'aqi', mode, f, aqiFc)
+      expect(r).toMatchObject({ value: 312, unit: 'AQI (forecast)', colorMode: 'aqi', aqiForColor: 312, isProxy: false })
+    }
+    // never for 'now' or a single pollutant
+    expect(resolveWardReading(ward, 'aqi', 'now', f, aqiFc).value).toBe(ward.aqi)
+    expect(resolveWardReading(ward, 'pm25', '24h', f, aqiFc).value).toBe(150)
+  })
+
+  it('flags AQI forecast mode as a proxy only when the ward has no forecast AQI', () => {
     const f = forecast({ pollutant: 'pm25', points: [point({ horizon_ts: hoursFromNow(24), predicted_value: 150 })] })
     expect(resolveWardReading(ward, 'aqi', '24h', f).isProxy).toBe(true)
     expect(resolveWardReading(ward, 'aqi', '24h', f).unit).toMatch(/risk signal/i)
@@ -241,14 +287,36 @@ describe('anchorFreshnessClass', () => {
 })
 
 describe('forecastPollutantFor', () => {
-  it('maps aqi to pm25 (the only pollutant forecast.py never computes)', () => {
+  it('maps aqi to pm25 (the only pollutant forecast.py never computes - a composite index)', () => {
     expect(forecastPollutantFor('aqi')).toBe('pm25')
   })
 
-  it('passes every other pollutant through unchanged - forecast.py forecasts all three', () => {
+  it('passes every other pollutant through unchanged - forecast.py forecasts all six', () => {
+    // Sept 2026: so2/co/o3 used to also fall back to pm25 here (a gap in
+    // forecast.py's enabled-pollutants list, not a real data limit - see
+    // this function's own updated comment) - now forecast.py trains on
+    // them too, so every non-aqi pollutant passes through as itself.
     expect(forecastPollutantFor('pm25')).toBe('pm25')
     expect(forecastPollutantFor('pm10')).toBe('pm10')
     expect(forecastPollutantFor('no2')).toBe('no2')
+    expect(forecastPollutantFor('so2')).toBe('so2')
+    expect(forecastPollutantFor('co')).toBe('co')
+    expect(forecastPollutantFor('o3')).toBe('o3')
+  })
+})
+
+describe('pollutantHasForecast', () => {
+  it('is false only for aqi', () => {
+    expect(pollutantHasForecast('aqi')).toBe(false)
+  })
+
+  it('is true for every concentration pollutant, including so2/co/o3', () => {
+    expect(pollutantHasForecast('pm25')).toBe(true)
+    expect(pollutantHasForecast('pm10')).toBe(true)
+    expect(pollutantHasForecast('no2')).toBe(true)
+    expect(pollutantHasForecast('so2')).toBe(true)
+    expect(pollutantHasForecast('co')).toBe(true)
+    expect(pollutantHasForecast('o3')).toBe(true)
   })
 })
 
@@ -262,11 +330,12 @@ describe('markerMeaningLabel', () => {
     expect(markerMeaningLabel('pm10', 'now')).toMatch(/µg\/m³/)
   })
 
-  it('is honest about AQI having no real forecast - names the proxy pollutant and "risk signal"', () => {
+  it('says AQI is forecast to 12 h only, and labels the PM2.5 stand-in at 24h/48h', () => {
     const line = markerMeaningLabel('aqi', '24h')
+    expect(line).toMatch(/12 h/)
     expect(line).toMatch(/pm2\.5/i)
     expect(line).toMatch(/risk signal/i)
-    expect(line).not.toMatch(/forecast aqi/i)
+    expect(markerMeaningLabel('aqi', '1h')).toMatch(/forecast aqi/i)
   })
 
   it('names the real forecast pollutant and horizon for a non-AQI selection', () => {
@@ -290,7 +359,7 @@ describe('markerMeaningLabel', () => {
 
 describe('nearestStationTo', () => {
   function station(overrides: Partial<StationMarker> = {}): StationMarker {
-    return { id: 1, name: 'Test station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, ...overrides }
+    return { id: 1, name: 'Test station', lat: 28.6139, lng: 77.209, aqi: null, pm25: null, pm10: null, no2: null, so2: null, co: null, o3: null, ...overrides }
   }
 
   it('returns null when the origin coordinate is missing', () => {
@@ -535,11 +604,43 @@ describe('wardDataStatus', () => {
     expect(wardDataStatus(true, false)).toBe('station_backed')
   })
 
-  it('is nearest_station_proxy when there is no direct station but a nearest one is computable', () => {
-    expect(wardDataStatus(false, true)).toBe('nearest_station_proxy')
+  it('is model_estimate when there is no direct station but the network has stations', () => {
+    expect(wardDataStatus(false, true)).toBe('model_estimate')
   })
 
   it('is no_station_data when neither is available - never a 4th guessed state', () => {
     expect(wardDataStatus(false, false)).toBe('no_station_data')
+  })
+})
+
+describe('wardPollutantValue', () => {
+  // Regression coverage (Sept 2026): HotspotsRiskTable's row ranking used to
+  // always sort by ward.aqi regardless of which of the 7 pollutant tabs was
+  // selected — clicking PM2.5/SO2/CO/etc. changed what value was DISPLAYED
+  // per row but never re-sorted the table by it. This helper is the shared
+  // pollutant->field mapping both CurrentReadingBadge's display and the
+  // table's ranking now use, so they can never independently drift.
+  const w = ward({ aqi: 184, pm25: 88, pm10: 154, no2: 25, so2: 9, co: 0.066, o3: 38 })
+
+  it('maps each of the 7 pollutants to its own field, not a shared fallback', () => {
+    expect(wardPollutantValue(w, 'aqi')).toBe(184)
+    expect(wardPollutantValue(w, 'pm25')).toBe(88)
+    expect(wardPollutantValue(w, 'pm10')).toBe(154)
+    expect(wardPollutantValue(w, 'no2')).toBe(25)
+    expect(wardPollutantValue(w, 'so2')).toBe(9)
+    expect(wardPollutantValue(w, 'co')).toBe(0.066)
+    expect(wardPollutantValue(w, 'o3')).toBe(38)
+  })
+
+  it('never falls through SO2/CO/O3 to NO2 (the exact bug CurrentReadingBadge itself was fixed for)', () => {
+    const distinct = ward({ no2: 25, so2: 999, co: 999, o3: 999 })
+    expect(wardPollutantValue(distinct, 'so2')).toBe(999)
+    expect(wardPollutantValue(distinct, 'co')).toBe(999)
+    expect(wardPollutantValue(distinct, 'o3')).toBe(999)
+  })
+
+  it('returns null, not 0 or undefined, when a ward has no reading for that pollutant', () => {
+    const noReadings = ward()
+    expect(wardPollutantValue(noReadings, 'co')).toBeNull()
   })
 })

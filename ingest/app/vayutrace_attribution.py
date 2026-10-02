@@ -58,6 +58,7 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
         weather_by_ward=weather_by_ward,
         sigma_km=sigma_km,
         month=month,
+        cpcb_stations=stations,
     )
 
     if not results:
@@ -78,6 +79,13 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
                     "ts":         ts_now,
                     "breakdown":  r["breakdown"],
                     "confidence": r["confidence"],
+                    # Monte Carlo p10/p50/p90 per source type. Persisted
+                    # alongside the point estimate because the bands are
+                    # wide (median dominant-source width ~0.39) and a
+                    # consumer reading `breakdown` alone would substantially
+                    # overestimate how determined the split is.
+                    "breakdown_uncertainty": r.get("breakdown_uncertainty"),
+                    "station_proximity":     r.get("station_proximity"),
                     "method":     _METHOD,
                     "regional_fraction_prior": r.get("regional_fraction_prior"),
                     "regional_fire_index":     r.get("regional_fire_index"),

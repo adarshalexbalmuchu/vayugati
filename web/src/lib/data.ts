@@ -1,4 +1,5 @@
 import type { Database } from './database.types'
+import { geometryCentroid } from './dataQualityRules'
 import {
   summarizeBaselineWinners,
   summarizeForecastCoverage,
@@ -11,6 +12,7 @@ import {
   type ForecastRunLike,
 } from './forecastTrustRules'
 import { supabase } from './supabase'
+import { summarizeCityWeather, type CityWeather, type WeatherRow } from './weatherRules'
 
 /** Enum types come from the generated schema, so a DB change surfaces as a
  *  compile error here rather than a runtime 400 from PostgREST. */
@@ -55,8 +57,34 @@ export interface WardSummary {
   co: number | null
   o3: number | null
   ts: string | null
+  /** What the pm25/no2/... fields above hold (readings.value_basis):
+   *  'naqi_window' = CPCB's 24h (8h CO/O3) averages, 'hourly' = an hourly
+   *  value, null = unknown. Labels must say which. */
+  valueBasis: 'hourly' | 'naqi_window' | null
   station_name: string | null
   station_agency: string | null
+  /** The ward station's latest real HOURLY mean (readings_hourly), when one
+   *  exists within HOURLY_FRESH_HOURS. The top-level pm25/no2/... fields come
+   *  from `readings`, whose CPCB rows are 24-hour averages (CPCB publishes
+   *  nothing finer), so this is what "current concentration" should show.
+   *  `ts` is the start of that hour. CO in mg/m³, like everywhere else. */
+  hourly: {
+    ts: string
+    pm25: number | null
+    pm10: number | null
+    no2: number | null
+    so2: number | null
+    co: number | null
+    o3: number | null
+  } | null
+  /** Has at least one active station assigned. Added Sept 2026 when
+   *  fetchAllWardsAqi() was extended to return every ward (not just
+   *  monitored ones) — see that function's own doc comment for why.
+   *  Every place that used to infer "is this ward monitored" from mere
+   *  presence in the wards array (OverviewChoroplethMap's `isMonitored`,
+   *  MapPage's boundary-click routing) must check this field explicitly
+   *  now instead, since array presence alone no longer means monitored. */
+  isMonitored: boolean
 }
 
 export interface Report {
@@ -115,33 +143,148 @@ export async function fetchCurrentWeather(wardId: number): Promise<Weather | nul
   return data ?? null
 }
 
+/** City-wide temperature and humidity now, for the header: each ward's
+ *  latest reading from the last 3 h, then the median across wards (see
+ *  summarizeCityWeather). null when weather ingest has nothing that recent. */
+export async function fetchCityWeatherNow(): Promise<CityWeather | null> {
+  const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('weather')
+    .select('ward_id, ts, temp_c, humidity')
+    .gte('ts', since)
+    .lte('ts', new Date().toISOString())
+    .order('ts', { ascending: false })
+    .limit(2000)
+  if (error) throw new Error(error.message)
+  return summarizeCityWeather((data ?? []) as WeatherRow[])
+}
+
+export interface WindFieldPoint {
+  wardId: number
+  wardName: string
+  lat: number
+  lng: number
+  windSpeed: number | null
+  windDir: number | null
+  ts: string | null
+}
+
+/** A small, honest wind field for the Overview map's spatial-correlation
+ *  view (Sept 2026 addition) — several real wind readings spread across the
+ *  city, not one fabricated "city wind" value. Wind is fetched per-location
+ *  from Open-Meteo's real grid (ingest/app/open_meteo.py), so it genuinely
+ *  can vary ward to ward; a single arrow would misrepresent that.
+ *
+ *  Bug fix (Sept 2026, 2nd pass): used to hard-filter to wards with a real
+ *  captured lat/lng point — only the original 13 hotspot wards, so every
+ *  wind arrow ever drawn clustered around those 13 specific locations, not
+ *  a genuinely city-wide sample, even though weather data exists for all
+ *  265 wards (via the boundary-centroid fallback ingest.py's weather step
+ *  already uses). The old doc comment argued the 13 "happens to already be
+ *  spread across the city... so it doubles as a reasonable spatial
+ *  sample" — true as far as it went, but a real per-ward sample covering
+ *  all 265 is strictly better than a fixed 13-point proxy for "spread
+ *  across the city," and costs nothing extra: fetchAllWindByWard() already
+ *  does one bulk query for every ward's latest reading (same query
+ *  MapPage's own wind-arrow layer uses), so this just joins that against
+ *  every ward's position (real point, or geometryCentroid() of its
+ *  boundary — same fallback classifyWardCoverage() already uses) instead
+ *  of a second per-ward fetchCurrentWeather() call per point. */
+export async function fetchWindField(): Promise<WindFieldPoint[]> {
+  const [{ data: wards }, windByWard] = await Promise.all([
+    supabase.from('wards').select('id, name, lat, lng, boundary'),
+    fetchAllWindByWard(),
+  ])
+  if (!wards) return []
+
+  const windById = new Map(windByWard.map((w) => [w.ward_id, w]))
+  const points: WindFieldPoint[] = []
+  for (const w of wards) {
+    let lat = w.lat
+    let lng = w.lng
+    if (lat == null || lng == null) {
+      const geometry = w.boundary as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon | null
+      const centroid = geometry ? geometryCentroid(geometry) : null
+      if (!centroid) continue // genuinely no usable position — skipped, not fabricated
+      lat = centroid.lat
+      lng = centroid.lng
+    }
+    const wind = windById.get(w.id)
+    points.push({
+      wardId: w.id,
+      wardName: w.name,
+      lat,
+      lng,
+      windSpeed: wind?.wind_speed ?? null,
+      windDir: wind?.wind_dir ?? null,
+      ts: wind?.ts ?? null,
+    })
+  }
+  return points
+}
+
+/** How far back fetchAllWardsAqi looks for a station's last-known reading
+ *  when it has nothing in the normal 3h window. Long enough to ride out a
+ *  multi-day upstream outage; the reading's `ts` marks it stale downstream. */
+export const LAST_KNOWN_READING_HOURS = 72
+
+/** An hourly mean older than this isn't shown as "current". The ingest
+ *  service fills readings_hourly once an hour with a 6h look-back. */
+export const HOURLY_FRESH_HOURS = 6
+
 export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
-  // "Monitored" = has at least one active station, not the legacy
-  // is_hotspot=true seed flag (which only ever covered the original 13
-  // priority localities - 26 other wards have since gained real stations
-  // via the MCD/NDMC/Cantonment boundary import and were invisible here
-  // until this scoped on stations instead).
-  // 3 queries total (stations, wards, readings) instead of the previous
-  // 2-query-per-ward fan-out. All joins done in JS.
+  // Bug fix (Sept 2026): this used to return ONLY "monitored" wards (has
+  // at least one active station) — 39 of 265. That was fine while nothing
+  // else needed an unmonitored ward's row, but VayuTrace source
+  // attribution (vayutrace_v1) now covers all 265 wards (confirmed live:
+  // every ward gets a real dispersion-kernel estimate from wind +
+  // boundary-centroid alone, no station required) — yet the Map page's
+  // ward detail panel could never show it for the other 226, because they
+  // were never even present in this array for `wards.find(...)` to match.
+  // Now returns every ward; AQI/pollutant/station fields are null for an
+  // unmonitored one (already handled gracefully everywhere this array is
+  // consumed - "Unavailable" fallbacks, "No monitoring station matched"
+  // messages, etc.) rather than the row being absent entirely.
+  //
+  // `isMonitored` (see WardSummary's own doc comment) is the explicit
+  // replacement for "is this id present in the array" as the monitored
+  // signal, now that presence alone no longer means monitored.
   const { data: allStations } = await supabase.from('stations').select('id, name, agency, ward_id, is_primary').eq('is_active', true)
-  const monitoredWardIds = [...new Set((allStations ?? []).map((s) => s.ward_id).filter((id): id is number => id != null))]
-  if (monitoredWardIds.length === 0) return []
+  const monitoredWardIds = new Set((allStations ?? []).map((s) => s.ward_id).filter((id): id is number => id != null))
 
   const allStationIds = (allStations ?? []).map((s) => s.id)
   const since = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
 
   const [{ data: wards }, { data: recentReadings }] = await Promise.all([
-    supabase.from('wards').select('id, name, dominant_source, lat, lng').in('id', monitoredWardIds).order('name'),
+    supabase.from('wards').select('id, name, dominant_source, lat, lng').order('name'),
     // Latest reading per station: fetch recent window, keep first row per station.
+    // Empty allStationIds (no active stations at all) still resolves fine —
+    // .in('station_id', []) returns zero rows, not an error.
     supabase
       .from('readings')
-      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts, value_basis')
       .in('station_id', allStationIds)
       .gte('ts', since)
       .order('ts', { ascending: false })
-      .limit(allStationIds.length * 4),
+      .limit(Math.max(allStationIds.length, 1) * 4),
   ])
   if (!wards) return []
+
+  // Latest real hourly mean per station (see WardSummary.hourly).
+  const hourlySince = new Date(Date.now() - HOURLY_FRESH_HOURS * 3600 * 1000).toISOString()
+  const { data: hourlyRows } = await supabase
+    .from('readings_hourly')
+    .select('station_id, ts, pm25, pm10, no2, so2, co, o3')
+    .in('station_id', allStationIds)
+    .gte('ts', hourlySince)
+    .order('ts', { ascending: false })
+    .limit(Math.max(allStationIds.length, 1) * (HOURLY_FRESH_HOURS + 1))
+  const hourlyByStation = new Map<number, NonNullable<WardSummary['hourly']>>()
+  for (const r of hourlyRows ?? []) {
+    if (!hourlyByStation.has(r.station_id)) {
+      hourlyByStation.set(r.station_id, { ts: r.ts, pm25: r.pm25, pm10: r.pm10, no2: r.no2, so2: r.so2, co: r.co, o3: r.o3 })
+    }
+  }
 
   const wardStations = new Map<number, { id: number; name: string; agency: string | null; is_primary: boolean }[]>()
   for (const s of allStations ?? []) {
@@ -154,6 +297,28 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   const latestByStation = new Map<number, typeof recentReadings extends (infer T)[] | null ? T : never>()
   for (const r of recentReadings ?? []) {
     if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r)
+  }
+
+  // Last-known fallback (Sept 2026, CPCB outage): a station with nothing in
+  // the 3h window used to vanish, so a ~2-day data.gov.in/OpenAQ outage
+  // blanked every AQI on the dashboard. Look further back for just those
+  // stations and show their last value; `ts` rides along so every consumer's
+  // existing staleness handling (hotspotStatus 'stale', the map's faded
+  // fill, "(stale reading)" labels) marks it as old rather than current.
+  const missing = allStationIds.filter((id) => !latestByStation.has(id))
+  if (missing.length > 0) {
+    const lastKnownSince = new Date(Date.now() - LAST_KNOWN_READING_HOURS * 3600 * 1000).toISOString()
+    const { data: older } = await supabase
+      .from('readings')
+      .select('station_id, aqi, pm25, pm10, no2, so2, co, o3, ts, value_basis')
+      .in('station_id', missing)
+      .gte('ts', lastKnownSince)
+      .lt('ts', since)
+      .order('ts', { ascending: false })
+      .limit(missing.length * 4)
+    for (const r of older ?? []) {
+      if (!latestByStation.has(r.station_id)) latestByStation.set(r.station_id, r)
+    }
   }
 
   return wards.map((ward) => {
@@ -179,8 +344,15 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
       co: best?.reading.co ?? null,
       o3: best?.reading.o3 ?? null,
       ts: best?.reading.ts ?? null,
+      valueBasis: (best?.reading.value_basis as WardSummary['valueBasis']) ?? null,
       station_name: best?.station.name ?? null,
       station_agency: best?.station.agency ?? null,
+      // Same station as the reading above when it has an hourly mean; else
+      // whichever of the ward's stations does.
+      hourly: (best && hourlyByStation.get(best.station.id))
+        ?? stations.map((s) => hourlyByStation.get(s.id)).find((h) => h != null)
+        ?? null,
+      isMonitored: monitoredWardIds.has(ward.id),
     }
   })
 }
@@ -251,6 +423,9 @@ export interface StationMarker {
   pm25: number | null
   pm10: number | null
   no2: number | null
+  so2: number | null
+  co: number | null
+  o3: number | null
 }
 
 /** Station-level counterpart to fetchAllWardsAqi — same shape MapView
@@ -285,12 +460,12 @@ export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
   // its last report, not that it's currently at 274).
   const staleCutoff = new Date(Date.now() - STATION_AQI_STALE_MS).toISOString()
 
-  const latestByStation = new Map<number, { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null }>()
+  const latestByStation = new Map<number, { aqi: number | null; pm25: number | null; pm10: number | null; no2: number | null; so2: number | null; co: number | null; o3: number | null }>()
   await Promise.all(
     stations.map(async (s) => {
       const { data } = await supabase
         .from('readings')
-        .select('aqi, pm25, pm10, no2')
+        .select('aqi, pm25, pm10, no2, so2, co, o3')
         .eq('station_id', s.id)
         .gte('ts', staleCutoff)
         .order('ts', { ascending: false })
@@ -313,8 +488,50 @@ export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
         pm25: reading?.pm25 ?? null,
         pm10: reading?.pm10 ?? null,
         no2: reading?.no2 ?? null,
+        so2: reading?.so2 ?? null,
+        co: reading?.co ?? null,
+        o3: reading?.o3 ?? null,
       }
     })
+}
+
+export interface WardHistoryPoint {
+  ts: string
+  aqi: number | null
+  pm25: number | null
+}
+
+/** A ward's own real reading history over the last `days` — the "how did we
+ *  get here" complement to the 48h forecast chart, which only ever shows
+ *  the future. Added Sept 2026 after a review of the Overview dashboard
+ *  from a researcher/policy-maker's perspective flagged that this app had
+ *  no way to see whether a current reading is a sudden spike or a slow
+ *  multi-day climb — every existing number was a single snapshot in time.
+ *
+ *  Picks ONE representative station per ward (the same is_primary-preferred
+ *  choice fetchAllWardsAqi already makes for "the ward's current reading"),
+ *  not an average across multiple stations — consistent with what a
+ *  commander/researcher already sees as "this ward's AQI" elsewhere in the
+ *  app, rather than a second, differently-computed number for the same ward. */
+export async function fetchWardHistory(wardId: number, days: number): Promise<WardHistoryPoint[]> {
+  const { data: stations } = await supabase
+    .from('stations')
+    .select('id, is_primary')
+    .eq('ward_id', wardId)
+    .eq('is_active', true)
+  if (!stations || stations.length === 0) return []
+
+  const primary = stations.find((s) => s.is_primary)
+  const stationId = primary?.id ?? stations[0].id
+
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString()
+  const { data } = await supabase
+    .from('readings')
+    .select('ts, aqi, pm25')
+    .eq('station_id', stationId)
+    .gte('ts', since)
+    .order('ts', { ascending: true })
+  return (data ?? []).map((r) => ({ ts: r.ts, aqi: r.aqi, pm25: r.pm25 }))
 }
 
 export interface HistoricalStationReading {
@@ -587,6 +804,23 @@ export interface ForecastPoint {
   forecastGeneratedAt: string | null
   forecastMethod: string | null
   dataQualityStatus: string | null
+  /** forecast_runs.max_validated_horizon_hours / beats_persistence — added
+   *  Sept 2026 so callers can show an honest confidence tier (see
+   *  incidentRules.ts's confidenceTierLabel) instead of the misleading raw
+   *  `confidence` float above, which is a hand-picked 0.4-0.9 tier marker,
+   *  not a calibrated probability, and collides to the same 0.5 value for
+   *  both "validated to 12h" and "not validated at all." */
+  maxValidatedHorizonHours: number | null
+  beatsPersistence: boolean | null
+  /** Chance that the value at horizon_ts reaches exceedThreshold (the city's
+   *  alert threshold), from a separate calibrated classifier (Oct 2026). Null
+   *  where that classifier showed no skill in validation. */
+  exceedThreshold: number | null
+  exceedProb: number | null
+  /** 'elevated' when a severe-level episode (PM2.5 >= 250) is plausible at
+   *  horizon_ts; deliberately coarse, since precise probabilities at that
+   *  level were overconfident in validation. */
+  severeRisk: 'elevated' | null
 }
 
 /**
@@ -613,7 +847,17 @@ interface _ForecastRow {
   nowcast_method: string | null
   nowcast_backtest_samples: number | null
   nowcast_backtest_passed: boolean | null
-  forecast_runs: { training_period_end: string | null; generated_at: string; method: string; data_quality_status: string } | null
+  exceed_threshold?: number | null
+  exceed_prob?: number | null
+  severe_risk?: string | null
+  forecast_runs: {
+    training_period_end: string | null
+    generated_at: string
+    method: string
+    data_quality_status: string
+    max_validated_horizon_hours: number | null
+    beats_persistence: boolean
+  } | null
 }
 
 function _mapForecastRow(row: _ForecastRow): ForecastPoint {
@@ -635,11 +879,16 @@ function _mapForecastRow(row: _ForecastRow): ForecastPoint {
     forecastGeneratedAt: row.forecast_runs?.generated_at ?? null,
     forecastMethod: row.forecast_runs?.method ?? null,
     dataQualityStatus: row.forecast_runs?.data_quality_status ?? null,
+    maxValidatedHorizonHours: row.forecast_runs?.max_validated_horizon_hours ?? null,
+    beatsPersistence: row.forecast_runs?.beats_persistence ?? null,
+    exceedThreshold: row.exceed_threshold ?? null,
+    exceedProb: row.exceed_prob ?? null,
+    severeRisk: row.severe_risk === 'elevated' ? 'elevated' : null,
   }
 }
 
 const FORECAST_ROW_SELECT =
-  'horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, is_nowcast_point, lower_bound, upper_bound, nowcast_method, nowcast_backtest_samples, nowcast_backtest_passed, forecast_runs(training_period_end, generated_at, method, data_quality_status)'
+  'horizon_ts, pm25_pred, baseline_pred, local_excess, confidence, model_version, is_nowcast_point, lower_bound, upper_bound, nowcast_method, nowcast_backtest_samples, nowcast_backtest_passed, exceed_threshold, exceed_prob, severe_risk, forecast_runs(training_period_end, generated_at, method, data_quality_status, max_validated_horizon_hours, beats_persistence)'
 
 export async function fetchForecast(wardId: number): Promise<ForecastPoint[]> {
   const { data } = await supabase
@@ -658,6 +907,9 @@ export interface WindReading {
   ward_id: number
   wind_speed: number | null
   wind_dir: number | null
+  /** Added Sept 2026 (was already fetched, just not returned) so
+   *  fetchWindField() can show it without a second per-ward query. */
+  ts: string | null
 }
 
 /** Latest wind reading per ward (last 2h window). One query, deduped in JS. */
@@ -671,13 +923,19 @@ export async function fetchAllWindByWard(): Promise<WindReading[]> {
   const latest = new Map<number, WindReading>()
   for (const row of (data ?? [])) {
     if (row.ward_id != null && !latest.has(row.ward_id)) {
-      latest.set(row.ward_id, { ward_id: row.ward_id, wind_speed: row.wind_speed, wind_dir: row.wind_dir })
+      latest.set(row.ward_id, { ward_id: row.ward_id, wind_speed: row.wind_speed, wind_dir: row.wind_dir, ts: row.ts ?? null })
     }
   }
   return [...latest.values()]
 }
 
-export type ForecastPollutant = 'pm25' | 'pm10' | 'no2'
+// Sept 2026: extended from ('pm25' | 'pm10' | 'no2') — forecast.py's
+// DEFAULT_ENABLED_POLLUTANTS now trains so2/co/o3 too, since the readings
+// data (db.get_readings_history()) and the forecast_runs/forecasts schema
+// already supported all six pollutants; only the Python enabled-list and
+// this type were still hardcoded to three. See forecastPollutantFor()'s
+// own updated comment for what this actually changes for callers.
+export type ForecastPollutant = 'pm25' | 'pm10' | 'no2' | 'so2' | 'co' | 'o3'
 
 export interface WardForecastSummary {
   wardId: number
@@ -815,10 +1073,35 @@ export async function fetchAttribution(wardId: number): Promise<Attribution | nu
   return { ...data, breakdown: (data.breakdown ?? null) as Record<string, number> | null }
 }
 
+/** p10/p50/p90 for one source type's share, from the kernel's Monte Carlo
+ *  draws. Bands are WIDE — median dominant-source width is ~0.44 across
+ *  Delhi — so anything rendering `breakdown` must render these too rather
+ *  than presenting a point estimate as settled. */
+export interface VayuTraceBand {
+  p10: number
+  p50: number
+  p90: number
+}
+
 export interface VayuTraceAttribution {
-  /** {industrial, road, fire, unknown} — fractions summing to 1, local excess only */
-  breakdown: { industrial: number; road: number; fire: number; unknown: number } | null
+  /** {industrial, road, fire, dust, unknown} — fractions summing to 1,
+   *  local excess only. `dust` added Sept 2026 (AP-42 road resuspension +
+   *  WRAP construction); rows written before that omit it. */
+  breakdown:
+    | { industrial: number; road: number; fire: number; dust?: number; unknown: number }
+    | null
+  /** Per-source-type Monte Carlo bands matching `breakdown`. NULL on rows
+   *  written before the uncertainty work, or when the kernel ran with
+   *  mc_draws=0. */
+  breakdown_uncertainty: Record<string, VayuTraceBand> | null
+  /** 0-1. As of Sept 2026 this means "how TIGHT is the dominant source's
+   *  Monte Carlo interval", i.e. a real uncertainty measure. It previously
+   *  meant distance-to-nearest-station, which is now `station_proximity`. */
   confidence: number | null
+  /** 0-1 proximity to the nearest CPCB station — a model-ANCHORING proxy,
+   *  not a confidence measure. A ward can sit next to a station and still
+   *  be attributed wrongly if the local emission geometry is wrong. */
+  station_proximity: number | null
   /**
    * IITK 2016 / TERI-ARAI 2018 city-level seasonal prior: fraction of Delhi's
    * total PM2.5 attributable to regional/upwind transport.
@@ -838,7 +1121,7 @@ export interface VayuTraceAttribution {
 export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTraceAttribution | null> {
   const { data } = await supabase
     .from('attributions')
-    .select('breakdown, confidence, regional_fraction_prior, regional_fire_index, ts')
+    .select('breakdown, breakdown_uncertainty, confidence, station_proximity, regional_fraction_prior, regional_fire_index, ts')
     .eq('ward_id', wardId)
     .eq('method', 'vayutrace_v1')
     .order('ts', { ascending: false })
@@ -847,7 +1130,10 @@ export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTra
   if (!data) return null
   return {
     breakdown: (data.breakdown ?? null) as VayuTraceAttribution['breakdown'],
+    breakdown_uncertainty:
+      (data.breakdown_uncertainty ?? null) as VayuTraceAttribution['breakdown_uncertainty'],
     confidence: data.confidence ?? null,
+    station_proximity: data.station_proximity ?? null,
     regional_fraction_prior: data.regional_fraction_prior ?? null,
     regional_fire_index: data.regional_fire_index ?? null,
     ts: data.ts,
@@ -863,7 +1149,7 @@ export async function fetchVayuTraceAttribution(wardId: number): Promise<VayuTra
 export async function fetchAllVayuTraceAttributions(): Promise<Map<number, VayuTraceAttribution>> {
   const { data } = await supabase
     .from('attributions')
-    .select('ward_id, breakdown, confidence, regional_fraction_prior, regional_fire_index, ts')
+    .select('ward_id, breakdown, breakdown_uncertainty, confidence, station_proximity, regional_fraction_prior, regional_fire_index, ts')
     .eq('method', 'vayutrace_v1')
     .order('ts', { ascending: false })
 
@@ -872,7 +1158,10 @@ export async function fetchAllVayuTraceAttributions(): Promise<Map<number, VayuT
     if (byWard.has(row.ward_id)) continue // already have the latest (rows are ts-desc)
     byWard.set(row.ward_id, {
       breakdown: (row.breakdown ?? null) as VayuTraceAttribution['breakdown'],
+      breakdown_uncertainty:
+        (row.breakdown_uncertainty ?? null) as VayuTraceAttribution['breakdown_uncertainty'],
       confidence: row.confidence ?? null,
+      station_proximity: row.station_proximity ?? null,
       regional_fraction_prior: row.regional_fraction_prior ?? null,
       regional_fire_index: row.regional_fire_index ?? null,
       ts: row.ts,
@@ -1295,7 +1584,14 @@ export interface LatestReadingReconciliation {
   cpcbStationName: string | null
   cpcbLastUpdate: string | null
   openaqLastUpdate: string | null
-  cpcbPollutants: Record<string, { avg: number; min: number | null; max: number | null }>
+  // `unit` mirrors the raw CPCB data.gov.in feed's own per-pollutant unit
+  // field — mostly a no-op ("UG/M3" for everything but CO), but CO
+  // specifically can come through as either "MG/M3" or "UG/M3" depending on
+  // station/feed quirks (see latest_readings.py's own co_data.get("unit", ...)
+  // handling on the backend). Consumers displaying/comparing raw CO values
+  // from this map MUST check `unit` before treating `avg` as mg/m³ — see
+  // HotspotsRiskTable.tsx's normalizeCpcbCo() for the one place that does.
+  cpcbPollutants: Record<string, { avg: number; min: number | null; max: number | null; unit?: string }>
   openaqPollutants: Record<string, number>
   cpcbAqi: number | null
   openaqAqi: number | null
@@ -1357,7 +1653,7 @@ export async function fetchLatestReadingsPreferred(): Promise<LatestReadingRecon
         cpcb_station_name: string | null
         cpcb_last_update: string | null
         openaq_last_update: string | null
-        cpcb_pollutants: Record<string, { avg: number; min: number | null; max: number | null }> | null
+        cpcb_pollutants: Record<string, { avg: number; min: number | null; max: number | null; unit?: string }> | null
         openaq_pollutants: Record<string, number> | null
         cpcb_aqi: number | null
         openaq_aqi: number | null
@@ -1382,4 +1678,92 @@ export async function fetchLatestReadingsPreferred(): Promise<LatestReadingRecon
   } catch {
     return null
   }
+}
+
+
+/** A model estimate of a ward's 24h PM2.5 or NO2 (ward_estimates table),
+ *  mainly for wards with no monitor. estimate = calibrated live-network 24h
+ *  mean x the ward's usual ratio (land use, power plants for PM2.5, nearby-
+ *  monitor correction); lower_90/upper_90 are an honest 90% range from
+ *  cross-validation at held-out monitors. window_end dates it: during an
+ *  upstream outage it is the last full day, not "now". */
+export interface WardEstimate {
+  pollutant: 'pm25' | 'no2'
+  estimate: number
+  lower_90: number
+  upper_90: number
+  window_end: string
+  n_stations: number
+  model_version: string
+}
+
+export async function fetchWardEstimates(wardId: number): Promise<WardEstimate[]> {
+  const { data } = await supabase
+    .from('ward_estimates')
+    .select('pollutant, estimate, lower_90, upper_90, window_end, n_stations, model_version')
+    .eq('ward_id', wardId)
+    .order('window_end', { ascending: false })
+    .limit(4)
+  const latest = new Map<string, WardEstimate>()
+  for (const r of data ?? []) {
+    if (!latest.has(r.pollutant)) latest.set(r.pollutant, r as WardEstimate)
+  }
+  return (['pm25', 'no2'] as const).map((p) => latest.get(p)).filter((e): e is WardEstimate => e != null)
+}
+
+/** One lead of a ward's forecast AQI (aqi_forecasts, ingest/app/forecast_aqi.py):
+ *  CPCB's own AQI rule applied to observed hours plus the six pollutants'
+ *  forecasts. Only leads the backtest validated are ever written. */
+export interface AqiForecastPoint {
+  wardId: number
+  leadHours: number
+  originTs: string
+  targetTs: string
+  aqi: number
+  aqiLow: number
+  aqiHigh: number
+  dominantPollutant: string
+  generatedAt: string
+}
+
+const AQI_FORECAST_SELECT = 'ward_id, lead_hours, origin_ts, target_ts, aqi, aqi_low, aqi_high, dominant_pollutant, generated_at'
+
+type AqiForecastRow = {
+  ward_id: number; lead_hours: number; origin_ts: string; target_ts: string; aqi: number
+  aqi_low: number; aqi_high: number; dominant_pollutant: string; generated_at: string
+}
+
+function toAqiForecastPoint(r: AqiForecastRow): AqiForecastPoint {
+  return {
+    wardId: r.ward_id, leadHours: r.lead_hours, originTs: r.origin_ts, targetTs: r.target_ts, aqi: r.aqi,
+    aqiLow: r.aqi_low, aqiHigh: r.aqi_high, dominantPollutant: r.dominant_pollutant, generatedAt: r.generated_at,
+  }
+}
+
+/** Each ward's forecast AQI for the hour nearest `hoursFromNow` (within
+ *  ±3 h), for the map. Wards without one are simply absent. */
+export async function fetchAqiForecastsNear(hoursFromNow: number, nowMs: number = Date.now()): Promise<Map<number, AqiForecastPoint>> {
+  const target = nowMs + hoursFromNow * 3_600_000
+  const { data } = await supabase
+    .from('aqi_forecasts')
+    .select(AQI_FORECAST_SELECT)
+    .gte('target_ts', new Date(target - 3 * 3_600_000).toISOString())
+    .lte('target_ts', new Date(target + 3 * 3_600_000).toISOString())
+  const best = new Map<number, AqiForecastPoint>()
+  for (const r of (data ?? []) as AqiForecastRow[]) {
+    const p = toAqiForecastPoint(r)
+    const cur = best.get(p.wardId)
+    if (!cur || Math.abs(Date.parse(p.targetTs) - target) < Math.abs(Date.parse(cur.targetTs) - target)) best.set(p.wardId, p)
+  }
+  return best
+}
+
+/** A ward's whole forecast AQI path (up to 48 leads), oldest lead first. */
+export async function fetchWardAqiForecast(wardId: number): Promise<AqiForecastPoint[]> {
+  const { data } = await supabase
+    .from('aqi_forecasts')
+    .select(AQI_FORECAST_SELECT)
+    .eq('ward_id', wardId)
+    .order('lead_hours', { ascending: true })
+  return ((data ?? []) as AqiForecastRow[]).map(toAqiForecastPoint)
 }

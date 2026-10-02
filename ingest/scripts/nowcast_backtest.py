@@ -294,7 +294,10 @@ def main() -> int:
     cities = db.get_active_cities(args.city)
     wards = {w["id"]: w for w in db.get_wards_with_city()}
     hours = FETCH_HISTORY_DAYS * 24
-    readings = db.get_readings_history(hours=hours)
+    # Real hourly values: CPCB rows in `readings` are 24h running means since
+    # 2026-08-11, and scoring an hourly model against them (as this script did
+    # until Sept 2026) mixes two kinds of data across that date.
+    readings = db.get_hourly_history(hours=hours)
     weather_df = forecast._hourly_ward_weather(db.get_weather_history(hours=hours))
     fire_counts_series = forecast._daily_fire_counts(db.get_fire_counts_history(days=hours // 24 + 15))
 

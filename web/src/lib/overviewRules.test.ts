@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bucketAgencyPerformance,
   bucketDispatchSla,
+  compareByUrgency,
   confidenceAtPeak,
   hotspotStatus,
   HOTSPOT_READING_STALE_MINUTES,
@@ -14,10 +15,11 @@ import {
   tallySourceMix,
   wardsNeedingReview,
   wardsNeedingReviewCount,
+  type UrgencySortInput,
 } from './overviewRules'
 import type { ActiveTaskDispatch, Incident } from './incidents'
 import type { StationHealthRow } from './ops'
-import type { WardForecastSummary, WardSummary } from './data'
+import type { ForecastPoint, WardForecastSummary, WardSummary } from './data'
 
 function ward(overrides: Partial<WardSummary> = {}): WardSummary {
   return {
@@ -36,6 +38,9 @@ function ward(overrides: Partial<WardSummary> = {}): WardSummary {
     ts: null,
     station_name: null,
     station_agency: null,
+    hourly: null,
+    valueBasis: null,
+    isMonitored: true,
     ...overrides,
   }
 }
@@ -51,6 +56,33 @@ function forecast(overrides: Partial<WardForecastSummary> = {}): WardForecastSum
     hoursToSevere: null,
     hoursToVeryPoor: null,
     hoursToNaaqs: null,
+    ...overrides,
+  }
+}
+
+function point(overrides: Partial<ForecastPoint> = {}): ForecastPoint {
+  return {
+    horizon_ts: new Date().toISOString(),
+    pm25_pred: null,
+    baseline_pred: null,
+    local_excess: null,
+    confidence: null,
+    model_version: null,
+    is_nowcast_point: false,
+    lower_bound: null,
+    upper_bound: null,
+    nowcast_method: null,
+    nowcast_backtest_samples: null,
+    nowcast_backtest_passed: false,
+    anchorObservedAt: null,
+    forecastGeneratedAt: null,
+    forecastMethod: null,
+    dataQualityStatus: null,
+    maxValidatedHorizonHours: null,
+    beatsPersistence: null,
+    exceedThreshold: null,
+    exceedProb: null,
+    severeRisk: null,
     ...overrides,
   }
 }
@@ -98,8 +130,8 @@ describe('confidenceAtPeak', () => {
     const f = forecast({
       peakTs: '2026-07-20T10:00:00Z',
       points: [
-        { horizon_ts: '2026-07-20T09:00:00Z', pm25_pred: 100, baseline_pred: 90, local_excess: 10, confidence: 0.5, model_version: 'v1' , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null},
-        { horizon_ts: '2026-07-20T10:00:00Z', pm25_pred: 150, baseline_pred: 100, local_excess: 50, confidence: 0.82, model_version: 'v1' , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null},
+        point({ horizon_ts: '2026-07-20T09:00:00Z', pm25_pred: 100, baseline_pred: 90, local_excess: 10, confidence: 0.5, model_version: 'v1' }),
+        point({ horizon_ts: '2026-07-20T10:00:00Z', pm25_pred: 150, baseline_pred: 100, local_excess: 50, confidence: 0.82, model_version: 'v1' }),
       ],
     })
     expect(confidenceAtPeak(f)).toBe(0.82)
@@ -117,8 +149,8 @@ describe('peakWithinWindow', () => {
   it('only considers points within the selected window, not the whole curve', () => {
     const f = forecast({
       points: [
-        { horizon_ts: hoursFromNow(6), pm25_pred: null, baseline_pred: null, local_excess: 10, confidence: null, model_version: null, predicted_value: 80, is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null },
-        { horizon_ts: hoursFromNow(40), pm25_pred: null, baseline_pred: null, local_excess: 90, confidence: null, model_version: null, predicted_value: 300, is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null },
+        point({ horizon_ts: hoursFromNow(6), local_excess: 10, predicted_value: 80 }),
+        point({ horizon_ts: hoursFromNow(40), local_excess: 90, predicted_value: 300 }),
       ],
     })
     // the 40h point (300) is the highest overall, but outside a 12h window
@@ -129,14 +161,14 @@ describe('peakWithinWindow', () => {
 
   it('falls back to pm25_pred when predicted_value is absent (older rows)', () => {
     const f = forecast({
-      points: [{ horizon_ts: hoursFromNow(6), pm25_pred: 55, baseline_pred: null, local_excess: 5, confidence: null, model_version: null , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null}],
+      points: [point({ horizon_ts: hoursFromNow(6), pm25_pred: 55, local_excess: 5 })],
     })
     expect(peakWithinWindow(f, 24).value).toBe(55)
   })
 
   it('returns nulls when every point is outside the window', () => {
     const f = forecast({
-      points: [{ horizon_ts: hoursFromNow(40), pm25_pred: 300, baseline_pred: null, local_excess: null, confidence: null, model_version: null , is_nowcast_point: false, lower_bound: null, upper_bound: null, nowcast_method: null, nowcast_backtest_samples: null, nowcast_backtest_passed: false, anchorObservedAt: null, forecastGeneratedAt: null, forecastMethod: null, dataQualityStatus: null}],
+      points: [point({ horizon_ts: hoursFromNow(40), pm25_pred: 300 })],
     })
     expect(peakWithinWindow(f, 12)).toEqual({ value: null, excess: null, ts: null })
   })
@@ -218,27 +250,7 @@ describe('wardsNeedingReviewCount', () => {
         forecast({
           wardId: 1,
           hoursToSevere: null,
-          points: [
-            {
-              horizon_ts: new Date().toISOString(),
-              predicted_value: 90,
-              pm25_pred: null,
-              baseline_pred: null,
-              local_excess: 15,
-              confidence: null,
-              model_version: null,
-              is_nowcast_point: false,
-              lower_bound: null,
-              upper_bound: null,
-              nowcast_method: null,
-              nowcast_backtest_samples: null,
-              nowcast_backtest_passed: false,
-              anchorObservedAt: null,
-              forecastGeneratedAt: null,
-              forecastMethod: null,
-              dataQualityStatus: null,
-            },
-          ],
+          points: [point({ predicted_value: 90, local_excess: 15 })],
         }),
       ],
     ])
@@ -460,5 +472,68 @@ describe('recurringWardsSummary', () => {
   it('ignores recurrences with no ward_id', () => {
     const incidents = [incident({ ward_id: null, recurrence_of_incident_id: 1 })]
     expect(recurringWardsSummary(incidents)).toEqual([])
+  })
+})
+
+describe('compareByUrgency', () => {
+  function row(overrides: Partial<UrgencySortInput> = {}): UrgencySortInput {
+    return { status: 'stable', hoursToThreshold: null, aqi: null, ...overrides }
+  }
+
+  it('ranks a higher-severity status ahead of a lower one, regardless of AQI', () => {
+    const severe = row({ status: 'severe', aqi: 150 })
+    const stable = row({ status: 'stable', aqi: 400 })
+    expect(compareByUrgency(severe, stable)).toBeLessThan(0)
+    expect(compareByUrgency(stable, severe)).toBeGreaterThan(0)
+  })
+
+  it('within the same status, ranks the sooner hoursToThreshold first', () => {
+    const soon = row({ status: 'watch', hoursToThreshold: 4 })
+    const later = row({ status: 'watch', hoursToThreshold: 20 })
+    expect(compareByUrgency(soon, later)).toBeLessThan(0)
+  })
+
+  it('a row with a known hoursToThreshold outranks one with none, same status', () => {
+    const known = row({ status: 'watch', hoursToThreshold: 10 })
+    const unknown = row({ status: 'watch', hoursToThreshold: null })
+    expect(compareByUrgency(known, unknown)).toBeLessThan(0)
+    expect(compareByUrgency(unknown, known)).toBeGreaterThan(0)
+  })
+
+  it('falls back to AQI descending when status and hoursToThreshold both tie', () => {
+    const higher = row({ status: 'stable', aqi: 200 })
+    const lower = row({ status: 'stable', aqi: 80 })
+    expect(compareByUrgency(higher, lower)).toBeLessThan(0)
+  })
+
+  it('treats a null AQI as lowest priority in the final tiebreak', () => {
+    const withAqi = row({ status: 'stable', aqi: 50 })
+    const noAqi = row({ status: 'stable', aqi: null })
+    expect(compareByUrgency(withAqi, noAqi)).toBeLessThan(0)
+    expect(compareByUrgency(noAqi, withAqi)).toBeGreaterThan(0)
+  })
+
+  it('is stable (returns 0) for two fully-equal rows', () => {
+    const a = row({ status: 'watch', hoursToThreshold: 6, aqi: 180 })
+    const b = row({ status: 'watch', hoursToThreshold: 6, aqi: 180 })
+    expect(compareByUrgency(a, b)).toBe(0)
+  })
+
+  it('sorts a mixed list into severe > watch (sooner first) > stable (AQI desc)', () => {
+    const rows = [
+      row({ status: 'stable', aqi: 90 }),
+      row({ status: 'severe', hoursToThreshold: 2, aqi: 260 }),
+      row({ status: 'watch', hoursToThreshold: 18, aqi: 150 }),
+      row({ status: 'watch', hoursToThreshold: 5, aqi: 140 }),
+      row({ status: 'stable', aqi: 200 }),
+    ]
+    const sorted = [...rows].sort(compareByUrgency)
+    expect(sorted.map((r) => [r.status, r.hoursToThreshold, r.aqi])).toEqual([
+      ['severe', 2, 260],   // severe always first
+      ['watch', 5, 140],    // watch, soonest threshold first
+      ['watch', 18, 150],
+      ['stable', null, 200], // stable, AQI descending
+      ['stable', null, 90],
+    ])
   })
 })

@@ -21,13 +21,16 @@ def _get(path: str) -> dict:
 
 
 def get_location(location_id: int) -> dict:
-    """Location metadata: name, coordinates, and its sensors (sensor id -> parameter)."""
+    """Location metadata: name, coordinates, its sensors (sensor id ->
+    parameter) and their unit labels (sensor id -> units, as OpenAQ labels
+    them; see ingest._openaq_co_mg for why the label can't be taken literally)."""
     loc = _get(f"/locations/{location_id}")["results"][0]
     return {
         "name": loc["name"],
         "lat": loc["coordinates"]["latitude"],
         "lng": loc["coordinates"]["longitude"],
         "sensors": {s["id"]: s["parameter"]["name"] for s in loc.get("sensors", [])},
+        "units": {s["id"]: s["parameter"].get("units") for s in loc.get("sensors", [])},
     }
 
 

@@ -24,6 +24,13 @@ RNG_SEED = 20260901
 # ── _select_nowcast_point ────────────────────────────────────────────────────
 
 
+
+@pytest.fixture(autouse=True)
+def _origin_guard_off(monkeypatch):
+    """The fixed synthetic datasets here are dated 2026-05; the production
+    stale-origin guard (forecast.MAX_ORIGIN_AGE_H) is tested on its own."""
+    monkeypatch.setattr(forecast, "MAX_ORIGIN_AGE_H", 10 ** 9)
+
 def test_select_nowcast_point_worked_example_from_review():
     """anchor 12:00, generated 12:45 -> future_idx[0] (=anchor+1h=13:00) is
     only 15 minutes ahead of "now", not a genuine 1h-ahead nowcast. The
@@ -338,7 +345,7 @@ def test_run_marks_exactly_one_nowcast_point_and_logs_shadow_candidates(monkeypa
         "get_wards_with_city",
         lambda: [{"id": wid, "name": f"ward{wid}", "lat": 28.6, "lng": 77.2, "city_id": 1} for wid in ward_ids],
     )
-    monkeypatch.setattr(forecast.db, "get_readings_history", lambda hours=720: readings)
+    monkeypatch.setattr(forecast.db, "get_hourly_history", lambda hours=720, **kw: readings)
     monkeypatch.setattr(forecast.db, "get_weather_history", lambda hours=720: weather)
     monkeypatch.setattr(forecast.db, "insert_forecast_run", lambda row: fake.forecast_runs.append(row) or len(fake.forecast_runs))
     monkeypatch.setattr(forecast.db, "replace_forecasts", lambda ward_id, pollutant, rows: fake.forecasts.extend(rows))

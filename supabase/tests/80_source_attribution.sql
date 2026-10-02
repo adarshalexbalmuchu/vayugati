@@ -136,7 +136,7 @@ begin
   insert into city_config (city_code, name, pollutant_priority, config) values
     ('t64', 'Test City 64', array['pm25','pm10','no2'],
      jsonb_build_object(
-       'anomaly_detection', jsonb_build_object('pollutant_thresholds', jsonb_build_object('pm25',90,'pm10',250,'no2',180,'so2',380,'co',4000)),
+       'anomaly_detection', jsonb_build_object('pollutant_thresholds', jsonb_build_object('pm25',90,'pm10',250,'no2',180,'so2',380,'co',4)),
        'attribution', jsonb_build_object(
          'weights', jsonb_build_object('pollutant_signature',0.35,'wind_alignment',0.15,'gis_proximity',0.15,'temporal_match',0.05,'citizen_corroboration',0.15,'field_verification',0.25,'regional_pattern',0.20,'contradiction_penalty',0.35,'data_quality_penalty',0),
          'rush_hour_windows', jsonb_build_array(jsonb_build_array(0,23)))))
@@ -171,7 +171,7 @@ begin
   insert into city_config (city_code, name, pollutant_priority, config) values
     ('t65', 'Test City 65', array['pm25','pm10','no2'],
      jsonb_build_object(
-       'anomaly_detection', jsonb_build_object('pollutant_thresholds', jsonb_build_object('pm25',90,'pm10',250,'no2',180,'so2',380,'co',4000)),
+       'anomaly_detection', jsonb_build_object('pollutant_thresholds', jsonb_build_object('pm25',90,'pm10',250,'no2',180,'so2',380,'co',4)),
        'attribution', jsonb_build_object(
          'weights', jsonb_build_object('pollutant_signature',0.35,'wind_alignment',0.15,'gis_proximity',0.15,'temporal_match',0.05,'citizen_corroboration',0.15,'field_verification',0.25,'regional_pattern',0.20,'contradiction_penalty',0.35,'data_quality_penalty',0),
          'rush_hour_windows', jsonb_build_array(jsonb_build_array(0,23)))))

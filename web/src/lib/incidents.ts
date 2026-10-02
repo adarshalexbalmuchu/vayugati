@@ -116,6 +116,27 @@ export async function listIncidents(opts: ListIncidentsOptions = {}): Promise<In
   return (data ?? []).map((r) => shapeIncident(r as never))
 }
 
+/** The TRUE count of incidents matching a filter — distinct from
+ *  listIncidents(), whose array length is capped at its own `limit` (200 by
+ *  default) and therefore cannot be used as a citywide count once the real
+ *  number exceeds that cap. Added Sept 2026: the Map page's "Active
+ *  incidents" stat was passing `incidents.length` from a
+ *  `listIncidents({ excludeClosed: true })` call straight through as if it
+ *  were a real count — showing exactly 200 regardless of whether the true
+ *  number was 200 or 2,000, since the array is silently truncated at the
+ *  query's own row limit. `head: true` means Postgres computes the count
+ *  without ever transferring the matching rows. */
+export async function countIncidents(opts: Pick<ListIncidentsOptions, 'wardId' | 'status' | 'excludeClosed'> = {}): Promise<number> {
+  let q = supabase.from('incidents').select('id', { count: 'exact', head: true })
+  if (opts.wardId != null) q = q.eq('ward_id', opts.wardId)
+  if (opts.status?.length) q = q.in('status', opts.status)
+  if (opts.excludeClosed) q = q.neq('status', 'closed')
+
+  const { count, error } = await q
+  if (error) fail('Could not count incidents', error)
+  return count ?? 0
+}
+
 /**
  * The leading (highest-probability) source hypothesis per incident, bulk
  * fetched for a set of incident ids. Extracted from a pattern that used to be

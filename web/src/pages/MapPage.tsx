@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import turfCircle from '@turf/circle'
 import turfDistance from '@turf/distance'
 import { point as turfPoint } from '@turf/helpers'
-import { MapPin, RefreshCw } from 'lucide-react'
+import { Layers2, ListTree } from 'lucide-react'
 import { aqiLevel } from '../components/AqiBadge'
 import AppShell from '../components/AppShell'
 import MapView, { type IncidentFeatureProps, type WardBoundaryFeatureProps, type WindArrowProps } from '../components/MapView'
 import ChangeModeSummaryPanel, { type ChangeRow } from '../components/map/ChangeModeSummaryPanel'
 import IncidentClusterPanel from '../components/map/IncidentClusterPanel'
-import { ErrorState, Skeleton, StaleBadge } from '../components/ui'
+import { ErrorState, Skeleton } from '../components/ui'
 import BasemapSwitcher from '../components/map/BasemapSwitcher'
 import MapLayerControl, { DEFAULT_LAYER_STATE, type MapLayerKey } from '../components/map/MapLayerControl'
 import MapLegend from '../components/map/MapLegend'
@@ -21,11 +21,11 @@ import SelectedIncidentPanel from '../components/map/SelectedIncidentPanel'
 import SelectedStationPanel, { type SelectedStation, type StationHistoricalComparison } from '../components/map/SelectedStationPanel'
 import SelectedWardBoundaryPanel, { type WardBoundaryDetail, type WardBoundaryStationRef } from '../components/map/SelectedWardBoundaryPanel'
 import SelectedWardPanel from '../components/map/SelectedWardPanel'
-import SpatialSummaryPanel from '../components/map/SpatialSummaryPanel'
 import ToolResultsPanel from '../components/map/ToolResultsPanel'
 import { DEFAULT_BASEMAP_MODE, maptilerKey, resolveStyleUrl, type BasemapMode } from '../lib/basemaps'
 import {
   fetchAllForecasts,
+  fetchAqiForecastsNear,
   fetchAllOpenReports,
   fetchAllStationsWithReadings,
   fetchAllWardBoundaries,
@@ -33,6 +33,7 @@ import {
   fetchAllWindByWard,
   fetchAttribution,
   fetchVayuTraceAttribution,
+  fetchForecastAccuracySummary,
   fetchHistoricalStationReadings,
   fetchLatestReadingsPreferred,
   fetchTransportActivity,
@@ -41,6 +42,7 @@ import {
   type Report,
   type StationMarker,
   type WardBoundary,
+  type AqiForecastPoint,
   type WardForecastSummary,
   type WardSummary,
 } from '../lib/data'
@@ -59,6 +61,7 @@ import {
   auditIncidentCoordinates,
   classifyWardCoverage,
   FRESHNESS_HEX,
+  geometryCentroid,
   rollupStationQuality,
   stationFreshnessClass,
   type FreshnessClass,
@@ -91,7 +94,7 @@ import {
   type ObsSlot,
   type ObsViewMode,
 } from '../lib/mapRules'
-import { rollupStationHealth, severeWardsWithin, tallySourceMix } from '../lib/overviewRules'
+import { severeWardsWithin } from '../lib/overviewRules'
 import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
 import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
@@ -128,6 +131,7 @@ const EMPTY_DATA: [WardSummary[], StationMarker[], Incident[], Report[], Station
 
 const EMPTY_BOUNDARIES: WardBoundary[] = []
 const EMPTY_FORECASTS: Map<number, WardForecastSummary> = new Map()
+const EMPTY_AQI_FORECASTS: Map<number, AqiForecastPoint> = new Map()
 
 function fmtAge(minutes: number): string {
   if (minutes < 2) return 'just now'
@@ -224,6 +228,16 @@ function popup(title: string, lines: string[]): string {
 export default function MapPage() {
   const [basemap, setBasemap] = useState<BasemapMode>(DEFAULT_BASEMAP_MODE)
   const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
+  // Sept 2026: Layers/Legend triggers moved into the header row (next to
+  // the pollutant/time toolbar) — their expanded panels still float over
+  // the map as before, just opened/closed from here instead of their own
+  // internal buttons. layersActiveCount mirrors MapLayerControl's own
+  // badge count (see its onActiveCountChange prop) so the header trigger
+  // shows the identical number without recomputing the availability-gating
+  // logic a second time.
+  const [layersOpen, setLayersOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
+  const [layersActiveCount, setLayersActiveCount] = useState(0)
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   const [timeMode, setTimeMode] = useState<MapTimeMode>('now')
   const [obsSlot, setObsSlot] = useState<ObsSlot>('now')
@@ -351,6 +365,16 @@ export default function MapPage() {
   })
   const forecasts = (forecastSuppressed ? new Map() : forecastsState.data) ?? EMPTY_FORECASTS
 
+  // The real forecast AQI (aqi_forecasts) for AQI mode's forecast horizons;
+  // a ward without one falls back to the labelled PM2.5 stand-in above.
+  const aqiHorizonHours = pollutant === 'aqi' && timeMode === '1h' ? 1 : null   // published to AQI_FORECAST_MAX_LEAD_H (12 h) only
+  const aqiForecastsState = useAsync(
+    () => (aqiHorizonHours == null ? Promise.resolve(new Map()) : fetchAqiForecastsNear(aqiHorizonHours)),
+    [aqiHorizonHours],
+    { enabled: aqiHorizonHours != null, cacheKey: `map:aqi-forecasts:${aqiHorizonHours}` },
+  )
+  const aqiForecasts = (forecastSuppressed || aqiHorizonHours == null ? null : aqiForecastsState.data) ?? EMPTY_AQI_FORECASTS
+
   // Ward boundary polygons are ~8MB of real OSM-derived GeoJSON across all
   // 250+ wards (measured) - loaded separately from the rest of the page's
   // data, not inside the `Promise.all` above, so the whole console no
@@ -397,6 +421,17 @@ export default function MapPage() {
     cacheKey: 'map:leading-source',
   })
   const leadingSourceById = leadingSource.data ?? new Map()
+
+  // City-wide validated-vs-baseline forecast mix (Sept 2026 addition) — the
+  // same real, already-computed summary Overview/Analytics use
+  // (fetchForecastAccuracySummary, backed by forecast_runs.beats_persistence
+  // — never a fabricated percentage). Threaded into MapToolbar so selecting
+  // 24h/48h forecast shows this honesty signal at the point of selection,
+  // not only inside a ward/station detail panel a viewer might never open.
+  const forecastAccuracyState = useAsync(() => fetchForecastAccuracySummary(), [], {
+    cacheKey: 'map:forecast-accuracy',
+  })
+  const forecastAccuracy = forecastAccuracyState.data ?? null
 
   const stationHealthById = useMemo(() => new Map(stationHealth.map((s) => [s.id, s])), [stationHealth])
 
@@ -494,8 +529,6 @@ export default function MapPage() {
 
   const severeWards = useMemo(() => severeWardsWithin(wards, forecasts, 36), [wards, forecasts])
   const severeWardIds = useMemo(() => new Set(severeWards.map((s) => s.wardId)), [severeWards])
-  const sourceMix = useMemo(() => tallySourceMix(wards), [wards])
-  const healthRollup = useMemo(() => rollupStationHealth(stationHealth), [stationHealth])
 
   const latestStationReadingAgeMinutes = useMemo(() => {
     const ages = stationHealth
@@ -503,14 +536,6 @@ export default function MapPage() {
       .map((s) => s.latest_reading_age_minutes as number)
     return ages.length > 0 ? Math.min(...ages) : null
   }, [stationHealth])
-
-  const wardsWithCoverage = useMemo(() => wards.filter((w) => w.aqi != null).length, [wards])
-
-  const highestAqiWard = useMemo(() => {
-    const sorted = [...wards].filter((w) => w.aqi != null).sort((a, b) => (b.aqi ?? 0) - (a.aqi ?? 0))
-    const top = sorted[0]
-    return top ? { name: top.name, aqi: top.aqi as number } : null
-  }, [wards])
 
   // ── marker construction ──────────────────────────────────────────────────
   const wardMarkers: MapMarker[] = useMemo(
@@ -520,7 +545,7 @@ export default function MapPage() {
             .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
             .map((w) => {
               const forecast = forecasts.get(w.id)
-              const reading = resolveWardReading(w, pollutant, timeMode, forecast)
+              const reading = resolveWardReading(w, pollutant, timeMode, forecast, aqiForecasts.get(w.id))
               const colorOverride =
                 layers.sourceAttribution && w.dominant_source
                   ? (SOURCE_CATEGORY_HEX[w.dominant_source as SourceCategory] ?? null)
@@ -533,7 +558,7 @@ export default function MapPage() {
                 lat: w.lat as number,
                 lng: w.lng as number,
                 label: w.name,
-                aqi: w.aqi,
+                aqi: reading.colorMode === 'aqi' && reading.aqiForColor != null ? reading.aqiForColor : w.aqi,
                 badgeText: reading.value != null ? String(Math.round(reading.value)) : '-',
                 pulsing: layers.predictedHotspots && severeWardIds.has(w.id),
                 colorOverride,
@@ -541,7 +566,7 @@ export default function MapPage() {
               }
             })
         : [],
-    [layers.wardMarkers, wards, forecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
+    [layers.wardMarkers, wards, forecasts, aqiForecasts, pollutant, timeMode, layers.sourceAttribution, layers.predictedHotspots, severeWardIds],
   )
 
   const stationMarkers: MapMarker[] = useMemo(
@@ -709,23 +734,52 @@ export default function MapPage() {
     [layers.citizenReports, reports],
   )
 
+  // wardId -> boundary geometry, for the centroid fallback just below.
+  // Small, standalone map (rather than reusing wardBoundaryByWardId
+  // further down this file) since that one is declared after this point -
+  // both are built from the same wardBoundaries array, so this isn't a
+  // second fetch, just a second cheap derivation of it.
+  const transitWardGeometryById = useMemo(
+    () => new Map(wardBoundaries.map((b) => [b.id, b.geometry])),
+    [wardBoundaries],
+  )
+
   // Ward-level only - the backend never exposes raw per-vehicle positions to
   // the browser (see docs/data/delhi-otd-transport-context-integration-
   // report.md), just the same per-ward vehicle_count/activity_level summary
   // Overview's hotspot table shows. Wards with zero nearby vehicles are
   // omitted rather than drawn as an empty marker, to keep the layer legible.
+  //
+  // Bug fix (Sept 2026): used to filter to isValidDelhiCoordinate(w.lat,
+  // w.lng) — i.e. only the 13 original hotspot wards, the only ones with a
+  // real captured point. The backend fix (transit_activity.summarize_
+  // activity's own boundary-centroid fallback) means transitByWard now has
+  // entries for all 265 wards; this filter was the one place still
+  // silently dropping the other 252 before a marker could even be drawn.
+  // Now falls back to geometryCentroid() (same helper the ward-coverage
+  // classification already uses) when a ward has no real point, instead of
+  // requiring one.
   const transitMarkers: MapMarker[] = useMemo(
     () =>
       layers.transitActivity
         ? wards
-            .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
-            .map((w) => ({ ward: w, activity: transitByWard.get(w.id) }))
-            .filter((x): x is { ward: WardSummary; activity: NonNullable<typeof x.activity> } => !!x.activity && x.activity.vehicleCount > 0)
-            .map(({ ward: w, activity }) => ({
+            .map((w) => {
+              if (isValidDelhiCoordinate(w.lat, w.lng)) return { ward: w, lat: w.lat as number, lng: w.lng as number }
+              const geometry = transitWardGeometryById.get(w.id)
+              const centroid = geometry ? geometryCentroid(geometry) : null
+              return centroid ? { ward: w, lat: centroid.lat, lng: centroid.lng } : null
+            })
+            .filter((x): x is { ward: WardSummary; lat: number; lng: number } => x !== null)
+            .map(({ ward: w, lat, lng }) => ({ ward: w, lat, lng, activity: transitByWard.get(w.id) }))
+            .filter(
+              (x): x is { ward: WardSummary; lat: number; lng: number; activity: NonNullable<typeof x.activity> } =>
+                !!x.activity && x.activity.vehicleCount > 0,
+            )
+            .map(({ ward: w, lat, lng, activity }) => ({
               id: `transit-${w.id}`,
               kind: 'ward' as const,
-              lat: w.lat as number,
-              lng: w.lng as number,
+              lat,
+              lng,
               label: w.name,
               badgeText: String(activity.vehicleCount),
               colorOverride: TRANSIT_ACTIVITY_HEX[activity.activityLevel === 'none' ? 'low' : activity.activityLevel],
@@ -736,7 +790,7 @@ export default function MapPage() {
               ]),
             }))
         : [],
-    [layers.transitActivity, wards, transitByWard],
+    [layers.transitActivity, wards, transitByWard, transitWardGeometryById],
   )
 
   const allMarkers = useMemo(
@@ -770,14 +824,6 @@ export default function MapPage() {
     return resetToken > 0 ? (cityBoundsCoords.length > 0 ? [...cityBoundsCoords] : delhiBoundsCoords) : undefined
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetToken, geoAiFocusBounds])
-
-  const locationsUnavailable = useMemo(() => {
-    const invalidWards = wards.filter((w) => !isValidDelhiCoordinate(w.lat, w.lng)).length
-    const invalidStations = stations.filter((s) => !isValidDelhiCoordinate(s.lat, s.lng)).length
-    const invalidIncidents = incidents.filter((i) => !isValidDelhiCoordinate(i.lat, i.lng)).length
-    const invalidReports = reports.filter((r) => !isValidDelhiCoordinate(r.lat, r.lng)).length
-    return invalidWards + invalidStations + invalidIncidents + invalidReports
-  }, [wards, stations, incidents, reports])
 
   const handleMarkerClick = useCallback((marker: MapMarker) => {
     if (activeTool.kind !== 'none') return
@@ -957,9 +1003,36 @@ export default function MapPage() {
     })
   }, [activeTool, wards, stations, incidents, wardBoundaryByWardId])
 
+  // Bug fix (Sept 2026): this used to always route to the lightweight
+  // "wardBoundary" reference panel (ward number, jurisdiction note — no
+  // AQI, no pollutant breakdown, no VayuTrace source attribution), even
+  // for a ward that has a real assigned station and full data. Only 13 of
+  // 265 wards have a point marker (the OTHER click target, handled by
+  // handleMarkerClick), so clicking almost anywhere on the map's ward
+  // polygons landed here — meaning the VayuTrace panel (SelectedWardPanel,
+  // reachable only via kind:'ward') was effectively unreachable for the
+  // 252 boundary-only wards, even after this session's fixes gave every
+  // one of them real VayuTrace/AQI data.
+  //
+  // 2nd pass (Sept 2026): the first fix checked `wards.some(...)` — array
+  // presence — as a proxy for "has real data worth showing". That worked
+  // only because fetchAllWardsAqi() used to return JUST monitored wards;
+  // once it was extended to return every ward (so VayuTrace, which needs
+  // no station, is reachable everywhere), array presence became true for
+  // ALL 265 wards regardless of station status — this check would have
+  // silently done nothing (always true) rather than the intended gating.
+  // Since `wards` now covers every ward, ANY boundary click resolves to a
+  // real WardSummary row and can go straight to the full panel; that
+  // panel already degrades gracefully for a ward with no station (see its
+  // own "No monitoring station matched" / "Unavailable" fallbacks) rather
+  // than needing a separate reference-only panel to hide behind. The
+  // lightweight wardBoundary panel is now reached only when a boundary's
+  // id genuinely isn't in `wards` at all (a boundary-import edge case with
+  // no matching ward row, not merely "unmonitored").
   const handleBoundaryClick = useCallback((ward: WardBoundaryFeatureProps) => {
-    setSelection({ kind: 'wardBoundary', id: ward.id })
-  }, [])
+    const hasWardRow = wards.some((w) => w.id === ward.id)
+    setSelection(hasWardRow ? { kind: 'ward', id: ward.id } : { kind: 'wardBoundary', id: ward.id })
+  }, [wards])
 
   const selectedWard = selection?.kind === 'ward' ? wards.find((w) => w.id === selection.id) : undefined
   const selectedIncident: Incident | undefined =
@@ -1146,35 +1219,92 @@ export default function MapPage() {
     latestReadingsState.refresh()
   }
 
+  // Freshness label — now rendered inside MapToolbar's own dropdown (Sept
+  // 2026, 3rd pass), which itself moved from a floating pill over the map
+  // into AppShell's header row (see the `headerContent` prop below), per
+  // direct request to fit the toolbar into the same row as the logo/
+  // account menu instead of a separate strip.
+  const mapFreshnessLabel = state.fetchedAt != null
+    ? `Updated ${new Date(state.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}${
+        latestStationReadingAgeMinutes != null ? ` · Latest reading ${fmtAge(latestStationReadingAgeMinutes)}` : ''
+      }`
+    : null
+
   return (
     <AppShell
       subtitle="Map"
       headerContent={
-        <div className="flex flex-1 flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900">Map</h1>
-              {state.stale && <StaleBadge />}
-            </div>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
-              <MapPin className="h-3 w-3" aria-hidden />
-              Delhi City Pack
-              {state.fetchedAt != null && (
-                <span>
-                  · Updated {new Date(state.fetchedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                  {latestStationReadingAgeMinutes != null && <> · Latest reading {fmtAge(latestStationReadingAgeMinutes)}</>}
-                </span>
-              )}
-            </p>
-          </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <MapToolbar
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            pollutant={pollutant}
+            onPollutantChange={setPollutant}
+            timeMode={timeMode}
+            onTimeModeChange={setTimeMode}
+            sourceFilter={sourceFilter}
+            onSourceFilterChange={setSourceFilter}
+            severityFilter={severityFilter}
+            onSeverityFilterChange={setSeverityFilter}
+            freshnessFilter={freshnessFilter}
+            onFreshnessFilterChange={setFreshnessFilter}
+            onResetView={() => {
+              setResetToken((t) => t + 1)
+              // Without this, a prior GeoAI focus/query permanently wins over
+              // Reset to Delhi (fitBoundsTo prefers geoAiFocusBounds whenever set).
+              setGeoAiFocusBounds(undefined)
+            }}
+            forecastSuppressed={forecastSuppressed}
+            forecastAccuracy={forecastAccuracy}
+            obsSlot={obsSlot}
+            onObsSlotChange={setObsSlot}
+            obsLoading={obsLoading}
+            obsViewMode={obsViewMode}
+            onObsViewModeChange={setObsViewMode}
+            activeTool={activeTool.kind}
+            onActiveToolChange={handleActiveToolChange}
+            bufferRadiusKm={activeTool.kind === 'buffer' ? activeTool.radiusKm : DEFAULT_BUFFER_RADIUS_KM}
+            onBufferRadiusChange={handleBufferRadiusChange}
+            freshnessLabel={mapFreshnessLabel}
+            isStale={state.stale}
+            onRefresh={refreshAll}
+            refreshing={state.refreshing}
+          />
+          {/* Layers/Legend triggers (Sept 2026) — moved from floating over
+              the map's top-left corner into the header, next to the
+              toolbar. Their panels still float over the map (unchanged
+              position, bottom-14 left-3), just opened via this button
+              instead of their own internal one (hideTrigger on each). */}
           <button
             type="button"
-            onClick={refreshAll}
-            disabled={state.refreshing}
-            className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => setLayersOpen((v) => !v)}
+            aria-expanded={layersOpen}
+            className={`focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              layersOpen || layersActiveCount > 0
+                ? 'border-accent-300 bg-accent-50 text-accent-700'
+                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${state.refreshing ? 'animate-spin' : ''}`} aria-hidden />
-            Refresh
+            <Layers2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            Layers
+            {layersActiveCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+                {layersActiveCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegendOpen((v) => !v)}
+            aria-expanded={legendOpen}
+            className={`focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              legendOpen
+                ? 'border-accent-300 bg-accent-50 text-accent-700'
+                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <ListTree className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+            Legend
           </button>
         </div>
       }
@@ -1191,36 +1321,6 @@ export default function MapPage() {
           </div>
         ) : (
           <>
-            <MapToolbar
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              pollutant={pollutant}
-              onPollutantChange={setPollutant}
-              timeMode={timeMode}
-              onTimeModeChange={setTimeMode}
-              sourceFilter={sourceFilter}
-              onSourceFilterChange={setSourceFilter}
-              severityFilter={severityFilter}
-              onSeverityFilterChange={setSeverityFilter}
-              freshnessFilter={freshnessFilter}
-              onFreshnessFilterChange={setFreshnessFilter}
-              onResetView={() => {
-                setResetToken((t) => t + 1)
-                // Without this, a prior GeoAI focus/query permanently wins over
-                // Reset to Delhi (fitBoundsTo prefers geoAiFocusBounds whenever set).
-                setGeoAiFocusBounds(undefined)
-              }}
-              forecastSuppressed={forecastSuppressed}
-              obsSlot={obsSlot}
-              onObsSlotChange={setObsSlot}
-              obsLoading={obsLoading}
-              obsViewMode={obsViewMode}
-              onObsViewModeChange={setObsViewMode}
-              activeTool={activeTool.kind}
-              onActiveToolChange={handleActiveToolChange}
-              bufferRadiusKm={activeTool.kind === 'buffer' ? activeTool.radiusKm : DEFAULT_BUFFER_RADIUS_KM}
-              onBufferRadiusChange={handleBufferRadiusChange}
-            />
             <div className="relative min-h-0 flex-1">
               <MapView
                 markers={allMarkers}
@@ -1254,6 +1354,17 @@ export default function MapPage() {
                 onToolClick={handleToolClick}
                 toolGeoJSON={toolGeoJSON}
               />
+              {/* Sept 2026: Layers/Legend triggers moved into the header
+                  (see headerContent above); their panels still float here,
+                  top-3 now (not top-24) since there's no toolbar pill left
+                  floating over the map to clear — the toolbar itself moved
+                  into the header row too.
+                  MapLayerControl stays mounted regardless of layersOpen
+                  (it renders null itself via hideTrigger+!panelOpen) so its
+                  onActiveCountChange keeps firing and the header badge
+                  count is correct even while the panel is closed — the
+                  same reason MapLayerControl's own always-mounted trigger
+                  button could show a count before this change. */}
               <div className="absolute bottom-14 left-3 top-3 z-10 flex flex-col gap-2 overflow-y-auto">
                 <MapLayerControl
                   layers={layers}
@@ -1269,16 +1380,45 @@ export default function MapPage() {
                   vegetation3DAvailable={maptilerKey() != null}
                   landUseAvailable={maptilerKey() != null}
                   forecastSuppressed={forecastSuppressed}
+                  open={layersOpen}
+                  onOpenChange={setLayersOpen}
+                  hideTrigger
+                  onActiveCountChange={setLayersActiveCount}
                 />
-                <MapLegend viewMode={viewMode} sourceAttributionOn={layers.sourceAttribution} pollutant={pollutant} transitActivityOn={layers.transitActivity} aqiExtrusionOn={layers.aqiExtrusion && wardBoundariesAvailable} forecastSuppressed={forecastSuppressed} obsViewMode={obsViewMode} />
+                {/* Bug fix: MapLegend must stay mounted regardless of
+                    legendOpen — even when its panel is closed, it renders a
+                    persistent on-map mini-key (change-direction arrows in
+                    Change mode; freshness dots in Data Quality mode) that
+                    has nothing to do with whether someone opened the full
+                    Legend panel. Conditionally rendering it (only when
+                    legendOpen) would have silently dropped that indicator
+                    the rest of the time. */}
+                <MapLegend
+                  viewMode={viewMode}
+                  sourceAttributionOn={layers.sourceAttribution}
+                  pollutant={pollutant}
+                  transitActivityOn={layers.transitActivity}
+                  aqiExtrusionOn={layers.aqiExtrusion && wardBoundariesAvailable}
+                  forecastSuppressed={forecastSuppressed}
+                  obsViewMode={obsViewMode}
+                  open={legendOpen}
+                  onOpenChange={setLegendOpen}
+                  hideTrigger
+                />
               </div>
               <BasemapSwitcher mode={basemap} onChange={setBasemap} />
 
-              {/* top-24 (not top-3, matching the layer panel) clears MapLibre's
-                  own NavigationControl, which is anchored top-right - both
-                  wanting the same corner would otherwise overlap. */}
-              <div className="absolute bottom-14 right-3 top-24 z-10 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-card-lg">
-                {activeTool.kind === 'ask' ? (
+              {/* top-3 (was top-24, clearing a floating toolbar pill that no
+                  longer exists — the toolbar and the Layers/Legend
+                  triggers all moved into the header row, Sept 2026 3rd
+                  pass) matches the Layers panel's own offset now.
+                  Rendered only when there's real content (Sept 2026) — the
+                  "nothing selected" state used to fall back to
+                  SpatialSummaryPanel's always-on city stats; removed per
+                  direct feedback, so with nothing selected this panel now
+                  disappears entirely instead of showing an empty card. */}
+              {(() => {
+                const rightPanelContent = activeTool.kind === 'ask' ? (
                   /* ── GeoAI mode - takes priority over marker selection ── */
                   <GeoAiPanel
                     wards={wards}
@@ -1355,21 +1495,7 @@ export default function MapPage() {
                   selection == null ? (
                     obsViewMode === 'change' && obsSlot !== 'now' ? (
                       <ChangeModeSummaryPanel obsSlot={obsSlot} pollutant={pollutant} rows={changeSummaryRows} />
-                    ) : (
-                      <SpatialSummaryPanel
-                        stationsTotal={healthRollup.total}
-                        stationsFresh={healthRollup.active - healthRollup.stale}
-                        stationsStale={healthRollup.stale}
-                        activeIncidents={incidents.length}
-                        forecastAlerts={severeWards.length}
-                        dominantSource={sourceMix[0] ?? null}
-                        locationsUnavailable={locationsUnavailable}
-                        forecastSuppressed={forecastSuppressed}
-                        forecastLoading={forecastsState.loading}
-                        highestAqiWard={highestAqiWard}
-                        wardsWithCoverage={wardsWithCoverage}
-                      />
-                    )
+                    ) : null
                   ) : selectedWard ? (
                     <SelectedWardPanel
                       ward={selectedWard}
@@ -1412,23 +1538,15 @@ export default function MapPage() {
                     <SelectedWardBoundaryPanel detail={wardBoundaryDetail} onClose={() => setSelection(null)} />
                   ) : obsViewMode === 'change' && obsSlot !== 'now' ? (
                     <ChangeModeSummaryPanel obsSlot={obsSlot} pollutant={pollutant} rows={changeSummaryRows} />
-                  ) : (
-                    <SpatialSummaryPanel
-                      stationsTotal={healthRollup.total}
-                      stationsFresh={healthRollup.active - healthRollup.stale}
-                      stationsStale={healthRollup.stale}
-                      activeIncidents={incidents.length}
-                      forecastAlerts={severeWards.length}
-                      dominantSource={sourceMix[0] ?? null}
-                      locationsUnavailable={locationsUnavailable}
-                      forecastSuppressed={forecastSuppressed}
-                      forecastLoading={forecastsState.loading}
-                      highestAqiWard={highestAqiWard}
-                      wardsWithCoverage={wardsWithCoverage}
-                    />
-                  )
-                )}
-              </div>
+                  ) : null
+                )
+                if (rightPanelContent == null) return null
+                return (
+                  <div className="absolute bottom-14 right-3 top-3 z-10 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-card-lg">
+                    {rightPanelContent}
+                  </div>
+                )
+              })()}
             </div>
           </>
         )}
