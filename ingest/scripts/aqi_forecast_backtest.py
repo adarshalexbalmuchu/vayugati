@@ -18,6 +18,8 @@ the rest of the year.
     python scripts/aqi_forecast_backtest.py run [week ...]   # trains and scores (~1.5 h; background)
     python scripts/aqi_forecast_backtest.py report    # reads the saved scores
     python scripts/aqi_forecast_backtest.py gate      # report + write the publish gate
+    python scripts/aqi_forecast_backtest.py refresh   # monthly (main.py): rescore the 3 latest
+                                                      # complete weeks, keep the winter weeks, re-gate
 
 Publish rule (fixed before the results were seen): a lead passes when, in
 each season, the forecast AQI's mean error is no worse than "the AQI now,
@@ -43,8 +45,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 OUT = Path(__file__).resolve().parents[1] / "data" / "backtests" / "aqi_forecast.pkl"
 # 2026-01-12 was the plan, but the history archive has no readings for
 # 10-20 Jan 2026 (every pollutant), so the week after the gap is used.
-WEEKS = ("2025-11-10", "2025-12-15", "2026-01-26",      # winter
-         "2026-04-13", "2026-06-15", "2026-09-14")
+WINTER_WEEKS = ("2025-11-10", "2025-12-15", "2026-01-26")
+WEEKS = WINTER_WEEKS + ("2026-04-13", "2026-06-15", "2026-09-14")
+MIN_RECENT_ROWS = 5000        # refresh keeps the current gate if the recent weeks score fewer
 ORIGIN_STEP_H = 6
 LEADS = (1, 3, 6, 12, 24, 36, 48)
 WORKERS = 3
@@ -65,7 +68,7 @@ def _fold(week: str) -> pd.DataFrame:
     Fr = F._forecast_weather_frames(db.get_wards_with_city(), data["readings"])[0]
     gates_all = {}
     for p in FA.POLLUTANTS:
-        g = G.load_gates(p, now=pd.Timestamp("2026-10-02", tz="UTC").to_pydatetime())
+        g = G.load_gates(p)
         gates_all[p] = g[0] if g else {}
 
     dfs, gms, full = {}, {}, {}
@@ -145,21 +148,49 @@ def _fold(week: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def run(weeks=WEEKS):
-    """Score `weeks`; rows already saved for other weeks are kept."""
+def run(weeks=WEEKS, keep=WEEKS, refresh_inputs=False) -> pd.DataFrame:
+    """Score `weeks`; saved rows for the other weeks in `keep` are kept."""
     os.environ["OMP_NUM_THREADS"] = str(THREADS)
     from scripts.forecast_rolling_backtest import load_inputs
-    load_inputs()  # warm the cache once before the workers read it
+    load_inputs(refresh=refresh_inputs)  # warm the cache once before the workers read it
     with ProcessPoolExecutor(min(WORKERS, len(weeks))) as ex:
         parts = list(ex.map(_fold, weeks))
     if OUT.exists():
         old = pd.read_pickle(OUT)
-        parts.append(old[old["week"].isin(set(WEEKS) - set(weeks))])
+        parts.append(old[old["week"].isin(set(keep) - set(weeks))])
     df = pd.concat(parts, ignore_index=True)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_pickle(OUT)
     print(f"saved {len(df)} rows -> {OUT}")
     report(df)
+    return df
+
+
+def recent_weeks(newest: pd.Timestamp, n: int = 3) -> tuple[str, ...]:
+    """The n latest Monday-start weeks whose 48 h of truth after the week
+    has already been observed."""
+    last_end = (newest - pd.Timedelta(hours=48)).normalize()
+    last_start = last_end - pd.Timedelta(days=7)
+    last_start -= pd.Timedelta(days=last_start.dayofweek)
+    return tuple(str((last_start - pd.Timedelta(weeks=k)).date()) for k in reversed(range(n)))
+
+
+def refresh():
+    """Monthly: rescore the latest complete weeks on fresh data, keep the
+    saved winter weeks (both seasons stay judged), and re-gate by the same
+    rule. During a data outage the recent weeks score too little: the
+    current gate is then left as it is."""
+    from scripts.forecast_rolling_backtest import load_inputs
+    data = load_inputs(refresh=True)
+    newest = pd.Timestamp(max(r["ts"] for r in data["readings"]))
+    weeks = recent_weeks(newest)
+    print(f"refresh: newest reading {newest}; scoring {weeks}; keeping {WINTER_WEEKS}")
+    df = run(weeks, keep=WINTER_WEEKS)
+    n_recent = int(df["week"].isin(weeks).sum())
+    if n_recent < MIN_RECENT_ROWS:
+        print(f"refresh: only {n_recent} rows for the recent weeks; gate left unchanged")
+        return
+    write_gate()
 
 
 def _boot(d: pd.DataFrame, a: str, b: str, rng, n=2000) -> tuple[float, float, float]:
@@ -232,7 +263,8 @@ def write_gate():
         max_lead = h
     pub = df[df.h <= max_lead]
     scale = next((s for s in np.arange(1.0, 3.01, 0.05) if _covers(pub, s) >= 0.80), 3.0) if max_lead else 1.0
-    gate = {"generated_at": datetime.now(timezone.utc).isoformat(), "weeks": list(WEEKS), "max_lead": max_lead,
+    gate = {"generated_at": datetime.now(timezone.utc).isoformat(), "weeks": sorted(df["week"].unique().tolist()),
+            "max_lead": max_lead,
             "band_scale": round(float(scale), 2),
             "coverage_after_scale": {s: round(_covers(g, scale), 3) for s, g in pub.groupby("season")} if max_lead else {},
             "leads": checks}
@@ -245,6 +277,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
     if cmd == "run":
         run(tuple(sys.argv[2:]) or WEEKS)
+    elif cmd == "refresh":
+        refresh()
     elif cmd == "gate":
         report()
         write_gate()

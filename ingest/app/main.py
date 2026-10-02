@@ -331,6 +331,35 @@ def run_forecast_gates() -> dict:
         _gates_lock.release()
 
 
+_aqi_gate_lock = threading.Lock()
+
+
+def run_aqi_forecast_gate() -> dict:
+    """Monthly re-check of how far ahead the forecast AQI is published
+    (scripts/aqi_forecast_backtest.py refresh -> data/models/aqi_forecast_gate.json,
+    read by forecast_aqi.publish). Rescores the three latest complete weeks
+    with models trained only on earlier data, keeps the saved winter weeks,
+    and re-applies the fixed publish rule; during a data outage it leaves
+    the current gate alone. A niced subprocess: ~1 h of CPU."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    if not _aqi_gate_lock.acquire(blocking=False):
+        raise RuntimeError("AQI forecast gate backtest already running")
+    try:
+        root = Path(__file__).resolve().parents[1]
+        proc = subprocess.run(
+            ["nice", "-n", "10", sys.executable, "scripts/aqi_forecast_backtest.py", "refresh"],
+            cwd=root, capture_output=True, text=True, timeout=4 * 3600,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"AQI forecast gate backtest failed: {proc.stderr[-2000:]}")
+        return {"lines": [ln for ln in proc.stdout.splitlines() if ln.startswith(("refresh", "saved", ' "max_lead"'))]}
+    finally:
+        _aqi_gate_lock.release()
+
+
 def run_fire_counts() -> dict:
     """Fetch yesterday's VIIRS NRT regional fire count from NASA FIRMS and
     store it in fire_counts for use as a forecast lag feature.
@@ -550,6 +579,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_fire_counts, "cron", hour=6, minute=0)
     # weekly, Sunday 20:30 UTC (02:00 IST Monday): rolling backtest -> forecast gates.
     scheduler.add_job(run_forecast_gates, "cron", day_of_week="sun", hour=20, minute=30, misfire_grace_time=6 * 3600)
+    # first Monday of the month, after Sunday's gates run has refreshed the inputs
+    scheduler.add_job(run_aqi_forecast_gate, "cron", day="1-7", day_of_week="mon", hour=1, minute=0,
+                      misfire_grace_time=12 * 3600)
     scheduler.start()
 
     # first pass immediately: ingest, then download the OSM .pbf if needed,
