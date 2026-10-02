@@ -761,7 +761,6 @@ export type Database = {
           confidence: number | null
           exceed_prob: number | null
           exceed_threshold: number | null
-          severe_risk: string | null
           forecast_run_id: number | null
           generated_at: string
           horizon_ts: string
@@ -776,6 +775,7 @@ export type Database = {
           pm25_pred: number | null
           pollutant: string
           predicted_value: number | null
+          severe_risk: string | null
           upper_bound: number | null
           ward_id: number
         }
@@ -784,7 +784,6 @@ export type Database = {
           confidence?: number | null
           exceed_prob?: number | null
           exceed_threshold?: number | null
-          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts: string
@@ -799,6 +798,7 @@ export type Database = {
           pm25_pred?: number | null
           pollutant?: string
           predicted_value?: number | null
+          severe_risk?: string | null
           upper_bound?: number | null
           ward_id: number
         }
@@ -807,7 +807,6 @@ export type Database = {
           confidence?: number | null
           exceed_prob?: number | null
           exceed_threshold?: number | null
-          severe_risk?: string | null
           forecast_run_id?: number | null
           generated_at?: string
           horizon_ts?: string
@@ -822,6 +821,7 @@ export type Database = {
           pm25_pred?: number | null
           pollutant?: string
           predicted_value?: number | null
+          severe_risk?: string | null
           upper_bound?: number | null
           ward_id?: number
         }
@@ -1697,6 +1697,113 @@ export type Database = {
           },
         ]
       }
+      nowcast_backtest_results: {
+        Row: {
+          best_candidate: string | null
+          candidates: Json
+          computed_at: string
+          data_through: string
+          methodology_version: string
+          model_version: string
+          passed: boolean
+          pollutant: string
+          sample_size: number
+          ward_id: number
+        }
+        Insert: {
+          best_candidate?: string | null
+          candidates: Json
+          computed_at?: string
+          data_through: string
+          methodology_version: string
+          model_version: string
+          passed?: boolean
+          pollutant: string
+          sample_size: number
+          ward_id: number
+        }
+        Update: {
+          best_candidate?: string | null
+          candidates?: Json
+          computed_at?: string
+          data_through?: string
+          methodology_version?: string
+          model_version?: string
+          passed?: boolean
+          pollutant?: string
+          sample_size?: number
+          ward_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nowcast_backtest_results_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nowcast_shadow_log: {
+        Row: {
+          actual_observed_at: string | null
+          actual_value: number | null
+          candidate_method: string
+          forecast_run_id: number
+          id: number
+          lower_bound: number | null
+          pollutant: string
+          predicted_value: number
+          scored_at: string | null
+          upper_bound: number | null
+          valid_at: string
+          ward_id: number
+        }
+        Insert: {
+          actual_observed_at?: string | null
+          actual_value?: number | null
+          candidate_method: string
+          forecast_run_id: number
+          id?: number
+          lower_bound?: number | null
+          pollutant: string
+          predicted_value: number
+          scored_at?: string | null
+          upper_bound?: number | null
+          valid_at: string
+          ward_id: number
+        }
+        Update: {
+          actual_observed_at?: string | null
+          actual_value?: number | null
+          candidate_method?: string
+          forecast_run_id?: number
+          id?: number
+          lower_bound?: number | null
+          pollutant?: string
+          predicted_value?: number
+          scored_at?: string | null
+          upper_bound?: number | null
+          valid_at?: string
+          ward_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nowcast_shadow_log_forecast_run_id_fkey"
+            columns: ["forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nowcast_shadow_log_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null
@@ -1804,6 +1911,7 @@ export type Database = {
           source: string
           station_id: number
           ts: string
+          ts_end: string | null
         }
         Insert: {
           co?: number | null
@@ -1817,6 +1925,7 @@ export type Database = {
           source?: string
           station_id: number
           ts: string
+          ts_end?: string | null
         }
         Update: {
           co?: number | null
@@ -1830,6 +1939,7 @@ export type Database = {
           source?: string
           station_id?: number
           ts?: string
+          ts_end?: string | null
         }
         Relationships: [
           {
@@ -1837,56 +1947,6 @@ export type Database = {
             columns: ["station_id"]
             isOneToOne: false
             referencedRelation: "stations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      ward_estimates: {
-        Row: {
-          created_at: string
-          estimate: number
-          lower_90: number
-          model_version: string
-          n_stations: number
-          network_mean: number
-          pollutant: string
-          upper_90: number
-          ward_id: number
-          window_end: string
-          window_hours: number
-        }
-        Insert: {
-          created_at?: string
-          estimate: number
-          lower_90: number
-          model_version: string
-          n_stations: number
-          network_mean: number
-          pollutant: string
-          upper_90: number
-          ward_id: number
-          window_end: string
-          window_hours?: number
-        }
-        Update: {
-          created_at?: string
-          estimate?: number
-          lower_90?: number
-          model_version?: string
-          n_stations?: number
-          network_mean?: number
-          pollutant?: string
-          upper_90?: number
-          ward_id?: number
-          window_end?: string
-          window_hours?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ward_estimates_ward_id_fkey"
-            columns: ["ward_id"]
-            isOneToOne: false
-            referencedRelation: "wards"
             referencedColumns: ["id"]
           },
         ]
@@ -2483,6 +2543,56 @@ export type Database = {
           },
         ]
       }
+      ward_estimates: {
+        Row: {
+          created_at: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours: number
+        }
+        Insert: {
+          created_at?: string
+          estimate: number
+          lower_90: number
+          model_version: string
+          n_stations: number
+          network_mean: number
+          pollutant: string
+          upper_90: number
+          ward_id: number
+          window_end: string
+          window_hours?: number
+        }
+        Update: {
+          created_at?: string
+          estimate?: number
+          lower_90?: number
+          model_version?: string
+          n_stations?: number
+          network_mean?: number
+          pollutant?: string
+          upper_90?: number
+          ward_id?: number
+          window_end?: string
+          window_hours?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ward_estimates_ward_id_fkey"
+            columns: ["ward_id"]
+            isOneToOne: false
+            referencedRelation: "wards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wards: {
         Row: {
           boundary: Json | null
@@ -2550,6 +2660,7 @@ export type Database = {
           id: number
           precipitation: number | null
           pressure: number | null
+          source: string
           temp_c: number | null
           ts: string
           ventilation_coefficient: number | null
@@ -2563,6 +2674,7 @@ export type Database = {
           id?: number
           precipitation?: number | null
           pressure?: number | null
+          source?: string
           temp_c?: number | null
           ts: string
           ventilation_coefficient?: number | null
@@ -2576,6 +2688,7 @@ export type Database = {
           id?: number
           precipitation?: number | null
           pressure?: number | null
+          source?: string
           temp_c?: number | null
           ts?: string
           ventilation_coefficient?: number | null
@@ -2595,7 +2708,19 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      readings_for_detection: {
+        Row: {
+          co: number | null
+          no2: number | null
+          o3: number | null
+          pm10: number | null
+          pm25: number | null
+          so2: number | null
+          station_id: number | null
+          ts: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       _e2e_city: { Args: { p_prefix: string }; Returns: number }
