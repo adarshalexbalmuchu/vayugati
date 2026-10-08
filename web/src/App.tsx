@@ -19,9 +19,9 @@ import IncidentRemediationPage from './pages/IncidentRemediationPage'
 import SiteLayout from './site/SiteLayout'
 import SiteHome from './site/SiteHome'
 import PlatformPage from './site/PlatformPage'
-import SitePlaceholder from './site/SitePlaceholder'
-import EvidencePage from './site/EvidencePage'
 import AboutPage from './site/AboutPage'
+import ContactPage from './site/ContactPage'
+import EvidencePage from './site/EvidencePage'
 
 // "/app" -> the logged-in user's home view, or /login
 function Home() {
@@ -45,7 +45,7 @@ export default function App() {
               <Route path="/platform" element={<PlatformPage />} />
               <Route path="/evidence" element={<EvidencePage />} />
               <Route path="/about" element={<AboutPage />} />
-              <Route path="/contact" element={<SitePlaceholder title="Contact" />} />
+              <Route path="/contact" element={<ContactPage />} />
             </Route>
             <Route path="/app" element={<Home />} />
             <Route path="/login" element={<Login />} />
