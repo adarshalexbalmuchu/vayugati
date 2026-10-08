@@ -1337,7 +1337,7 @@ def run(city_code: str | None = None) -> dict:
     }
 
     cities = db.get_active_cities(city_code)
-    wards = {w["id"]: w for w in db.get_wards_with_city()}
+    wards = {w["id"]: w for w in db.get_wards_with_city(with_boundary=False)}
 
     for city in cities:
         cfg = _forecasting_config(city)
@@ -1352,11 +1352,15 @@ def run(city_code: str | None = None) -> dict:
         # there are 24h averages since 2026-08-11, and a forecaster trained
         # on a 24h running mean learns a smoothed, lagged series.
         readings_long = db.get_hourly_history(hours=24 * GLOBAL_TRAIN_DAYS, include_archive=True)
+        with_data = {r["ward_id"] for r in readings_long}
+        # polygons are only a centroid fallback, so fetch them for just these wards
+        db.attach_ward_boundaries(city_wards, {w["id"] for w in city_wards if w["id"] in with_data and w.get("lat") is None})
         # per-ward fallback keeps its 90-day window, counted back from the newest reading
         newest = max((pd.Timestamp(r["ts"]) for r in readings_long), default=None)
         readings = readings_long if newest is None else [
             r for r in readings_long if pd.Timestamp(r["ts"]) >= newest - pd.Timedelta(days=GLOBAL_HISTORY_DAYS)]
-        weather_df = _hourly_ward_weather(db.get_weather_history(hours=24 * GLOBAL_HISTORY_DAYS))
+        weather_df = _hourly_ward_weather(db.get_weather_history(
+            hours=24 * GLOBAL_HISTORY_DAYS, ward_ids=sorted({r["ward_id"] for r in readings_long})))
         weather_long = _long_weather(weather_df)
         F_train, F_live = _forecast_weather_frames(city_wards, readings_long)
         last_forecast_times = db.get_last_forecast_times(city["id"])

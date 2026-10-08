@@ -10,6 +10,8 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 OPENAQ_API_KEY = os.getenv("OPENAQ_API_KEY", "")
+# The forecast peaks near 700 MB; set to false on a 512 MB instance and run it elsewhere.
+FORECAST_ENABLED = os.getenv("FORECAST_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Official data.gov.in CPCB AQI API key — server-side only, never logged.

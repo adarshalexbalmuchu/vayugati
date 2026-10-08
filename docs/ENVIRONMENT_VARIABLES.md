@@ -29,6 +29,7 @@ key in a committed `.env.example`, treat it as compromised — see
 | `ANTHROPIC_API_KEY` | Yes | Used by `classify.py` for report classification. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Optional (Phase 9). Unset → `notifications.py` uses the development-safe mock adapter (logs "would send", never claims a real delivery). `SMTP_PASSWORD` is a credential — same handling as the service_role key. |
 | `ENVIRONMENT` | No | `local` \| `test` \| `staging` \| `production`. Defaults to `local`. Tags every structured log line and `job_runs` row — display/log metadata only, same as the frontend's `VITE_ENVIRONMENT`. |
+| `FORECAST_ENABLED` | No | Defaults to `true`. Set `false` on a 512 MB instance: the forecast peaks near 700 MB and gets the service OOM-killed. Run it elsewhere (`python -c "from app import forecast; forecast.run()"` from `ingest/`). |
 
 ## CI (GitHub Actions repo secrets, optional)
 

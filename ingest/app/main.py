@@ -194,7 +194,8 @@ def run_intel() -> dict:
     if not _intel_lock.acquire(blocking=False):
         raise RuntimeError("intel already running")
     try:
-        forecast_result = run_tracked("forecast", forecast.run)
+        forecast_result = (run_tracked("forecast", forecast.run) if config.FORECAST_ENABLED
+                           else {"skipped": "FORECAST_ENABLED=false"})
         try:
             attribution_result = attribution.run()
         except Exception:

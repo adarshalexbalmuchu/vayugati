@@ -16,6 +16,18 @@ def client() -> Client:
     return create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY)
 
 
+def _wards_paged(columns: str, page: int = 15) -> list[dict]:
+    """All wards, a few rows per request: the polygons are ~8.6 MB of JSON and a
+    single response peaked near 440 MB of RAM while it was parsed."""
+    rows: list[dict] = []
+    while True:
+        chunk = _with_retry(lambda: client().table("wards").select(columns).order("id")
+                            .range(len(rows), len(rows) + page - 1).execute().data)
+        rows.extend(chunk)
+        if len(chunk) < page:
+            return rows
+
+
 def get_wards() -> dict[str, dict]:
     """wards.name -> {id, lat, lng, boundary}.
 
@@ -23,11 +35,11 @@ def get_wards() -> dict[str, dict]:
     change — see that function's doc comment. ingest.py's weather-fetch
     step uses it to compute a boundary-centroid receptor point for the 252
     of 265 wards with no captured lat/lng, instead of skipping them."""
-    rows = client().table("wards").select("id, name, lat, lng, boundary").execute().data
+    rows = _wards_paged("id, name, lat, lng, boundary")
     return {r["name"]: r for r in rows}
 
 
-def get_wards_with_city() -> list[dict]:
+def get_wards_with_city(with_boundary: bool = True) -> list[dict]:
     """[{id, name, lat, lng, city_id, boundary}, ...] — for per-city
     forecasting/detection loops.
 
@@ -38,7 +50,19 @@ def get_wards_with_city() -> list[dict]:
     of those 252 has a real boundary. Callers that don't need it (the
     original use before this change) simply ignore the extra key; nothing
     existing reads `boundary` today except vayutrace_kernel.py."""
-    return client().table("wards").select("id, name, lat, lng, city_id, boundary").execute().data
+    return _wards_paged("id, name, lat, lng, city_id" + (", boundary" if with_boundary else ""))
+
+
+def attach_ward_boundaries(wards: list[dict], ward_ids: set[int]) -> None:
+    """Set `boundary` on the given wards in place, fetching only those ids."""
+    need = sorted(ward_ids)
+    for i in range(0, len(need), 15):
+        ids = need[i : i + 15]
+        rows = _with_retry(lambda ids=ids: client().table("wards").select("id, boundary").in_("id", ids).execute().data)
+        found = {r["id"]: r["boundary"] for r in rows}
+        for w in wards:
+            if w["id"] in found:
+                w["boundary"] = found[w["id"]]
 
 
 def get_hotspot_wards() -> list[dict]:
@@ -394,19 +418,22 @@ def get_readings_history(hours: int = 24 * 30) -> list[dict]:
     return out
 
 
-def get_weather_history(hours: int = 24 * 30) -> list[dict]:
+def get_weather_history(hours: int = 24 * 30, ward_ids: list[int] | None = None) -> list[dict]:
     """[{ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation,
          boundary_layer_height, ventilation_coefficient}].
     boundary_layer_height / ventilation_coefficient are NULL for rows written
     before migration 20260826200000 — forecast.py handles NaN gracefully."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    return _fetch_all(
-        lambda: client()
-        .table("weather")
-        .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation, boundary_layer_height, ventilation_coefficient")
-        .gte("ts", cutoff)
-        .order("ts")
-    )
+
+    def query():
+        q = (client().table("weather")
+             .select("ts, ward_id, wind_dir, wind_speed, temp_c, humidity, precipitation, boundary_layer_height, ventilation_coefficient")
+             .gte("ts", cutoff))
+        if ward_ids is not None:
+            q = q.in_("ward_id", ward_ids)
+        return q.order("ts")
+
+    return _fetch_all(query)
 
 
 # ── forecast + attribution writes ────────────────────────────────────────────
