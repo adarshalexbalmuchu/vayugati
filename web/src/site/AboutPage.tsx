@@ -2,12 +2,6 @@ import { Link } from 'react-router-dom'
 import { DELIVERABLES, FOUNDER, PHASES, SITUATIONS } from './content'
 import { BTN_PRIMARY, Band, Em, H2, Lead, PageHero, Stat, TEXT_LINK } from './ui'
 
-const initials = FOUNDER.name
-  .split(' ')
-  .filter((_, i, a) => i === 0 || i === a.length - 1)
-  .map((w) => w[0])
-  .join('')
-
 export default function AboutPage() {
   return (
     <>
@@ -78,12 +72,14 @@ export default function AboutPage() {
       <Band tone="white">
         <div className="grid gap-14 lg:grid-cols-[18rem_1fr]">
           <div data-reveal>
-            <div
-              aria-hidden
-              className="flex h-40 w-40 items-center justify-center rounded-full bg-sky-200 font-display text-5xl text-ink-900"
-            >
-              {initials}
-            </div>
+            <img
+              src="/site/founder.jpg"
+              alt={FOUNDER.name}
+              width={640}
+              height={640}
+              loading="lazy"
+              className="aspect-square w-full max-w-[18rem] rounded-2xl bg-sky-100 object-cover"
+            />
           </div>
           <div>
             <p className="text-sm text-accent-700">{FOUNDER.role}</p>
