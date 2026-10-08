@@ -89,7 +89,8 @@ export default function AboutPage() {
                 <Lead key={p}>{p}</Lead>
               ))}
             </div>
-            <ul className="mt-6 flex flex-wrap gap-2">
+            <p className="mt-8 text-sm text-slate-500">How I work</p>
+            <ul className="mt-3 flex flex-wrap gap-2">
               {FOUNDER.principles.map((p) => (
                 <li key={p} className="rounded-full border border-ink-900/15 px-4 py-1.5 text-sm text-slate-700">
                   {p}
