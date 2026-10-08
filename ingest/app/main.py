@@ -584,14 +584,13 @@ async def lifespan(app: FastAPI):
                       misfire_grace_time=12 * 3600)
     scheduler.start()
 
-    # first pass immediately: ingest, then download the OSM .pbf if needed,
-    # then intel so the first VayuTrace run has road data.
+    # first pass immediately: ingest, then intel. VayuTrace road/industrial/
+    # construction layers come from app/osm_cache, so no .pbf is needed here.
     def _bootstrap():
         try:
             run_ingest()
         except Exception:
             logging.exception("bootstrap ingest failed")
-        _maybe_download_pbf()
         try:
             run_intel()
         except Exception:

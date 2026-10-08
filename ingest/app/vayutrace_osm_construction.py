@@ -30,6 +30,8 @@ import math
 import os
 from pathlib import Path
 
+from . import osm_cache
+
 log = logging.getLogger("ingest.vayutrace_osm_construction")
 
 _DEFAULT_PBF = Path("/data/osm/northern-zone-latest.osm.pbf")
@@ -87,6 +89,15 @@ def _shoelace_centroid(ring: list[tuple[float, float]]) -> tuple[float, float, f
 
 
 def load_delhi_construction_sites(pbf_path: Path | None = None) -> list[dict]:
+    """Construction sites from the shipped cache; parses the .pbf only for an explicit path."""
+    if pbf_path is None:
+        cached = osm_cache.load("construction")
+        if cached is not None:
+            return cached
+    return parse_delhi_construction_sites(pbf_path)
+
+
+def parse_delhi_construction_sites(pbf_path: Path | None = None) -> list[dict]:
     """Construction/disturbed-land polygons for Delhi.
 
     Returns [{name, lat, lng, area_m2, landuse, activity_weight}, ...].

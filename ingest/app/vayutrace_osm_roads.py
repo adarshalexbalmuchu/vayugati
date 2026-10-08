@@ -80,6 +80,8 @@ import math
 import os
 from pathlib import Path
 
+from . import osm_cache
+
 log = logging.getLogger("ingest.vayutrace_osm_roads")
 
 _DEFAULT_PBF = Path("/data/osm/northern-zone-latest.osm.pbf")
@@ -193,6 +195,15 @@ def aggregate_roads_to_grid(ways: list[dict]) -> list[dict]:
 
 
 def load_delhi_roads(pbf_path: Path | None = None) -> list[dict]:
+    """Road sources from the shipped cache; parses the .pbf only for an explicit path."""
+    if pbf_path is None:
+        cached = osm_cache.load("roads")
+        if cached is not None:
+            return cached
+    return parse_delhi_roads(pbf_path)
+
+
+def parse_delhi_roads(pbf_path: Path | None = None) -> list[dict]:
     """Return grid-aggregated road source dicts for Delhi from the
     Geofabrik .pbf — see this module's own docstring ("Grid aggregation")
     for why raw per-way output is never returned.

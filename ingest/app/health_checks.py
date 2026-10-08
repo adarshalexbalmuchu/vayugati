@@ -68,6 +68,10 @@ def _job_health() -> dict:
 
 
 def _osm_pbf() -> dict:
+    from . import osm_cache  # noqa: PLC0415
+
+    if all((osm_cache.CACHE_DIR / f"{n}.json").exists() for n in ("roads", "industrial", "construction")):
+        return {"status": "ok", "source": "osm_cache"}
     pbf = Path(os.getenv("OSM_PBF_PATH", "/data/osm/northern-zone-latest.osm.pbf"))
     if pbf.exists():
         return {"status": "ok", "size_mb": pbf.stat().st_size // 1_000_000}

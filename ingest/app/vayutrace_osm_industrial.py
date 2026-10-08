@@ -68,6 +68,8 @@ import logging
 import os
 from pathlib import Path
 
+from . import osm_cache
+
 log = logging.getLogger("ingest.vayutrace_osm_industrial")
 
 _DEFAULT_PBF = Path("/data/osm/northern-zone-latest.osm.pbf")
@@ -146,6 +148,15 @@ def _shoelace_centroid(ring: list[tuple[float, float]]) -> tuple[float, float, f
 
 
 def load_delhi_industrial_zones(pbf_path: Path | None = None) -> list[dict]:
+    """Industrial zones from the shipped cache; parses the .pbf only for an explicit path."""
+    if pbf_path is None:
+        cached = osm_cache.load("industrial")
+        if cached is not None:
+            return cached
+    return parse_delhi_industrial_zones(pbf_path)
+
+
+def parse_delhi_industrial_zones(pbf_path: Path | None = None) -> list[dict]:
     """Return industrial-zone source dicts for Delhi from the Geofabrik
     .pbf, replacing vayutrace_industrial_zones.zones_as_dicts()'s old
     hardcoded list (see this module's own docstring for the full
