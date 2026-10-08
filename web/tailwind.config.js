@@ -91,6 +91,9 @@ export default {
         },
       },
       fontFamily: {
+        // Marketing site only; the app UI stays on `sans`.
+        site: ['"DM Sans"', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['"Instrument Serif"', 'Georgia', 'serif'],
         sans: [
           '"Segoe UI Variable"',
           '"Segoe UI"',

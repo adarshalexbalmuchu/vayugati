@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Build the marketing-site map assets from open boundary data.
+
+Outputs:
+  web/src/site/geo/jharkhand.ts      Jharkhand districts (projected) + distance-to-station bins
+  web/public/site/delhi-wards.svg    Delhi wards shaded by ward population
+
+Boundaries: geoBoundaries ADM1 (DataMeet India, CC BY 2.5 IN) selects the state;
+ADM2 districts (Pathways Data / lgdirectory.gov.in, ODbL 1.0) are drawn. Delhi
+wards come from data/delhi/processed/delhi_wards.geojson.
+"""
+import json
+import math
+import pathlib
+import tempfile
+import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+GB_URL = (
+    "https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/"
+    "gbOpen/IND/ADM1/geoBoundaries-IND-ADM1_simplified.geojson"
+)
+GB_ADM2_URL = GB_URL.replace("ADM1", "ADM2")
+# Km from a district centre to the nearest reporting station: <50, 50-100, 100-200, >200.
+BIN_EDGES = [50, 100, 200]
+
+# (lon, lat)
+CITIES = {
+    "Dhanbad": (86.43, 23.80),
+    "Ranchi": (85.33, 23.36),
+    "Jamshedpur": (86.20, 22.80),
+}
+
+
+def simplify(pts, tol):
+    """Iterative Douglas-Peucker on [x, y] points."""
+    if len(pts) < 4:
+        return pts
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (ax, ay), (bx, by) = pts[a], pts[b]
+        dx, dy = bx - ax, by - ay
+        norm = math.hypot(dx, dy) or 1e-12
+        far, idx = 0.0, -1
+        for i in range(a + 1, b):
+            d = abs(dy * (pts[i][0] - ax) - dx * (pts[i][1] - ay)) / norm
+            if d > far:
+                far, idx = d, i
+        if far > tol:
+            keep[idx] = True
+            stack += [(a, idx), (idx, b)]
+    return [p for p, k in zip(pts, keep) if k]
+
+
+def rings(geom):
+    polys = [geom["coordinates"]] if geom["type"] == "Polygon" else geom["coordinates"]
+    for poly in polys:
+        for ring in poly:
+            yield ring
+
+
+class Proj:
+    def __init__(self, feats, width):
+        lons = [p[0] for g in feats for r in rings(g) for p in r]
+        lats = [p[1] for g in feats for r in rings(g) for p in r]
+        self.minlon, self.maxlat = min(lons), max(lats)
+        self.cos = math.cos(math.radians((min(lats) + max(lats)) / 2))
+        self.s = width / ((max(lons) - self.minlon) * self.cos)
+        self.w = width
+        self.h = (max(lats) - min(lats)) * self.s
+
+    def xy(self, lon, lat):
+        return (lon - self.minlon) * self.cos * self.s, (self.maxlat - lat) * self.s
+
+
+def path(ring, proj, tol):
+    pts = [proj.xy(lon, lat) for lon, lat in ring]
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    # Douglas-Peucker needs distinct endpoints, so split the closed ring in two.
+    m = len(pts) // 2
+    pts = simplify(pts[: m + 1], tol)[:-1] + simplify(pts[m:] + [pts[0]], tol)[:-1]
+    if len(pts) < 3:
+        return ""
+    return "M" + "L".join(f"{x:.1f} {y:.1f}" for x, y in pts) + "Z"
+
+
+def fetch(url):
+    return json.loads(urllib.request.urlopen(url, timeout=120).read())
+
+
+def inside(pt, geom):
+    x, y = pt
+    polys = [geom["coordinates"]] if geom["type"] == "Polygon" else geom["coordinates"]
+    for poly in polys:
+        ring, odd, j = poly[0], False, len(poly[0]) - 1
+        for i in range(len(ring)):
+            (xi, yi), (xj, yj) = ring[i], ring[j]
+            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                odd = not odd
+            j = i
+        if odd:
+            return True
+    return False
+
+
+def centroid(geom):
+    ring = max(rings(geom), key=lambda r: abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(r, r[1:]))))
+    a2 = cx = cy = 0.0
+    for (x0, y0), (x1, y1) in zip(ring, ring[1:]):
+        c = x0 * y1 - x1 * y0
+        a2 += c
+        cx += (x0 + x1) * c
+        cy += (y0 + y1) * c
+    return cx / (3 * a2), cy / (3 * a2)
+
+
+def km_between(a, b):
+    la1, la2 = math.radians(a[1]), math.radians(b[1])
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(math.radians(b[0] - a[0]) / 2) ** 2
+    return 12742 * math.asin(math.sqrt(h))
+
+
+def build_jharkhand():
+    state = next(
+        x["geometry"] for x in fetch(GB_URL)["features"] if x["properties"]["shapeName"].startswith("Jh")
+    )
+    districts = []
+    for f in fetch(GB_ADM2_URL)["features"]:
+        c = centroid(f["geometry"])
+        if inside(c, state):
+            districts.append((f["properties"]["shapeName"], f["geometry"], km_between(c, CITIES["Dhanbad"])))
+    proj = Proj([g for _, g, _ in districts], 640)
+    items = []
+    for name, geom, km in sorted(districts, key=lambda t: t[0]):
+        d = "".join(path(r, proj, 0.5) for r in rings(geom))
+        items.append({"name": name, "km": round(km), "bin": sum(km > e for e in BIN_EDGES), "d": d})
+    cities = {n: [round(c, 1) for c in proj.xy(*ll)] for n, ll in CITIES.items()}
+    out = ROOT / "web/src/site/geo/jharkhand.ts"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        "// Generated by scripts/build_site_maps.py. Boundaries: geoBoundaries ADM1 (DataMeet India,\n"
+        "// CC BY 2.5 IN) and ADM2 (Pathways Data / lgdirectory.gov.in, ODbL 1.0).\n"
+        f"export const JHARKHAND = {{\n  width: {proj.w:.0f},\n  height: {proj.h:.0f},\n"
+        f"  pxPerKm: {proj.s / 111.32:.4f},\n"
+        f"  districts: {json.dumps(items)} as {{ name: string; km: number; bin: number; d: string }}[],\n"
+        f"  cities: {json.dumps(cities)} as Record<string, [number, number]>,\n}}\n"
+    )
+    print("jharkhand", len(items), "districts", out.stat().st_size, "bytes", f"{proj.w:.0f}x{proj.h:.0f}")
+    print([(i["name"], i["km"], i["bin"]) for i in items])
+
+
+def build_delhi():
+    data = json.load(open(ROOT / "data/delhi/processed/delhi_wards.geojson"))
+    feats = data["features"]
+    extra = json.load(open(ROOT / "data/delhi/processed/delhi_non_mcd_jurisdictions.geojson"))["features"]
+    proj = Proj([f["geometry"] for f in feats], 600)
+    pops = sorted(int(f["properties"]["TotalPop"] or 0) for f in feats)
+    cuts = [pops[len(pops) * i // 5] for i in range(1, 5)]
+    ramp = ["#E5F9FF", "#C4F1FF", "#6ED4F0", "#2A9BB9", "#1B5F71"]
+    paths = []
+    for f in feats:
+        pop = int(f["properties"]["TotalPop"] or 0)
+        fill = ramp[sum(pop > c for c in cuts)]
+        d = "".join(path(r, proj, 0.35) for r in rings(f["geometry"]))
+        name = (f["properties"].get("WardName") or f["properties"].get("NW2022") or "").title().replace('"', "")
+        paths.append(f'<path fill="{fill}" d="{d}"><title>{name}</title></path>')
+    # NDMC and the Cantonment sit outside the MCD ward map; shown neutral.
+    for f in extra:
+        d = "".join(path(r, proj, 0.35) for r in rings(f["geometry"]))
+        paths.append(f'<path fill="#EDE0CB" d="{d}"><title>{f["properties"]["name"]}</title></path>')
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {proj.w:.0f} {proj.h:.0f}" '
+        'stroke="#fff" stroke-width="0.6" stroke-linejoin="round">' + "".join(paths) + "</svg>"
+    )
+    out = ROOT / "web/public/site/delhi-wards.svg"
+    out.write_text(svg)
+    print("delhi", len(feats), "wards", out.stat().st_size, "bytes", f"{proj.w:.0f}x{proj.h:.0f}")
+
+
+if __name__ == "__main__":
+    build_jharkhand()
+    build_delhi()

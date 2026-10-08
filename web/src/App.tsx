@@ -16,8 +16,13 @@ import OpsView from './pages/OpsView'
 import SensorsView from './pages/SensorsView'
 import TasksView from './pages/TasksView'
 import IncidentRemediationPage from './pages/IncidentRemediationPage'
+import SiteLayout from './site/SiteLayout'
+import SiteHome from './site/SiteHome'
+import PlatformPage from './site/PlatformPage'
+import SitePlaceholder from './site/SitePlaceholder'
+import EvidencePage from './site/EvidencePage'
 
-// "/" -> the logged-in user's home view, or /login
+// "/app" -> the logged-in user's home view, or /login
 function Home() {
   const { session, profile, loading } = useAuth()
   if (loading) {
@@ -34,7 +39,14 @@ export default function App() {
         <IngestHealthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route element={<SiteLayout />}>
+              <Route path="/" element={<SiteHome />} />
+              <Route path="/platform" element={<PlatformPage />} />
+              <Route path="/evidence" element={<EvidencePage />} />
+              <Route path="/about" element={<SitePlaceholder title="About" />} />
+              <Route path="/contact" element={<SitePlaceholder title="Contact" />} />
+            </Route>
+            <Route path="/app" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route
               path="/citizen"

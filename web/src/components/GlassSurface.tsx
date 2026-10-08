@@ -19,6 +19,8 @@ export function GlassSurface({
   className = '',
   radiusClassName = 'rounded-3xl',
   ambientShadow = true,
+  tint = 0.25,
+  distort = true,
 }: {
   children: ReactNode
   /** Layout classes (flex/gap/padding/sizing) for the actual content —
@@ -42,6 +44,10 @@ export function GlassSurface({
    *  actual floating pill like the Map/Overview toolbars, where the
    *  reference's shadow is correct as-is. */
   ambientShadow?: boolean
+  /** White tint opacity; raise it where the surface sits over dark content. */
+  tint?: number
+  /** SVG displacement is costly to repaint while content scrolls behind; false uses a plain blur. */
+  distort?: boolean
 }) {
   return (
     <div
@@ -50,9 +56,12 @@ export function GlassSurface({
     >
       <div
         className={`absolute inset-0 z-0 overflow-hidden ${radiusClassName}`}
-        style={{ backdropFilter: 'blur(3px) url(#glass-distortion)', isolation: 'isolate' }}
+        style={{
+          backdropFilter: distort ? 'blur(3px) url(#glass-distortion)' : 'blur(16px) saturate(1.5)',
+          isolation: 'isolate',
+        }}
       />
-      <div className={`absolute inset-0 z-10 ${radiusClassName}`} style={{ background: 'rgba(255,255,255,0.25)' }} />
+      <div className={`absolute inset-0 z-10 ${radiusClassName}`} style={{ background: `rgba(255,255,255,${tint})` }} />
       <div
         className={`absolute inset-0 z-20 overflow-hidden ${radiusClassName}`}
         style={{
