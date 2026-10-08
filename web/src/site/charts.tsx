@@ -111,7 +111,8 @@ const LOOP = [
 
 const ACTIVE = '#2B88D8'
 
-// Four chasing arrows around a ring: each arc is one step of the trap, drawn clockwise from the top.
+// Four chasing arrows around a ring: each arc is one step of the trap, drawn clockwise. Steps sit counter-clockwise
+// of each other, so the ring turning clockwise brings the next step's arc into the active slot at the top.
 const C = 150
 const R = 108
 const STROKE = 30
@@ -121,7 +122,7 @@ const pt = (deg: number, r = R) => {
   return [C + r * Math.cos(a), C + r * Math.sin(a)]
 }
 const ARCS = LOOP.map((_, i) => {
-  const start = -90 + i * 90 + 7
+  const start = -90 - i * 90 + 7
   const end = start + 62
   const [x1, y1] = pt(start)
   const [x2, y2] = pt(end)

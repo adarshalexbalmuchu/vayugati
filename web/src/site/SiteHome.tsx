@@ -113,12 +113,12 @@ export default function SiteHome() {
     const loop = gsap.timeline({ paused: true })
     loop.addLabel('start', 0)
 
-    // Each step the whole ring turns a quarter counter-clockwise, bringing the next arc up to the active slot
+    // Each step the whole ring turns a quarter clockwise, bringing the next arc up to the active slot
     // (back.inOut gives the wind-up and overshoot); the stroke draws on as it arrives, then the figure rolls in.
     steps.forEach((row, i) => {
       const t = i * STEP
       if (i > 0) {
-        loop.to(ring, { rotation: -90 * i, duration: 1.1, ease: 'back.inOut(1.3)' }, t)
+        loop.to(ring, { rotation: 90 * i, duration: 1.1, ease: 'back.inOut(1.3)' }, t)
       }
 
       loop.to(row, { opacity: 1, x: 0, duration: 0.5, ease: 'power3.out' }, t + 0.1)
@@ -159,7 +159,7 @@ export default function SiteHome() {
     // Loop closed: the ring completes a full turn, lights up all round, and the figure says what happens next.
     const closeAt = steps.length * STEP + 0.1
     loop.to(figs[steps.length - 1], { opacity: 0, y: -12, duration: 0.3 }, closeAt)
-    loop.to(ring, { rotation: -90 * steps.length, duration: 1.2, ease: 'back.inOut(1.3)' }, closeAt)
+    loop.to(ring, { rotation: 90 * steps.length, duration: 1.2, ease: 'back.inOut(1.3)' }, closeAt)
     loop.to(arcs, { color: ACTIVE, duration: 0.4, stagger: 0.12 }, closeAt + 0.3)
     loop.to(steps, { opacity: 1, duration: 0.4, stagger: 0.1 }, closeAt + 0.3)
     loop.to(dots, { backgroundColor: ACTIVE, duration: 0.3, stagger: 0.1 }, closeAt + 0.3)
