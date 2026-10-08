@@ -370,14 +370,8 @@ def _ingest_station_openaq(station_id: int, openaq_location_id: int) -> tuple[in
             row["co"] = co_mg
         else:
             row.pop("co", None)
-        computed_aqi = aqi.compute_cpcb_aqi(
-            values.get("pm25"), values.get("pm10"),
-            no2=values.get("no2"), so2=values.get("so2"),
-            o3=values.get("o3"), co_mg=co_mg,
-            nh3=values.get("nh3"),
-        )
-        if computed_aqi is not None:
-            row["aqi"] = computed_aqi
+        # No AQI here: one hour is not CPCB's 24h basis. _recompute_24h_aqi
+        # sets it once 16+ hours of history exist; until then it stays null.
         db.upsert_reading(row)
         if latest_ts is None or ts > latest_ts:
             latest_ts = ts

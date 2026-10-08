@@ -144,7 +144,7 @@ def reconcile_latest(
         # readings.aqi is null for readings that predate _recompute_24h_aqi or
         # when an ingest cycle failed before writing the AQI patch. Compute it
         # from stored concentrations so the last-known value is never blank.
-        if openaq_aqi is None and openaq_entry:
+        if openaq_aqi is None and openaq_entry and openaq_entry.get("ingest_source") != "openaq":
             # readings.co is stored in mg/m³ regardless of ingest_source
             # (bug fix, Sept 2026: _ingest_station_openaq() in ingest.py used
             # to write the OpenAQ path's raw µg/m³ value straight into

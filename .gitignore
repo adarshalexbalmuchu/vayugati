@@ -24,3 +24,6 @@ supabase/.branches/
 tsconfig.tsbuildinfo
 ingest/data/
 ingest/.data/
+
+# CPCB portal raw downloads (136 MB, re-downloadable)
+data/delhi/raw/cpcb_portal_2026/
