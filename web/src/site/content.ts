@@ -112,9 +112,9 @@ export const FOUNDER = {
   name: 'Adarsh Alex Balmuchu',
   role: 'Founder',
   bio: [
-    'At IIM Ranchi, while doing his bachelor’s, he and his friends set out to make a documentary on the lives of people in Jharia and Dhanbad. All his research in those years kept returning to the same subject: the lives of people in Jharkhand, their land and their rights, seen through sociology, psychology and the Constitution.',
-    'Vayu Gati is the chance to turn that work into something that changes outcomes. In Jharia, fires burn in the coal beneath the ground and families breathe the smoke every day, while the nearest reference station can fail for months without anyone noticing. A town cannot protect people from air it cannot see.',
-    'It is a platform that turns air quality data into ward-level maps, forecasts and alerts, alongside affordable, solar powered monitors for places where no data exists, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand. The work brings together software development, spatial data and the validation of air quality calculations.',
+    'Picture living in Jharia, where fires burn in the coal beneath the ground and the smoke reaches your home every day. The nearest reference station can fail for months without anyone noticing, so when you ask how bad the air is, nobody can give you a number. A town cannot protect people from air it cannot see.',
+    'His interest began at IIM Ranchi, where, while doing his bachelor’s, he and his friends set out to make a documentary on the lives of people in Jharia and Dhanbad. All his research in those years kept returning to the same subject: the lives of people in Jharkhand, their land and their rights, seen through sociology, psychology and the Constitution.',
+    'Vayu Gati is his chance to turn that work into something that changes outcomes: a platform that turns air quality data into ward-level maps, forecasts and alerts, alongside affordable, solar powered monitors for places where no data exists, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand. It brings together software development, spatial data and the validation of air quality calculations.',
   ],
   principles: [
     'Accurate public information',
