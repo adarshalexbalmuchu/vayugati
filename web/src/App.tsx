@@ -21,6 +21,7 @@ import SiteHome from './site/SiteHome'
 import PlatformPage from './site/PlatformPage'
 import SitePlaceholder from './site/SitePlaceholder'
 import EvidencePage from './site/EvidencePage'
+import AboutPage from './site/AboutPage'
 
 // "/app" -> the logged-in user's home view, or /login
 function Home() {
@@ -43,7 +44,7 @@ export default function App() {
               <Route path="/" element={<SiteHome />} />
               <Route path="/platform" element={<PlatformPage />} />
               <Route path="/evidence" element={<EvidencePage />} />
-              <Route path="/about" element={<SitePlaceholder title="About" />} />
+              <Route path="/about" element={<AboutPage />} />
               <Route path="/contact" element={<SitePlaceholder title="Contact" />} />
             </Route>
             <Route path="/app" element={<Home />} />

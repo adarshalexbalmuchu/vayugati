@@ -69,3 +69,51 @@ export const SOURCES = [
     href: 'https://www.tribuneindia.com/news/nation/jharkhands-jharia-most-polluted-city-delhi-reduces-air-pollution-marginally-greenpeace-report-29598',
   },
 ]
+
+export const SITUATIONS = [
+  {
+    range: 'Within 2 km of a monitor',
+    share: 'about 4% of Indians',
+    body: 'One station describes one point, and its data can fail for months unnoticed. What is needed is routine quality control and a way to extend each reading across a ward or town.',
+  },
+  {
+    range: '2 to 50 km from a monitor',
+    share: 'about 49% of Indians',
+    body: 'A distant station is the only reference, and it cannot see a colliery, a brick kiln or a smouldering waste dump. What is needed is local measurement, calibrated against that station.',
+  },
+  {
+    range: 'More than 50 km from a monitor',
+    share: 'about 47% of Indians, some 655 million people',
+    body: 'There is no data at all. Satellite and model estimates give a first picture but cannot replace local measurement: in our tests they explained about half the day-to-day variation in PM2.5 (R² 0.51), against 82% where a dense local network anchored them.',
+  },
+]
+
+export const PHASES = [
+  {
+    label: 'Phase 1, 12 months',
+    title: 'A pilot in the Dhanbad and Jharia coalfield',
+    body: 'A solar-powered, 4G-connected node with two independent particle sensors, at about ₹20,000 a unit. 30 nodes, with 3 spares, calibrated beside the JSPCB reference station at Jorapokhar and run with local officials so that maps, forecasts and alerts are used, not just published.',
+  },
+  {
+    label: 'Phase 2, 2 to 3 years',
+    title: 'Scale and embed',
+    body: 'Extend the network to more towns in Jharkhand and neighbouring states, publish the sensor design and calibration method openly, and work with the state pollution control board and urban local bodies so that calibrated low-cost data complements the reference network.',
+  },
+]
+
+export const DELIVERABLES = [
+  'An openly documented sensor design and calibration method, proven in high humidity and coal dust',
+  'A dense, quality-checked air-quality dataset for one of India’s most polluted mining regions',
+  'Ward-level maps, forecasts and alerts in daily use by local officials',
+  'A costed playbook for taking any town from no data to actionable data',
+]
+
+export const FOUNDER = {
+  name: 'Adarsh Alex Balmuchu',
+  role: 'Founder',
+  bio: [
+    'Adarsh Alex Balmuchu is building Vayu Gati, an air quality platform focused on India’s towns with limited monitoring. His work combines software development, spatial data and validation of air quality calculations.',
+    'The project aims to turn local evidence into practical clean air action, with a proposed pilot in Dhanbad and Jharia, Jharkhand. Alongside the software platform, he is developing affordable solar powered monitoring hardware.',
+  ],
+  principles: ['Accurate public information', 'Clear limitations', 'A working prototype before wider deployment'],
+}
