@@ -112,12 +112,13 @@ export const FOUNDER = {
   name: 'Adarsh Alex Balmuchu',
   role: 'Founder',
   bio: [
-    'I’m Adarsh Alex Balmuchu, and I’m building Vayu Gati, an air quality platform for India’s towns that have little or no monitoring. My work brings together software development, spatial data and the validation of air quality calculations.',
-    'I want local evidence to turn into practical clean air action, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand. Alongside the software, I’m developing affordable, solar powered monitoring hardware.',
+    'In Jharia, fires burn in the coal beneath the ground and families breathe the smoke every day. The nearest reference station can fail for months without anyone noticing, and for most people in the region there is no number to point to at all. A town cannot protect people from air it cannot see.',
+    'Vayu Gati began with that gap. It is a platform that turns air quality data into ward-level maps, forecasts and alerts, alongside affordable, solar powered monitors for places where no data exists, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand.',
+    'The work brings together software development, spatial data and the validation of air quality calculations, so that local evidence turns into practical clean air action.',
   ],
   principles: [
-    'I keep public information accurate',
-    'I state limitations plainly',
-    'I test a working prototype before expanding',
+    'Accurate public information',
+    'Limitations stated plainly',
+    'A working prototype before expanding',
   ],
 }
