@@ -118,8 +118,9 @@ export default function SiteLayout() {
         <div className="mx-auto max-w-6xl">
           <GlassSurface radiusClassName="rounded-[28px] md:rounded-full" tint={0.86} className="pl-5 pr-2 sm:pl-6">
             <div className="grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4">
-              <Link to="/" aria-label="Vayu Gati home">
+              <Link to="/" aria-label="Vayu Gati home" className="flex items-center gap-3">
                 <LogoWordmark className="h-11 w-auto" />
+                <span className="font-display text-2xl leading-none text-ink-900">Vayu Gati</span>
               </Link>
               <nav className="hidden items-center justify-center gap-7 text-sm md:flex" aria-label="Primary">
                 {NAV.map((item) => (
