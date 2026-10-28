@@ -87,25 +87,25 @@ export function Pm25Chart() {
 
 const LOOP = [
   {
-    title: 'No monitor in the town',
-    body: '88% of statutory towns have none',
-    note: 'Where Vayu Gati enters: calibrated local data for towns that have none',
-    fig: { to: 88, prefix: '', suffix: '%', caption: 'of statutory towns have no monitor' },
+    title: 'Few monitors nearby',
+    body: '88% of towns and cities have none',
+    note: 'Where Vayu Gati comes in: trusted local data where it is thin',
+    fig: { to: 88, prefix: '', suffix: '%', caption: 'of towns and cities have no monitor' },
   },
   {
-    title: 'No five-year record',
-    body: 'of breaching the national standard',
-    fig: { to: 5, prefix: '', suffix: ' years', caption: 'of monitored exceedance needed to qualify' },
+    title: 'Little known about the air',
+    body: 'where or when it is worst',
+    fig: { to: 1, prefix: '<', suffix: '%', caption: 'of Jharkhand within 2 km of a live monitor' },
   },
   {
-    title: 'Not on the NCAP list',
-    body: '131 cities are; other towns are not',
-    fig: { to: 131, prefix: '', suffix: '', caption: 'cities on the NCAP list' },
+    title: 'No daily warning',
+    body: 'even the official index goes quiet',
+    fig: { to: 11, prefix: '', suffix: ' days', caption: 'in Sept 2026 with no index for Jharkhand' },
   },
   {
-    title: 'No NCAP funds',
-    body: 'no money for monitors or action',
-    fig: { to: 9650, prefix: '₹', suffix: '', caption: 'crore released to those cities' },
+    title: 'Left out of national plans',
+    body: 'most polluted towns are not covered',
+    fig: { to: 1720, prefix: '', suffix: '', caption: 'polluted towns outside the national programme' },
   },
 ]
 
@@ -201,8 +201,8 @@ export function TrapLoop() {
               className="absolute inset-0 flex flex-col items-center justify-center"
               style={{ opacity: 0 }}
             >
-              <span className="font-display text-4xl italic leading-none">no monitor</span>
-              <span className="mt-2 text-xs leading-snug text-cream/70">and the loop starts again</span>
+              <span className="font-display text-4xl italic leading-none">unseen</span>
+              <span className="mt-2 text-xs leading-snug text-cream/70">and the cycle goes on</span>
             </div>
           </div>
         </div>
@@ -248,7 +248,7 @@ const SITUATIONS = [
     pct: 47,
     name: 'Beyond the network',
     range: 'more than 50 km away',
-    constraint: 'No data at all; estimates explain only about half',
+    constraint: 'No nearby measurement; estimates explain only about half',
     need: 'Local sensors first; satellite and models as a backstop',
     note: '655 million people',
   },

@@ -1,4 +1,3 @@
-import { ShareBar } from './charts'
 import { SOURCES } from './content'
 import { ScrubText } from './motion'
 import { Band, DataTable, Em, H2, Lead, PageHero, Stat } from './ui'
@@ -7,8 +6,8 @@ const SECTIONS = [
   ['burden', 'The burden'],
   ['coverage', 'Coverage'],
   ['quality', 'Data quality'],
-  ['funding', 'Funding'],
-  ['change', 'What is changing'],
+  ['plans', 'National plans'],
+  ['missing', 'What is missing'],
   ['sources', 'Sources'],
 ]
 
@@ -18,10 +17,10 @@ export default function EvidencePage() {
       <PageHero
         title={
           <>
-            Places that are not measured cannot be planned for, funded or <Em>held to account</Em>
+            Where the air is barely measured, it is hard to <Em>act on</Em>
           </>
         }
-        lead="The constraint is more basic than funding or policy intent. Here is the evidence behind it."
+        lead="The evidence behind our work, with every figure dated and sourced."
       >
         <nav aria-label="On this page" className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
           {SECTIONS.map(([id, label]) => (
@@ -35,34 +34,34 @@ export default function EvidencePage() {
       <Band tone="white" id="burden">
         <div className="max-w-3xl">
           <H2>
-            The burden is <Em>national</Em>, not only metropolitan
+            Polluted air is part of <Em>daily life</Em> in Jharkhand
           </H2>
           <Lead className="mt-5">
-            All 1.4 billion Indians breathe PM2.5 above the WHO guideline, and 46% live where it exceeds even
-            India&rsquo;s own national standard.
+            All 1.4 billion Indians breathe PM2.5 above the World Health Organization&rsquo;s guideline. In Jharkhand,
+            the cost falls on people with few means to cope.
           </Lead>
         </div>
         <div className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-4">
-          <Stat value="~2 million" label="deaths linked to air pollution in 2023" />
-          <Stat value="3.5 years" label="average life lost to long-term exposure, versus 1.6 for malnutrition and 1.5 for tobacco" />
-          <Stat value="US$36.8bn" label="economic cost in 2019, 1.36% of GDP" />
-          <Stat value="56.3%" label="of Indians still cooked with solid fuels in 2019" />
+          <Stat value="42.1" label="µg/m³ average PM2.5 in Jharkhand in 2023, above India’s standard of 40" />
+          <Stat value="3.6 years" label="of life lost by the average resident, compared with air that meets the WHO guideline" />
+          <Stat value="33 towns" label="in the state breached the national PM2.5 standard in every year assessed from 2019 to 2024" />
+          <Stat value="69%" label="of people lived in homes cooking with wood, dung, crop waste or coal in 2019–21, the highest share of any state" />
         </div>
         <p className="mt-12 max-w-3xl leading-relaxed text-slate-600">
-          As a share of state income, the cost fell hardest on low-income states such as Uttar Pradesh, Bihar, Madhya
-          Pradesh and Chhattisgarh. Jharkhand holds 93.25 billion tonnes of coal resources, second only to Odisha, and
-          in the Jharia coalfield underground fires have burned since 1916.
+          In the Jharia coalfield, underground fires have burned since 1916, and 27 surface fires were still active in
+          2025. Mines, coal-haul roads and homes sit side by side, and many families earn their living from the same
+          coal that pollutes their air.
         </p>
       </Band>
 
       <Band tone="cream" id="coverage">
         <div className="max-w-3xl">
           <H2>
-            Coverage follows <Em>attention</Em>, not exposure
+            Coverage is <Em>thin</Em> where people need it
           </H2>
           <Lead className="mt-5">
-            By the end of 2022, India had 883 manual and 409 real-time stations. Only 12% of its 4,041 statutory towns
-            have any monitor, and about 47% of Indians live more than 50 km from one.
+            Only 12% of India&rsquo;s 4,041 towns and cities have any air-quality monitor, and about 47% of Indians live
+            more than 50 km from one.
           </Lead>
         </div>
 
@@ -70,7 +69,7 @@ export default function EvidencePage() {
           <div className="rounded-xl border border-ink-900/10 bg-white p-7" data-reveal>
             <p className="text-sm font-medium text-slate-500">Delhi</p>
             <div className="mt-2 font-display text-7xl leading-none">26%</div>
-            <p className="mt-3 text-sm text-slate-600">of residents live within 2 km of a monitor (50 stations)</p>
+            <p className="mt-3 text-sm text-slate-600">of residents live within 2 km of a monitor</p>
           </div>
           <div className="rounded-xl bg-ink-900 p-7 text-cream" data-reveal>
             <p className="text-sm font-medium text-cream/70">Jharkhand, twice the population</p>
@@ -79,32 +78,20 @@ export default function EvidencePage() {
           </div>
         </div>
 
-        <p className="mt-10 max-w-3xl leading-relaxed text-slate-600">
-          Under IS 5182 (Part 14), even a town of fewer than 1 lakh people should have at least four
-          particulate-matter monitoring stations. Meeting that standard nationally would take about 17,500 PM
-          monitors, some 14,200 of them in small towns. India had 1,292 stations of all kinds. The shortfall is
-          largest exactly where most towns are: at the small end.
-        </p>
-
-        <div className="mt-8">
+        <div className="mt-10">
           <DataTable
             head={['', 'Delhi', 'Jharkhand']}
             rows={[
               ['Population, 2023', '1.9 crore', '3.9 crore'],
-              ['Annual average PM2.5, 2023', '88.4 µg/m³', '42.1 µg/m³'],
+              ['Manual stations (samples collected by hand), November 2024', '7', '10, in 7 places'],
               [
-                'Monitoring stations',
-                '50 (40 real-time, 10 manual; 2022)',
-                '2 real-time stations reporting, both in Dhanbad (September 2026)',
+                'Continuous stations in the daily air-quality index, 27 October 2026',
+                '59 listed; 55 reported',
+                'At least 4 listed, all in Dhanbad district; 1 reported',
               ],
-              ['Residents within 2 km of a monitor', '26% (all monitors)', 'under 1% (real-time monitors)'],
-              [
-                'Capital city covered in real time',
-                'Yes',
-                "Not found: no Ranchi station on OpenAQ's mirror of the national feed (to confirm with CPCB)",
-              ],
+              ['Capital city in the daily index', 'Yes', 'No'],
             ]}
-            source="Sources: population and PM2.5, EPIC; Delhi stations and coverage, Jharkhand coverage, CSE; Jharkhand stations, Vayu Gati analysis of CPCB data via OpenAQ."
+            source="Sources: population, EPIC; manual stations, CPCB station list; continuous stations and capital city, CPCB daily bulletins; residents within 2 km, CSE."
           />
         </div>
       </Band>
@@ -123,82 +110,63 @@ export default function EvidencePage() {
         <div className="mt-12 max-w-3xl">
           <p className="text-sm font-medium text-slate-500">Jorapokhar, Tata Stadium, Dhanbad</p>
           <p className="mt-1 text-xl font-semibold leading-snug">
-            Jharkhand&rsquo;s main station reported a stuck NO₂ value for the whole period we examined. In 2022 it did
-            not measure PM2.5 at all.
+            Jharkhand&rsquo;s main station reported a stuck NO₂ value on almost every day we examined.
           </p>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">
-            A town that cannot see its air also cannot be seen: without a monitor it does not appear in national
-            rankings, and it is absent from the evidence that shapes plans and budgets.
+            Data can also exist without reaching the public. The Dhanbad Municipal Corporation told the National Green
+            Tribunal in 2023 that it had installed 10 continuous monitors in the city, but their data does not reach
+            the national index.
           </p>
         </div>
       </Band>
 
-      <Band tone="cream" id="funding">
+      <Band tone="cream" id="plans">
         <div className="max-w-3xl">
           <H2>
-            The money follows the <Em>measured</Em>
+            National plans reach <Em>few towns</Em>
           </H2>
           <Lead className="mt-5">
-            About ₹9,650 crore went to the 131 NCAP cities from FY 2019-20 to December 2023, a list that covers about
-            3% of India&rsquo;s statutory towns. Forecasting follows the same pattern, with the flagship service built
-            for metropolitan cities.
+            Satellite estimates show that 1,787 Indian towns breached the national PM2.5 standard in every year
+            assessed from 2019 to 2024. The National Clean Air Programme covers 67 of them.
           </Lead>
         </div>
         <p className="mt-8 max-w-3xl leading-relaxed text-slate-600">
-          Even where funds reach a town, the capacity to use them is thin. Jharkhand&rsquo;s three NCAP cities had used
-          49% of the ₹279 crore released to them. Every other town in the state received nothing under NCAP.
+          Even where money is spent, thin monitoring makes it hard to show where it helped. Dhanbad had used ₹57 crore
+          under the programme by December 2023, with one or two working stations to show the effect.
         </p>
-        <div className="mt-8">
-          <DataTable
-            head={['Jharkhand city in NCAP', 'Released (₹ crore)', 'Used (₹ crore)', 'Share used']}
-            rows={[
-              ['Dhanbad', '69.09', '57.39', <ShareBar key="d" value={83} />],
-              ['Ranchi', '93.50', '48.09', <ShareBar key="r" value={51} />],
-              ['Jamshedpur', '116.85', '31.90', <ShareBar key="j" value={27} />],
-              ['Total', '279.44', '137.38', <ShareBar key="t" value={49} />],
-            ]}
-            boldLastRow
-            source="Source: PIB (MoEF&CC), Annexure I, FY 2019-20 to 15 December 2023."
-          />
-        </div>
         <p className="mt-12 max-w-3xl text-2xl font-semibold leading-snug tracking-tight">
           <ScrubText
-            parts={[
-              'The result is a self-reinforcing trap: no monitor, no record, no listing, no funds, and so',
-              { em: 'no monitor.' },
-            ]}
+            parts={['Where measurement is thin, problems are harder to see, to rank and', { em: 'to fix.' }]}
           />
         </p>
       </Band>
 
-      <Band tone="ink" id="change">
+      <Band tone="ink" id="missing">
         <div className="max-w-3xl">
           <H2>
-            Air-quality money is about to follow <Em>demonstrable problems</Em>
+            More stations help, but cannot be <Em>everywhere</Em>
           </H2>
         </div>
         <div className="mt-12 grid gap-x-6 gap-y-10 sm:grid-cols-2">
           <div>
-            <div className="font-display text-5xl leading-none text-sky-300 sm:text-6xl">
-              ₹3,56,257 crore
-            </div>
+            <div className="font-display text-5xl leading-none text-sky-300 sm:text-6xl">15</div>
             <p className="mt-3 max-w-sm text-sm leading-snug text-cream/70">
-              allocated by the XVI Finance Commission to urban local bodies for 2026-31, with sector-specific grants
-              discontinued and half of the basic grant left untied
+              new continuous stations planned by the state pollution control board in December 2025, none of them in
+              Dhanbad district
             </p>
           </div>
           <div>
-            <div className="font-display text-5xl leading-none text-sky-300 sm:text-6xl">
-              ₹1 lakh crore
-            </div>
+            <div className="font-display text-5xl leading-none text-sky-300 sm:text-6xl">₹27.5 lakh</div>
             <p className="mt-3 max-w-sm text-sm leading-snug text-cream/70">
-              Urban Challenge Fund, which asks states to focus on tier 2 and tier 3 cities
+              a year to run one government reference station (2021-22), too costly to place every few streets
             </p>
           </div>
         </div>
         <p className="mt-12 max-w-3xl text-lg leading-relaxed text-cream/80">
-          As air-quality money stops being ring-fenced, it will follow the problems that towns can demonstrate. A town
-          that can measure its air can make its case; a town that cannot will be passed over.
+          What is missing is a dense, trusted local layer alongside the government&rsquo;s stations: enough calibrated
+          monitors to show how the air differs between a mine edge, a haul road and a school, checked against
+          reference stations, and open to everyone. London, the Netherlands and Beijing already run networks like
+          this.
         </p>
       </Band>
 

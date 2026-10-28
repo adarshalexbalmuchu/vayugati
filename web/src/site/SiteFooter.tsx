@@ -75,8 +75,8 @@ export function SiteFooter({ nav, signedIn }: { nav: { to: string; label: string
               <Em className="text-sky-300">to action.</Em>
             </h2>
             <p className="mt-8 max-w-xl text-lg leading-relaxed text-cream/65">
-              Closing the gap between air-quality information and local action, starting with the towns India has not
-              yet measured.
+              Closing the gap between air-quality information and local action, starting where India&rsquo;s air is
+              least measured.
             </p>
           </div>
 

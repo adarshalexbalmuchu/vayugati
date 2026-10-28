@@ -37,7 +37,7 @@ export function JharkhandMap() {
       <svg
         viewBox={`0 0 ${J.width} ${J.height}`}
         role="img"
-        aria-label="Map of Jharkhand's 24 districts, shaded by distance to the nearest real-time station. The only two stations reporting to the national feed, both in Dhanbad, are marked. Only Dhanbad and Bokaro are within 50 km; most districts, including Ranchi and Jamshedpur, are far beyond."
+        aria-label="Map of Jharkhand's 24 districts, shaded by distance to the nearest station in India's daily air-quality index. The only such stations, both in Dhanbad district, are marked. Only Dhanbad and Bokaro are within 50 km; most districts, including Ranchi and Jamshedpur, are far beyond."
         className="mx-auto h-auto max-h-[min(46vh,30rem)] w-full"
       >
         <defs>
@@ -64,7 +64,7 @@ export function JharkhandMap() {
               strokeWidth={1.2}
               strokeLinejoin="round"
             >
-              <title>{`${d.name}: about ${d.km} km from the nearest reporting station`}</title>
+              <title>{`${d.name}: about ${d.km} km from the nearest station in the daily index`}</title>
             </path>
           ))}
         </g>
@@ -94,7 +94,7 @@ export function JharkhandMap() {
                 textAnchor={left ? 'end' : 'start'}
                 className={`fill-slate-500 text-[12px] ${HALO}`}
               >
-                {name === 'Ranchi' ? 'capital, no station found' : 'no station reporting'}
+                {name === 'Ranchi' ? 'capital, not in the daily index' : 'not in the daily index'}
               </text>
             </g>
           )
@@ -114,7 +114,7 @@ export function JharkhandMap() {
             Dhanbad
           </text>
           <text x={dx + 16} y={dy + 11} className={`fill-ink-900 text-[12px] font-medium ${HALO}`}>
-            2 stations, the only ones reporting
+            the only stations in the daily index
           </text>
         </g>
 
@@ -128,7 +128,7 @@ export function JharkhandMap() {
 
       <div className="mt-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          Distance to the nearest reporting station
+          Distance to the nearest station in the daily index
         </p>
         <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-600 sm:grid-cols-4">
           {DISTANCE_LABEL.map((label, i) => (
@@ -140,7 +140,7 @@ export function JharkhandMap() {
         </ul>
         <p className="mt-3 flex items-center gap-2 text-sm text-slate-600">
           <span className="h-3 w-3 rounded-full bg-white ring-2 ring-ink-700" aria-hidden />
-          Major city with no station reporting
+          Major city not in the daily index
         </p>
       </div>
     </figure>
@@ -150,9 +150,9 @@ export function JharkhandMap() {
 export function JharkhandMapCaption() {
   return (
     <p className="mt-4 max-w-3xl text-xs leading-relaxed text-slate-500">
-      Jharkhand&rsquo;s 24 districts, shaded by the distance from each district centre to the nearest real-time station
-      reporting to the national feed, September 2026. Source: Vayu Gati analysis of CPCB data via OpenAQ; the absence of a
-      Ranchi station is to be confirmed with CPCB. Boundaries: geoBoundaries (DataMeet India; Pathways Data and
+      Jharkhand&rsquo;s 24 districts, shaded by the distance from each district centre to the nearest station in
+      India&rsquo;s daily air-quality index, September to October 2026. Manual stations, which do not publish daily, are
+      not shown. Source: CPCB daily bulletins. Boundaries: geoBoundaries (DataMeet India; Pathways Data and
       lgdirectory.gov.in, ODbL 1.0).
     </p>
   )

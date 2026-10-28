@@ -54,9 +54,9 @@ export default function AboutPage() {
           We start with <Em>one coalfield</Em>
         </H2>
         <Lead className="mt-5 max-w-2xl">
-          Dhanbad and Jharia is where a failing reference station and a large monitor shadow sit side by side. Our
-          approach complements reference monitoring rather than replacing it, at about 55 to 60% of what one government
-          reference station costs to run for a year.
+          Dhanbad–Jharia is a hard place to measure air: mines, haul roads, fires and homes sit side by side, and the few
+          government stations report patchily. Our monitors add to the government&rsquo;s stations; they do not replace
+          them.
         </Lead>
         <div className="mt-12 grid gap-8 md:grid-cols-2">
           {PHASES.map((p) => (
@@ -103,7 +103,7 @@ export default function AboutPage() {
 
       <Band tone="cream">
         <H2 className="max-w-3xl">
-          What the first phase will <Em>deliver</Em>
+          What people will be able to <Em>see</Em>
         </H2>
         <ul className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2">
           {DELIVERABLES.map((d) => (

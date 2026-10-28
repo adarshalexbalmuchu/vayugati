@@ -18,55 +18,78 @@ export const CAPABILITIES = [
 ]
 
 export const LEVERS = [
-  { title: 'Calibrated measurement', body: 'Affordable local sensors, tied to a trusted reference.' },
+  { title: 'Calibrated measurement', body: 'Six pollutants measured at neighbourhood scale, checked against reference stations.' },
   { title: 'Quality assurance', body: 'Every sensor checked, ours and the government’s.' },
-  { title: 'Ward-level intelligence', body: 'Estimates, forecasts and likely sources, with uncertainty.' },
-  { title: 'A route to action', body: 'Alerts and tasks for ward officers, and evidence for untied grants.' },
+  { title: 'Ward-level evidence', body: 'Where and when the air is worst, with honest uncertainty.' },
+  { title: 'A route to action', body: 'Decisions agreed with officials in advance, and the air measured before and after.' },
 ]
 
 export const SOURCES = [
+  {
+    label: 'CSE, Status of air quality monitoring in India (2023)',
+    href: 'https://www.cseindia.org/Note-AQM-Network-analysis.pdf',
+  },
   {
     label: 'EPIC, Air Quality Life Index: India Fact Sheet 2025',
     href: 'https://aqli.epic.uchicago.edu/files/India%20FactSheet_2025_GlobalWV.pdf',
   },
   {
-    label: 'Health Effects Institute and IHME, State of Global Air 2025 (via Down To Earth)',
-    href: 'https://www.downtoearth.org.in/air/air-pollution-damaging-brain-health-worsening-disease-burden-in-india-soga-2025',
+    label: 'CREA, Tracing the Hazy Air 2026: Progress Report on NCAP (January 2026)',
+    href: 'https://energyandcleanair.org/wp/wp-content/uploads/2026/01/CREA_Tracing-the-Hazy-Air-2026_-Progress-Report-on-National-Clean-Air-Programme-NCAP.pdf',
   },
   {
-    label: 'The Lancet Planetary Health, Health and economic impact of air pollution in the states of India (GBD 2019)',
-    href: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC7805008/',
+    label: 'NITI Aayog, National Multidimensional Poverty Index: A Progress Review 2023',
+    href: 'https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf',
   },
-  { label: 'Census of India 2011, Jharkhand', href: 'https://www.census2011.co.in/census/state/jharkhand.html' },
-  { label: 'Ministry of Coal, Coal Reserves (1 April 2025)', href: 'https://coal.gov.in/major-statistics/coal-reserves' },
+  {
+    label: 'CPCB, Ambient Air Quality Monitoring Network (Manual) under NAMP, as on 19 November 2024',
+    href: 'https://cpcb.gov.in/uploads/Stations_NAMP.pdf',
+  },
+  {
+    label: 'CPCB, National Air Quality Index daily bulletins, September to October 2026',
+    href: 'https://cpcb.nic.in/upload/Downloads/AQI_Bulletin_20261027.pdf',
+  },
+  { label: 'Vayu Gati analysis of CPCB real-time data via OpenAQ (Feb 2025 to Sep 2026)', href: 'https://openaq.org' },
+  {
+    label: 'JSPCB, Tender for 15 continuous air-quality monitoring stations (December 2025)',
+    href: 'https://my.jspcb.org.in/upload/file/CAAQMS%20Final%20Tender%20doc..pdf',
+  },
+  {
+    label: 'MoEF&CC (2022), as compiled by CSPS India, Air Quality Monitoring Measures in India',
+    href: 'https://cspsindia.org/air-quality-monitoring-measures-in-india',
+  },
   {
     label: 'Mongabay India, The burning coalfields of Jharia belch poison for local residents (2019)',
     href: 'https://india.mongabay.com/2019/10/the-burning-coalfields-of-jharia-belch-poison-for-local-residents/',
   },
   {
-    label: 'CSE, Status of air quality monitoring in India (2023)',
-    href: 'https://www.cseindia.org/Note-AQM-Network-analysis.pdf',
+    label: 'The Week, Cabinet clears revised Jharia Master Plan (June 2025)',
+    href: 'https://www.theweek.in/news/india/2025/06/25/jharia-s-burning-belly-gets-a-fresh-lifeline-cabinet-clears-revised-rs-5-940-cr-rehabilitation-plan.html',
+  },
+  {
+    label: 'Suresh et al., Real-time air quality monitoring with low-cost sensors in a Jharia surface mine (Sustainability, 2025)',
+    href: 'https://ideas.repec.org/a/gam/jsusta/v17y2025i3p1301-d1584416.html',
   },
   {
     label: 'PIB (MoEF&CC), Allocation of funds to 131 cities under NCAP (2023)',
     href: 'https://www.pib.gov.in/PressReleasePage.aspx?PRID=1989207',
   },
   {
-    label: 'IITM, SAFAR: Metropolitan Air Quality and Weather Forecasting Services',
-    href: 'https://www.tropmet.res.in/project_details.php?project_id=3&position=0',
-  },
-  { label: 'Vayu Gati analysis of CPCB real-time data via OpenAQ (Feb 2025 to Sep 2026)', href: 'https://openaq.org' },
-  {
-    label: 'PRS Legislative Research, Report of the 16th Finance Commission for 2026-31',
-    href: 'https://prsindia.org/policy/report-summaries/report-of-the-16th-finance-commission-for-2026-31',
+    label: 'Government of Jharkhand, report to the National Green Tribunal in O.A. 687 of 2023',
+    href: 'https://www.greentribunal.gov.in/sites/default/files/news_updates/REPORT%20BY%20GOVT.%20OF%20JHARKHAND%20IN%20OA%20NO.687%20of%202023%20AIR%20QUALITY%20INDEX%20IN%20VARIOUS%20CITIES.pdf',
   },
   {
-    label: 'Centre for Policy Research, Urban Challenge Fund to Support Tier 2 and Tier 3 Cities',
-    href: 'https://cprindia.org/urban-challenge-fund-to-support-tier-2-and-tier-3-cities-a-new-impetus-for-spatially-dispersed-urban-growth-in-india/',
+    label: 'CSTEP, Why NCAP must identify emerging air pollution hotspots (Deccan Herald, October 2026)',
+    href: 'https://www.deccanherald.com/opinion/call-for-preemptive-action-why-ncap-must-identify-emerging-air-pollution-hotspots-before-it-is-too-late-4184485',
+  },
+  { label: 'Breathe London, About the network', href: 'https://breathelondon.org/about' },
+  {
+    label: 'RIVM, Eight years of Samen Meten: 4,000 sensors (February 2025)',
+    href: 'https://www.rivm.nl/nieuws/opbrengst-van-acht-jaar-samen-meten-4000-sensoren-en-7-miljard-metingen',
   },
   {
-    label: 'Greenpeace India, Airpocalypse IV (via The Tribune, 2020)',
-    href: 'https://www.tribuneindia.com/news/nation/jharkhands-jharia-most-polluted-city-delhi-reduces-air-pollution-marginally-greenpeace-report-29598',
+    label: 'Ministry of Ecology and Environment, China, on Beijing’s micro-monitoring stations (2017)',
+    href: 'https://www.mee.gov.cn/gkml/hbb/jytafw/201709/t20170928_422694.htm',
   },
 ]
 
@@ -84,28 +107,28 @@ export const SITUATIONS = [
   {
     range: 'More than 50 km from a monitor',
     share: 'about 47% of Indians, some 655 million people',
-    body: 'There is no data at all. Satellite and model estimates give a first picture but cannot replace local measurement: in our tests they explained about half the day-to-day variation in PM2.5 (R² 0.51), against 82% where a dense local network anchored them.',
+    body: 'There is no nearby ground measurement. Satellite and model estimates give a first picture but are not enough on their own: in our tests they explained about half the day-to-day variation in PM2.5 (R² 0.51), against 82% where local monitors anchored them.',
   },
 ]
 
 export const PHASES = [
   {
-    label: 'Phase 1, 12 months',
-    title: 'A pilot in the Dhanbad and Jharia coalfield',
-    body: 'A solar-powered, 4G-connected node with two independent particle sensors, at about ₹20,000 a unit. 30 nodes, with 3 spares, calibrated beside the JSPCB reference station at Jorapokhar and run with local officials so that maps, forecasts and alerts are used, not just published.',
+    label: 'First',
+    title: 'Starting in Dhanbad–Jharia',
+    body: 'We are building a small, solar-powered monitor that measures six pollutants: PM2.5, PM10, NO₂, O₃, SO₂ and CO. After testing it beside government reference stations, we will place twelve across the coalfield: near mines, haul roads, schools and the town centre. Every reading will be public.',
   },
   {
-    label: 'Phase 2, 2 to 3 years',
-    title: 'Scale and embed',
-    body: 'Extend the network to more towns in Jharkhand and neighbouring states, publish the sensor design and calibration method openly, and work with the state pollution control board and urban local bodies so that calibrated low-cost data complements the reference network.',
+    label: 'Next',
+    title: 'More towns, if it works',
+    body: 'If the monitors prove reliable and useful, we will add more across the coalfield and bring the approach to other towns where the air is getting worse. The monitor’s design and the way we calibrate it will be published openly.',
   },
 ]
 
 export const DELIVERABLES = [
-  'An openly documented sensor design and calibration method, proven in high humidity and coal dust',
-  'A dense, quality-checked air-quality dataset for one of India’s most polluted mining regions',
-  'Ward-level maps, forecasts and alerts in daily use by local officials',
-  'A costed playbook for taking any town from no data to actionable data',
+  'A public map of the air across Dhanbad–Jharia, with every value labelled as measured, estimated, flagged or unavailable',
+  'Warnings for schools and health centres on the worst days',
+  'An honest report on how well the monitors work, including where they fall short',
+  'An open monitor design that others can build on',
 ]
 
 export const FOUNDER = {
@@ -114,7 +137,7 @@ export const FOUNDER = {
   bio: [
     'Picture living in Jharia, where fires burn in the coal beneath the ground and the smoke reaches your home every day. The nearest reference station can fail for months without anyone noticing, so when you ask how bad the air is, nobody can give you a number. A town cannot protect people from air it cannot see.',
     'His interest began at IIM Ranchi, where, while doing his bachelor’s, he and his friends set out to make a documentary on the lives of people in Jharia and Dhanbad. All his research in those years kept returning to the same subject: the lives of people in Jharkhand, their land and their rights, seen through sociology, psychology and the Constitution.',
-    'Vayu Gati is his chance to turn that work into something that changes outcomes: a platform that turns air quality data into ward-level maps, forecasts and alerts, alongside affordable, solar powered monitors for places where no data exists, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand. It brings together software development, spatial data and the validation of air quality calculations.',
+    'Vayu Gati is his chance to turn that work into something that changes outcomes: a platform that turns air quality data into ward-level maps, forecasts and alerts, alongside solar-powered monitors for places with little reliable data, starting with a proposed pilot in Dhanbad and Jharia, Jharkhand. It brings together software development, spatial data and the validation of air quality calculations.',
   ],
   principles: [
     'Accurate public information',

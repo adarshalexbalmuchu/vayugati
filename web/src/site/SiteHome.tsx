@@ -9,10 +9,10 @@ import { Words, ScrubText, ScrollTrigger, gsap, useGsap } from './motion'
 import { BTN_PRIMARY, Band, Container, Em, H2, Lead, TEXT_LINK } from './ui'
 
 const STATS = [
-  { prefix: '', to: 12, suffix: '%', label: "of India's 4,041 statutory towns have any air-quality monitor", tone: 'bg-white text-ink-900' },
-  { prefix: '', to: 47, suffix: '%', label: 'of Indians live more than 50 km from a monitor', tone: 'bg-sky-200 text-ink-900' },
-  { prefix: '<', to: 1, suffix: '%', label: "of Jharkhand's residents live within 2 km of a real-time monitor", tone: 'bg-ink-100 text-ink-900' },
-  { prefix: '', to: 2, suffix: '', label: 'Jharkhand stations reporting to the national real-time feed, September 2026', tone: 'bg-ink-900 text-cream' },
+  { prefix: '', to: 12, suffix: '%', label: "of India's 4,041 towns and cities have any air-quality monitor", tone: 'bg-white text-ink-900' },
+  { prefix: '', to: 3.6, suffix: '', label: 'years of life the average person in Jharkhand loses to air above the WHO guideline', tone: 'bg-sky-200 text-ink-900' },
+  { prefix: '<', to: 1, suffix: '%', label: "of Jharkhand's people live within 2 km of a real-time monitor", tone: 'bg-ink-100 text-ink-900' },
+  { prefix: '', to: 2, suffix: '', label: 'places in Jharkhand with an official daily air-quality index, September–October 2026', tone: 'bg-ink-900 text-cream' },
 ]
 
 export default function SiteHome() {
@@ -268,8 +268,9 @@ export default function SiteHome() {
             </h1>
             <Lead className="mt-6 max-w-2xl">
               <span data-hero-fade className="block">
-                Small towns and poorer states are not only exposed to polluted air. They are invisible to the systems
-                built to help them. Vayu Gati closes the gap between air-quality information and local action.
+                Most of India&rsquo;s towns have no air-quality monitor, and where monitors exist their data is often
+                patchy. Vayu Gati is building monitors that measure the air neighbourhood by neighbourhood, checked
+                against government stations and open to everyone, starting in Jharkhand.
               </span>
             </Lead>
             <Link to="/platform" data-hero-fade className={`${BTN_PRIMARY} mt-8`}>
@@ -324,14 +325,14 @@ export default function SiteHome() {
       <Band tone="ink" id="gap" fill>
         <div className="grid items-center gap-14 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <H2>Small towns are not only exposed. <Em>They are invisible.</Em></H2>
+            <H2>Most towns have <Em>no monitor at all.</Em></H2>
             <p className="mt-6 text-lg leading-relaxed text-cream/75">
-              All 1.4 billion Indians breathe air above the WHO guideline, and the burden is heaviest in low-income
-              states. Yet monitoring, funding and forecasting remain concentrated in a few large cities.
+              All 1.4 billion Indians breathe air above the World Health Organization&rsquo;s guideline. Yet
+              air-quality monitors, and the attention that comes with them, are concentrated in a few large cities.
             </p>
             <p className="mt-4 leading-relaxed text-cream/65">
-              The National Clean Air Programme selects cities by five consecutive years of monitored exceedance. A
-              town without a monitor cannot enter the programme, receive its funds or be held to its targets.
+              Without local measurement, people cannot tell when their air is worst, and officials have little to go
+              on when they decide where to act or check whether an action worked.
             </p>
             <Link to="/evidence" className={`${TEXT_LINK} mt-6 !text-sky-300`}>
               Read the evidence <ArrowRight className="h-4 w-4" aria-hidden />
@@ -354,12 +355,17 @@ export default function SiteHome() {
           </div>
           <div className="lg:col-span-5">
             <p className="text-2xl font-semibold leading-snug tracking-tight">
-              Two stations. <Em>Both in Dhanbad.</Em>
+              A daily index for two places. <Em>Both in Dhanbad.</Em>
             </p>
             <p className="mt-4 leading-relaxed text-slate-600">
-              In September 2026 these were the only stations in the state reporting to the national real-time feed, and
-              the main one failed basic quality checks. Only Dhanbad and Bokaro districts lie within 50 km of a
-              station; Ranchi and Jamshedpur are both well over 100 km away.
+              From 1 September to 28 October 2026, India&rsquo;s daily air-quality index covered only two places in
+              the whole state, Jorapokhar and Dhanbad city. On 34 of those 58 days it was Jorapokhar alone, and on 12
+              days there was no index for Jharkhand at all. Ranchi, the capital, did not appear.
+              Jharkhand&rsquo;s 10 manual stations collect samples by hand, and their results are not published daily.
+            </p>
+            <p className="mt-4 leading-relaxed text-slate-600">
+              The state pollution control board plans 15 new stations elsewhere in Jharkhand; none is in Dhanbad
+              district.
             </p>
           </div>
         </div>
@@ -372,16 +378,17 @@ export default function SiteHome() {
               µg/m³ statewide average PM2.5 in 2023, above India&rsquo;s own standard of 40.
             </p>
             <ul className="mt-6 space-y-2 text-slate-700">
-              <li>Three in four residents live in rural areas.</li>
-              <li>Fewer than 1% live within 2 km of a real-time monitor.</li>
+              <li>The average person loses 3.6 years of life to air above the WHO guideline.</li>
+              <li>33 towns breached the national standard in every year assessed from 2019 to 2024.</li>
             </ul>
             <div className="mt-8">
               <p className="text-sm font-medium text-slate-500">Dhanbad–Jharia coalfield</p>
               <p className="mt-1 text-lg">
-                <span className="font-semibold">322 µg/m³</span> PM10 at Jharia in 2018, India&rsquo;s highest.
+                <span className="font-semibold">27 surface fires</span> still burning in 2025.
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                Underground coal fires have burned here since 1916, and about 500,000 people breathe their fumes.
+                Underground coal fires have burned here since 1916. Mines, coal-haul roads and homes sit side by side,
+                so what a family breathes depends on which street it lives on.
               </p>
             </div>
           </div>
@@ -408,8 +415,8 @@ export default function SiteHome() {
         <blockquote className="mt-20 max-w-3xl text-2xl font-semibold leading-snug tracking-[-0.015em] sm:text-3xl">
           <ScrubText
             parts={[
-              'Small-town India’s clean-air challenge is not first a policy gap. It is an',
-              { em: 'information gap.' },
+              'What holds back clean air is often not policy or money alone, but',
+              { em: 'local evidence people can trust.' },
             ]}
           />
         </blockquote>
@@ -458,11 +465,11 @@ export default function SiteHome() {
             We start with one coalfield: <Em>Dhanbad–Jharia</Em>
           </H2>
           <Lead className="mt-5 max-w-2xl">
-            A failing reference station and a large monitor shadow sit side by side. If measurement-first works here,
-            it can work in the towns that are still unseen.
+            Mines, haul roads, fires and homes sit side by side here, in humidity and coal dust that test any monitor.
+            If trusted local monitoring works here, it can work in smaller towns too.
           </Lead>
-          <Link to="/contact" className={`${TEXT_LINK} mt-6`}>
-            Get in touch <ArrowRight className="h-4 w-4" aria-hidden />
+          <Link to="/about" className={`${TEXT_LINK} mt-6`}>
+            How the pilot works <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
         </Container>
       </section>
