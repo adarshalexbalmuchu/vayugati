@@ -15,8 +15,8 @@ Jharkhand before those nodes exist, using the official stations and open source 
 
 | File | What it is | Source |
 |---|---|---|
-| `state.geojson` | Jharkhand outline (union of the districts) | geoBoundaries IND ADM2 (ODbL) |
-| `districts.geojson` | 24 districts, with `continuous_in_feed`, `manual_namp`, `planned_caaqms` station counts | geoBoundaries; CPCB NAMP list 19.11.2024; JSPCB tender JSPCB/CAAQMS/2025-26 |
+| `state.geojson` | Jharkhand outline (union of the districts) | Datameet India district map, Census 2011 (CC BY 2.5 India) |
+| `districts.geojson` | 24 districts, with `continuous_in_feed`, `manual_namp`, `planned_caaqms` station counts | Datameet India district map (Census 2011); CPCB NAMP list 19.11.2024; JSPCB tender JSPCB/CAAQMS/2025-26 |
 | `dhanbad_grid_3km.geojson` | 265 grid cells over Dhanbad district, the working map units; ids `DH-row-col`, with a centre point; named "Dhanbad grid DH-row-col" in the database | built from the geoBoundaries district outline (approximate, not Survey of India) |
 | `stations.geojson` | 10 continuous stations: 2 in Jharkhand (Jorapokhar, Sardar Patel Nagar), 8 reference candidates in Asansol and Durgapur | CPCB data.gov.in feed + OpenAQ, 5 Nov 2026 |
 | `sources_osm.geojson` | Mining and quarry areas, industrial land, and 6 power plants and 2 large works whose names and operators were checked (`CHECKED_SITES` in `build_layers.py`) | OpenStreetMap, Geofabrik eastern-zone extract, data as of 3 Nov 2026 |
@@ -87,7 +87,7 @@ gitignored `ingest/data/`.
   Sindri); the district now has 10 (Dhanbad, Baghmara, Nirsa, Topchanchi, Tundi, Purbi Tundi, Gobindpur,
   Baliapur, Egarkund, Kaliasole; dhanbad.nic.in). No official block boundaries are published for
   download. Add blocks only from Survey of India or JSAC.
-- District and state outlines are geoBoundaries (approximate). Use Survey of India outlines before any
+- District and state outlines are Datameet's India district map (compiled from Bhuvan taluk data and the Census 2011 Atlas, CC BY 2.5 India). Replaced geoBoundaries on 6 Nov 2026 after measuring both against Survey of India areas (ISFR 2023): mean error 1.7% vs 5.2%; geoBoundaries had Kodarma -29%, Lohardaga +23%, Hazaribagh +16%. Remaining largest differences: Sahibganj +7.2%, Khunti +6.1%, Dhanbad +4.3%. Use Survey of India outlines before any
   official or printed map.
 
 ## Next steps

@@ -118,7 +118,62 @@ def _geoboundaries(level: str) -> dict:
     return json.load(open(path))
 
 
+DATAMEET = REPO / "ingest" / "data" / "datameet_districts"
+DATAMEET_URL = "https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.{ext}"
+DISTRICT_ALIAS = {"Saraikela-kharsawan": "Saraikela-Kharsawan"}
+DISTRICT_SIMPLIFY = 0.0006  # degrees, about 65 m, applied to the whole coverage so shared borders stay shared
+
+
+def _datameet_districts() -> dict:
+    """Jharkhand's 24 districts from Datameet's India district map (CC BY 2.5 India), compiled from Bhuvan taluk
+    boundaries with names and extent from the Census of India 2011 Administrative Atlas. Measured 5 Nov 2026
+    against Survey of India areas (ISFR 2023): mean error 1.7%, against 5.2% for geoBoundaries ADM2, which had
+    Kodarma -29%, Lohardaga +23%, Hazaribagh +16%. No overlaps between districts; tiny gaps are filled here."""
+    import shapely
+    sys.path.insert(0, str(Path(__file__).parent))
+    import shp_read
+    from shapely.geometry import Polygon
+
+    DATAMEET.mkdir(parents=True, exist_ok=True)
+    for ext in ("shp", "shx", "dbf"):
+        if not (DATAMEET / f"2011_Dist.{ext}").exists():
+            r = httpx.get(DATAMEET_URL.format(ext=ext), follow_redirects=True, timeout=300)
+            r.raise_for_status()
+            (DATAMEET / f"2011_Dist.{ext}").write_bytes(r.content)
+    rows = shp_read.read_dbf(str(DATAMEET / "2011_Dist.dbf"))
+    geoms = shp_read.read_shp(str(DATAMEET / "2011_Dist.shp"))
+    out = {}
+    for row, g in zip(rows, geoms):
+        if row["ST_NM"].lower() != "jharkhand" or g is None:
+            continue
+        rings = sorted((Polygon(r) for r in g), key=lambda p: -p.area)
+        parts: list = []
+        for ring in rings:  # shapefile rings: outer rings, and holes inside them
+            for i, q in enumerate(parts):
+                if q.contains(ring):
+                    parts[i] = q.difference(ring)
+                    break
+            else:
+                parts.append(ring)
+        name = DISTRICT_ALIAS.get(row["DISTRICT"], row["DISTRICT"])
+        out[name] = make_valid(unary_union(parts))
+    assert set(out) == JH_DISTRICTS, sorted(set(out) ^ JH_DISTRICTS)
+    # fill the tiny gaps between districts: each goes to the neighbour it shares the longest border with
+    union = unary_union(list(out.values()))
+    holes = [Polygon(r) for p in (union.geoms if union.geom_type == "MultiPolygon" else [union]) for r in p.interiors]
+    for h in holes:
+        best = max(out, key=lambda n: out[n].boundary.intersection(h.boundary.buffer(1e-6)).length)
+        out[best] = make_valid(unary_union([out[best], h]))
+    names = list(out)
+    simp = shapely.coverage_simplify([out[n] for n in names], DISTRICT_SIMPLIFY)
+    return {n: make_valid(g) for n, g in zip(names, simp)}
+
+
 def _districts() -> dict:
+    return _datameet_districts()
+
+
+def _districts_geoboundaries() -> dict:
     out = {}
     for f in _geoboundaries("ADM2")["features"]:
         name = f["properties"]["shapeName"]
@@ -129,11 +184,40 @@ def _districts() -> dict:
     return out
 
 
+def shapely_fill_holes(g):
+    from shapely.geometry import Polygon, MultiPolygon
+    parts = g.geoms if g.geom_type == "MultiPolygon" else [g]
+    filled = [Polygon(p.exterior) for p in parts]
+    return filled[0] if len(filled) == 1 else MultiPolygon(filled)
+
+
 def boundaries() -> None:
+    """State and district outlines (Datameet / Census 2011), with the public-monitor counts per district.
+    The Dhanbad 3 km grid is NOT regenerated: its 265 cells are imported into the database as wards, and a new
+    district outline would change them. It is only built if the file is missing."""
     dist = _districts()
-    _save("districts.geojson", _fc([_feat(g.simplify(0.002), name=n, area_km2=round(_area_km2(g)))
-                                    for n, g in sorted(dist.items())]))
-    _save("state.geojson", _fc([_feat(unary_union(list(dist.values())).simplify(0.003), name="Jharkhand")]))
+    old = {}
+    if (OUT / "districts.geojson").exists():
+        old = {f["properties"]["name"]: f["properties"] for f in json.load(open(OUT / "districts.geojson"))["features"]}
+    counts = collections.Counter()
+    if (OUT / "stations.geojson").exists():
+        for f in json.load(open(OUT / "stations.geojson"))["features"]:
+            p = Point(f["geometry"]["coordinates"])
+            for n, g in dist.items():
+                if g.contains(p):
+                    counts[n] += 1
+    feats = []
+    for n, g in sorted(dist.items()):
+        feats.append(_feat(g, name=n, area_km2=round(_area_km2(g)), continuous_in_feed=counts.get(n, 0),
+                           manual_namp=MANUAL_NAMP.get(n, 0), planned_caaqms=PLANNED_CAAQMS.get(n, 0)))
+    _save("districts.geojson", _fc(feats))
+    state = unary_union(list(dist.values()))
+    state = shapely_fill_holes(state)
+    _save("state.geojson", _fc([_feat(state, name="Jharkhand")]))
+    print(f"boundaries: {len(feats)} districts (Datameet / Census 2011), state {round(_area_km2(state))} km2")
+    grid = OUT / f"dhanbad_grid_{int(CELL_KM)}km.geojson"
+    if grid.exists():
+        return
     dh = dist["Dhanbad"]
     minx, miny, maxx, maxy = dh.bounds
     dlat = CELL_KM / 110.57
@@ -151,9 +235,8 @@ def boundaries() -> None:
             col += 1
         y += dlat
         row += 1
-    _save(f"dhanbad_grid_{int(CELL_KM)}km.geojson", _fc(cells))
-    print(f"boundaries: 24 districts, {len(cells)} grid cells "
-          f"({CELL_KM:g} km), Dhanbad {round(_area_km2(dh))} km2")
+    _save(grid.name, _fc(cells))
+    print(f"{len(cells)} Dhanbad grid cells")
 
 
 def _cpcb(state: str) -> list[dict]:

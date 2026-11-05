@@ -41,7 +41,7 @@ export const CONTEXT_PACKS: Record<string, ContextPack> = {
   dhanbad: {
     base: '/city-packs/jharkhand',
     regionLabel: 'Jharkhand',
-    regionBounds: [83.33, 21.97, 87.98, 25.34],
+    regionBounds: [83.33, 21.97, 87.98, 25.35],
   },
 }
 
@@ -465,7 +465,7 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   }
   if (layerId === 'ctx-districts-fill') {
     line(`${props.name} district`, true)
-    line('Outline: geoBoundaries (approximate, not Survey of India).')
+    line('Outline: Datameet district map (Census 2011), not Survey of India’s own file.')
   } else if (layerId === 'ctx-towngrid-fill') {
     line(`${props.town} grid cell ${props.id}`, true)
     line(`${props.district} district · ${props.area_km2} km² · ${props.builtup_pct}% built-up (ESA WorldCover 2021)`)
