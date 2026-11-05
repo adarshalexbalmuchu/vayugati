@@ -129,6 +129,13 @@ function maskOutside(g: Geometry): Feature<Polygon> {
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
+/** False once map.remove() has run (MapLibre then drops its style, and
+ *  getLayer/setFilter throw). React can still hold the old instance for a
+ *  render, e.g. on a hot reload or when the page unmounts. */
+function alive(map: maplibregl.Map | null | undefined): map is maplibregl.Map {
+  return map != null && (map as unknown as { style?: unknown }).style != null
+}
+
 function bboxOf(g: Geometry): [number, number, number, number] {
   let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity
   const walk = (c: unknown): void => {
@@ -517,7 +524,7 @@ class ViewControl implements maplibregl.IControl {
   /** Show one district in 3D (null: back to the flat state view). */
   selectDistrict(name: string | null, fly = true) {
     const map = this.map
-    if (!map) return
+    if (!alive(map)) return
     const f = name ? this.districts.find((d) => d.properties?.name === name) : undefined
     this.selected = f ? name : null
     if (this.select) this.select.value = this.selected ?? ''
@@ -538,7 +545,7 @@ class ViewControl implements maplibregl.IControl {
   /** Mask and outline for the selected district. */
   private applySelection() {
     const map = this.map
-    if (!map || !map.getLayer(DISTRICT_SELECTED)) return
+    if (!alive(map) || !map.getLayer(DISTRICT_SELECTED)) return
     const f = this.selected ? this.districts.find((d) => d.properties?.name === this.selected) : undefined
     map.setFilter(DISTRICT_SELECTED, ['==', ['get', 'name'], this.selected ?? ''])
     ;(map.getSource(MASK_DISTRICT) as maplibregl.GeoJSONSource | undefined)?.setData(f ? maskOutside(f.geometry) : EMPTY_FC)
@@ -585,7 +592,7 @@ class ViewControl implements maplibregl.IControl {
    *  layers are re-created (style reloads). */
   private reapply = () => {
     const map = this.map
-    if (!map) return
+    if (!alive(map)) return
     if (map.getLayer('ctx-fires')) {
       const want: maplibregl.FilterSpecification | null = this.fireDay ? ['==', ['get', 'date'], this.fireDay] : null
       if (JSON.stringify(map.getFilter('ctx-fires') ?? null) !== JSON.stringify(want)) map.setFilter('ctx-fires', want)
@@ -613,7 +620,7 @@ class ViewControl implements maplibregl.IControl {
 
   private apply3D() {
     const map = this.map
-    if (!map || !map.isStyleLoaded()) return
+    if (!alive(map) || !map.isStyleLoaded()) return
     const below = map.getLayer('ctx-districts-fill') ? 'ctx-districts-fill' : undefined
     const key = maptilerKey()
     if (key && !map.getSource(SAT_SOURCE)) {
@@ -757,11 +764,11 @@ export default function CityContextLayers({
   const controlRef = useRef<ViewControl | null>(null)
 
   useEffect(() => {
-    if (!map || !pack) return
+    if (!alive(map) || !pack) return
     let cancelled = false
     let data: PackData | null = null
     const ensure = () => {
-      if (!cancelled && data && map.isStyleLoaded()) addAll(map, data, visibleRef.current)
+      if (!cancelled && data && alive(map) && map.isStyleLoaded()) addAll(map, data, visibleRef.current)
     }
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
     const clickable = () =>
@@ -842,7 +849,7 @@ export default function CityContextLayers({
   }, [map, pack])
 
   useEffect(() => {
-    if (!map || !pack || !showViewControl || !cityCenter) return
+    if (!alive(map) || !pack || !showViewControl || !cityCenter) return
     const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom)
     map.addControl(ctrl, 'top-left')
     // Compass and tilt indicator: drag to tilt/turn, click to reset north.
@@ -866,7 +873,7 @@ export default function CityContextLayers({
   }, [map, pack, showViewControl, cityLabel, cityCenter?.[0], cityCenter?.[1], cityZoom])
 
   useEffect(() => {
-    if (!map || !pack) return
+    if (!alive(map) || !pack) return
     for (const [key, ids] of Object.entries(LAYERS)) {
       for (const id of ids) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible[key as CityContextLayerKey] ? 'visible' : 'none')
