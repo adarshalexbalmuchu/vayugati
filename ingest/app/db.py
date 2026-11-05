@@ -88,6 +88,22 @@ def get_active_cities(city_code: str | None = None) -> list[dict]:
     return q.execute().data
 
 
+def get_city_ward_ids(city_code: str) -> set[int]:
+    """Ids of the wards of one city (by city_config.city_code); empty if the
+    city does not exist. For jobs whose model or inventory is one city's."""
+    city = client().table("city_config").select("id").eq("city_code", city_code).execute().data
+    if not city:
+        return set()
+    return {w["id"] for w in get_wards_with_city(with_boundary=False) if w.get("city_id") == city[0]["id"]}
+
+
+def get_city_station_ids(city_code: str) -> set[int]:
+    """Ids of the stations whose ward belongs to one city."""
+    wards = get_city_ward_ids(city_code)
+    rows = _with_retry(lambda: client().table("stations").select("id, ward_id").execute().data) or []
+    return {s["id"] for s in rows if s.get("ward_id") in wards}
+
+
 def get_all_stations() -> list[dict]:
     """[{id, name, ward_id, external_ref, openaq_location_id}, ...] — every
     active station. openaq_location_id is the integer OpenAQ location id for

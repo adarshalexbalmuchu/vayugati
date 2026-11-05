@@ -1351,7 +1351,9 @@ def run(city_code: str | None = None) -> dict:
         # Real hourly values (readings_hourly), not `readings`: CPCB's rows
         # there are 24h averages since 2026-08-11, and a forecaster trained
         # on a 24h running mean learns a smoothed, lagged series.
-        readings_long = db.get_hourly_history(hours=24 * GLOBAL_TRAIN_DAYS, include_archive=True)
+        city_ward_ids = {w["id"] for w in city_wards}
+        readings_long = [r for r in db.get_hourly_history(hours=24 * GLOBAL_TRAIN_DAYS, include_archive=True)
+                         if r["ward_id"] in city_ward_ids]
         with_data = {r["ward_id"] for r in readings_long}
         # polygons are only a centroid fallback, so fetch them for just these wards
         db.attach_ward_boundaries(city_wards, {w["id"] for w in city_wards if w["id"] in with_data and w.get("lat") is None})
@@ -1393,7 +1395,7 @@ def run(city_code: str | None = None) -> dict:
                 gm = forecast_global.fit_cached(
                     pollutant, readings_df_long, weather_long, cfg["min_mae_improvement_pct"],
                     max_age_h=cfg.get("retraining_frequency_hours", 24), F=F_train,
-                    thresholds={"alert": threshold, "severe": severe})
+                    thresholds={"alert": threshold, "severe": severe}, city_code=city["city_code"])
                 if gm is not None:
                     served_global = forecast_global.serve(gm, readings_df_long, weather_long, F=F_live,
                                                           severe_threshold=severe)

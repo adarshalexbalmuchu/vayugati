@@ -41,7 +41,10 @@ def run(sigma_km: float = DEFAULT_SIGMA_KM) -> dict:
         "month": month,
     }
 
-    wards = db.get_wards_with_city()
+    # The source inventory (industrial estates, sector priors, OSM extract) is
+    # Delhi's, so only Delhi's wards are attributed.
+    delhi_wards = db.get_city_ward_ids("delhi")
+    wards = [w for w in db.get_wards_with_city() if w["id"] in delhi_wards]
     if not wards:
         log.warning("vayutrace_attribution: no wards found — skipping")
         summary["finished_at"] = datetime.now(timezone.utc).isoformat()

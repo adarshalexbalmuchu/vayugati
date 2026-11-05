@@ -431,10 +431,12 @@ def fit(pollutant: str, readings_df: pd.DataFrame, weather_df: pd.DataFrame,
 
 
 def fit_cached(pollutant, readings_df, weather_df, min_improvement_pct=5.0, max_age_h: float = 24.0,
-               F=None, thresholds: dict | None = None):
+               F=None, thresholds: dict | None = None, city_code: str | None = None):
     """Refit at most every max_age_h (city_config retraining_frequency_hours);
-    cached on disk so a service restart doesn't force a refit."""
-    f = CACHE_DIR / f"forecast_global_{pollutant}.pkl"
+    cached on disk so a service restart doesn't force a refit. One cache file
+    per city; Delhi keeps the original file name so its model is not refit."""
+    name = pollutant if city_code in (None, "delhi") else f"{city_code}_{pollutant}"
+    f = CACHE_DIR / f"forecast_global_{name}.pkl"
     if f.exists():
         try:
             gm = pickle.loads(f.read_bytes())

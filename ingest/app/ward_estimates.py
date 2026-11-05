@@ -97,6 +97,10 @@ def run() -> dict:
                          .select("station_id, ts, pm25, no2")
                          .gte("ts", start.isoformat())
                          .order("ts").order("station_id"))
+    # The ratio model and its network calibration are Delhi's: keep other
+    # cities' stations out of the network mean.
+    delhi_stations = db.get_city_station_ids("delhi")
+    rows = [r for r in rows if r["station_id"] in delhi_stations]
     est = compute(rows)
     for i in range(0, len(est), 500):
         db._with_retry(lambda b=est[i:i + 500]: db.client().table("ward_estimates")
