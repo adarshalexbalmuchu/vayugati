@@ -15,6 +15,7 @@ import {
 } from '../../lib/data'
 import { useAsync } from '../../lib/useAsync'
 import OverviewChoroplethMap from './OverviewChoroplethMap'
+import { useCity } from '../../lib/city'
 import { formatWardName } from '../../lib/format'
 import { aqSourceLabel, dataConfidenceLevel, DATA_CONFIDENCE_LABEL, type DataConfidenceLevel } from '../../lib/latestReadingRules'
 import { forecastPollutantFor, MAP_POLLUTANT_LABEL, mapPollutantUnit, wardPollutantValue, type MapPollutant } from '../../lib/mapRules'
@@ -1302,6 +1303,10 @@ export default function HotspotsRiskTable({
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const isForecastSuppressed = forecastSuppressed ?? false
+  // Cities with too few monitored wards (Dhanbad–Jharia) get the map alone:
+  // an empty ward list and an empty detail panel only take space from it.
+  const { map: cityMap } = useCity()
+  const mapOnly = cityMap.mapFirst === true
 
   // Row order: urgency (status tier, then soonest threshold-crossing), not
   // just current AQI (Sept 2026) — a ward trending toward Severe belongs
@@ -1394,6 +1399,7 @@ export default function HotspotsRiskTable({
             to two rows at this width instead of fitting on one — an
             accepted tradeoff (flex-wrap already in place below) rather
             than keeping the wider column just to avoid the wrap. */}
+        {!mapOnly && (
         <div className="relative flex min-h-0 w-[320px] shrink-0 flex-col overflow-hidden">
           {/* 7 options (was 4) — used to wrap to two rows at this column
               width, costing real vertical space above the table for
@@ -1658,6 +1664,7 @@ export default function HotspotsRiskTable({
             )}
           </div>
         </div>
+        )}
 
         {/* Center: AQI choropleth map */}
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -1671,12 +1678,15 @@ export default function HotspotsRiskTable({
             coverage={coverage}
             latestReadingAgeMinutes={latestReadingAgeMinutes}
             onWardsFlaggedClick={onWardsFlaggedClick}
+            showViewControl={mapOnly}
+            hideKpiBar={mapOnly}
           />
         </div>
 
         {/* Right: ward detail panel — 320px (Sept 2026, was 260px), matching
             the left ward-list panel's own width per direct feedback that it
             looked noticeably smaller/cramped by comparison. */}
+        {!mapOnly && (
         <div className="w-[320px] shrink-0 overflow-hidden">
           <WardDetailPanel
             selectedWardId={selectedWardId}
@@ -1689,6 +1699,7 @@ export default function HotspotsRiskTable({
             forecastSuppressed={isForecastSuppressed}
           />
         </div>
+        )}
       </div>
     </Card>
   )

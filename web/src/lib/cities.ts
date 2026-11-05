@@ -36,6 +36,11 @@ export interface CityMapSettings {
    *  marker runs through before it is plotted. */
   bounds: MapBounds
   widerArea: WiderArea | null
+  /** Map-first stage: a city with too little monitoring for ward rankings or
+   *  forecasts yet (Dhanbad–Jharia: 2 stations). The Command overview shows
+   *  only the map (no ward list, ward detail panel or status bar), and the
+   *  ingest-health banner, which reports Delhi's jobs, is not shown. */
+  mapFirst?: boolean
 }
 
 export const DEFAULT_CITY_CODE = 'delhi'
@@ -67,6 +72,7 @@ const DHANBAD: CityMapSettings = {
   defaultZoom: 10,
   bounds: { minLng: 86.06, maxLng: 86.88, minLat: 23.57, maxLat: 24.11 },
   widerArea: null,
+  mapFirst: true,
 }
 
 export const CITY_REGISTRY: Readonly<Record<string, CityMapSettings>> = {

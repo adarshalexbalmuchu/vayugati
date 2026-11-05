@@ -1,8 +1,13 @@
 import { AlertTriangle } from 'lucide-react'
 import { useIngestHealth } from '../contexts/IngestHealthContext'
+import { useCity } from '../lib/city'
 
 export default function DegradedDataBanner() {
   const { health, readingDegraded, forecastDegraded } = useIngestHealth()
+  const { map: cityMap } = useCity()
+  // Ingest health reports Delhi's readings and forecast jobs; a map-first
+  // city (Dhanbad–Jharia) has no forecast, so the banner would mislead there.
+  if (cityMap.mapFirst) return null
   if (!readingDegraded && !forecastDegraded) return null
 
   const ageMin = health?.checks.reading_freshness.latest_reading_age_minutes

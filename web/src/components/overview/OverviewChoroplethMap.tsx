@@ -114,6 +114,8 @@ export default function OverviewChoroplethMap({
   coverage,
   latestReadingAgeMinutes,
   onWardsFlaggedClick,
+  showViewControl = false,
+  hideKpiBar = false,
 }: {
   wards: WardSummary[]
   selectedWardId: number | null
@@ -127,6 +129,10 @@ export default function OverviewChoroplethMap({
   coverage: { fresh: number; total: number } | null
   latestReadingAgeMinutes?: number | null
   onWardsFlaggedClick?: () => void
+  /** Add the Jharkhand / city zoom buttons and the district legend (map-only overview). */
+  showViewControl?: boolean
+  /** Hide the glass KPI bar (map-first cities: its figures are Delhi's jobs). */
+  hideKpiBar?: boolean
 }) {
   const navigate = useNavigate()
   const { cityId, cityCode, map: city } = useCity()
@@ -541,11 +547,19 @@ export default function OverviewChoroplethMap({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      <CityContextLayers map={mapInstance} cityCode={cityCode} visible={ALL_CONTEXT_VISIBLE} />
+      <CityContextLayers
+        map={mapInstance}
+        cityCode={cityCode}
+        visible={ALL_CONTEXT_VISIBLE}
+        showViewControl={showViewControl}
+        cityLabel={city.label}
+        cityCenter={city.center}
+        cityZoom={city.defaultZoom}
+      />
 
       {/* Hovered ward name badge */}
       {hoveredName && (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 max-w-[260px] truncate rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm">
+        <div className={`pointer-events-none absolute top-2 z-20 max-w-[260px] truncate ${showViewControl ? 'left-1/2 -translate-x-1/2' : 'left-2'} rounded-md border border-slate-200/80 bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur-sm`}>
           {hoveredName}
         </div>
       )}
@@ -614,6 +628,7 @@ export default function OverviewChoroplethMap({
           CityKpiRow's compact variant text colours are unchanged — dark
           text reads correctly here since this map (unlike the Map page's
           default dark basemap) uses the light 'terrain' style. */}
+      {!hideKpiBar && (
       <div className="absolute bottom-2 left-2 right-14 z-10">
         <GlassSurface radiusClassName="rounded-xl" className="flex items-stretch justify-between gap-1 px-1 py-1">
           <CityKpiRow
@@ -626,6 +641,7 @@ export default function OverviewChoroplethMap({
           />
         </GlassSurface>
       </div>
+      )}
     </div>
   )
 }
