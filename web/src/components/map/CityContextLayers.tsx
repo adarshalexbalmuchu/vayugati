@@ -754,7 +754,7 @@ class ViewControl implements maplibregl.IControl {
     // District profile
     // The profile is its own docked panel (a bottom sheet on phones), not part of this card.
     const profile = document.createElement('div')
-    profile.className = 'absolute bottom-24 left-2 right-2 z-10 max-h-[52svh] overflow-y-auto rounded-xl bg-cream/95 p-3 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-24 md:left-auto md:right-3 md:top-3 md:max-h-none md:w-[340px]'
+    profile.className = 'absolute bottom-24 left-2 right-2 z-10 max-h-[52svh] overflow-y-auto rounded-xl bg-cream/95 p-3 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[340px]'
     profile.style.display = 'none'
     map.getContainer().appendChild(profile)
     this.profileBox = profile
@@ -955,8 +955,7 @@ class ViewControl implements maplibregl.IControl {
     this.renderProfile()
     if (f) {
       if (!this.on3D) this.enter3D()
-      const [w, s, e, n] = bboxOf(f.geometry)
-      map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 65, bearing: -25, maxZoom: 11.5, duration: 1600 })
+      this.goToBounds(bboxOf(f.geometry))
     } else {
       if (this.on3D) this.leave3D()
       if (fly) {
@@ -1144,6 +1143,29 @@ class ViewControl implements maplibregl.IControl {
     ul.appendChild(el('li', '', 'NA: no verified government figure found.'))
     det.appendChild(ul)
     panes.sources.appendChild(det)
+  }
+
+  /** Fly to a district in 3D, fitted into the area the panels leave free, and
+   *  check on arrival that the camera really is over it (anything else that
+   *  moves the camera mid-flight would otherwise leave the view elsewhere). */
+  private goToBounds([w, s, e, n]: [number, number, number, number]) {
+    const map = this.map
+    if (!alive(map)) return
+    const c = map.getContainer()
+    const wide = c.clientWidth >= 768
+    const padding = wide
+      ? { top: 40, bottom: 110, left: 40, right: 400 } // right: docked profile panel + map buttons
+      : { top: 60, bottom: Math.round(c.clientHeight * 0.55) + 20, left: 30, right: 30 } // bottom sheet
+    const opts = { padding, pitch: 62, bearing: -25, maxZoom: 11.5 }
+    const bounds: maplibregl.LngLatBoundsLike = [[w, s], [e, n]]
+    map.fitBounds(bounds, { ...opts, duration: 1600 })
+    map.once('moveend', () => {
+      if (!alive(this.map) || !this.selected) return
+      const ctr = this.map.getCenter()
+      const mx = (e - w) * 0.35, my = (n - s) * 0.35
+      const over = ctr.lng > w - mx && ctr.lng < e + mx && ctr.lat > s - my && ctr.lat < n + my
+      if (!over) this.map.fitBounds(bounds, { ...opts, duration: 0 })
+    })
   }
 
   /** Mask and outline for the selected district. */
