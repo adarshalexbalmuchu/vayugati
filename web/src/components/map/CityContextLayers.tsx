@@ -817,14 +817,19 @@ class ViewControl implements maplibregl.IControl {
 
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
-    // Open on the whole state, once the map has settled on its own start view.
-    map.once('idle', () => {
-      if (!alive(this.map) || this.selected) return
-      const [w, s, e, n] = this.pack.regionBounds
-      this.map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0 })
-    })
     this.el = el
     return el
+  }
+
+  private opened = false
+  /** Called once our layers are in: open on the whole state, once. */
+  afterLayersAdded() {
+    const map = this.map
+    if (this.opened || !alive(map) || this.selected) return
+    this.opened = true
+    map.resize()
+    const [w, s, e, n] = this.pack.regionBounds
+    map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
   }
 
   onRemove() {
@@ -1094,7 +1099,7 @@ class ViewControl implements maplibregl.IControl {
 
   private apply3D() {
     const map = this.map
-    if (!alive(map) || !map.isStyleLoaded()) return
+    if (!alive(map)) return
     ensureSatellite(map, this.satellite)
     ensureRelief(map, !this.satellite, this.satellite)
     const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
@@ -1164,10 +1169,18 @@ export default function CityContextLayers({
     let cancelled = false
     let data: PackData | null = null
     let landcover: LandcoverMeta | null = null
+    // A basemap switch rebuilds the style and wipes our layers. isStyleLoaded()
+    // is false while the new basemap's tiles load, so do not wait for it:
+    // try now, and retry on every idle until the layers are in.
     const ensure = () => {
-      if (!cancelled && data && alive(map) && map.isStyleLoaded()) {
+      if (cancelled || !data || !alive(map) || map.getSource(SRC.sources)) return
+      try {
         addAll(map, data, visibleRef.current, landcover, pack.base)
         applyOnDemand(map, visibleRef.current, controlRef.current?.is3D === true)
+        controlRef.current?.afterLayersAdded()
+      } catch {
+        try { removeAll(map) } catch { /* partial add: start clean next time */ }
+        map.once('idle', ensure)
       }
     }
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
@@ -1218,8 +1231,7 @@ export default function CityContextLayers({
       .then(([d, lc]) => {
         data = d
         landcover = lc
-        if (map.isStyleLoaded()) ensure()
-        else map.once('idle', ensure)
+        ensure()
       })
       .catch((err) => console.warn('[CityContextLayers]', err))
     // Free movement for the 3D views: rotate, tilt up to 80°, keyboard.
@@ -1231,11 +1243,13 @@ export default function CityContextLayers({
     map.touchPitch.enable()
     map.keyboard.enable()
     map.on('style.load', ensure)
+    map.on('styledata', ensure)
     map.on('click', onClick)
     map.on('mousemove', onMove)
     return () => {
       cancelled = true
       map.off('style.load', ensure)
+      map.off('styledata', ensure)
       map.off('click', onClick)
       map.off('mousemove', onMove)
       popup.remove()
@@ -1257,6 +1271,7 @@ export default function CityContextLayers({
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
     map.addControl(nav, 'bottom-right')
     controlRef.current = ctrl
+    if (map.getSource(SRC.sources)) ctrl.afterLayersAdded()
     loadPack(pack.base)
       .then((d) => ctrl.setPackData(d))
       .catch(() => {})
