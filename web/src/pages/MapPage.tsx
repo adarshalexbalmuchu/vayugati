@@ -232,7 +232,15 @@ export default function MapPage() {
   const { cityId, cityCode, map: city } = useCity()
   const cityBounds = city.bounds
   const [basemap, setBasemap] = useState<BasemapMode>(DEFAULT_BASEMAP_MODE)
-  const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
+  // Map-first city (Jharkhand): no air-quality readings yet, so the Delhi
+  // air-quality tools (pollutant bar, Ask/GeoAI, ward and station panels,
+  // legend) are hidden and the air-quality layers start off.
+  const mapFirst = city.mapFirst === true
+  const [layers, setLayers] = useState(() =>
+    mapFirst
+      ? { ...DEFAULT_LAYER_STATE, wardBoundaries: false, aqiHeatmap: false, landUse: false, windFlow: false, wardMarkers: false, stations: false }
+      : DEFAULT_LAYER_STATE,
+  )
   const showContext = hasContextPack(cityCode)
   const contextLayers: CityContextVisibility | undefined = showContext
     ? (Object.fromEntries(CONTEXT_LAYER_DEFS.map((d) => [d.key, layers[ctxPanelKey(d.key)]])) as CityContextVisibility)
@@ -1242,6 +1250,7 @@ export default function MapPage() {
       subtitle="Map"
       headerContent={
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          {!mapFirst && (
           <MapToolbar
             viewMode={viewMode}
             onViewModeChange={setViewMode}
@@ -1277,6 +1286,7 @@ export default function MapPage() {
             onRefresh={refreshAll}
             refreshing={state.refreshing}
           />
+          )}
           {/* Layers/Legend triggers (Sept 2026) — moved from floating over
               the map's top-left corner into the header, next to the
               toolbar. Their panels still float over the map (unchanged
@@ -1300,6 +1310,7 @@ export default function MapPage() {
               </span>
             )}
           </button>
+          {!mapFirst && (
           <button
             type="button"
             onClick={() => setLegendOpen((v) => !v)}
@@ -1313,6 +1324,7 @@ export default function MapPage() {
             <ListTree className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
             Legend
           </button>
+          )}
         </div>
       }
     >
@@ -1555,7 +1567,7 @@ export default function MapPage() {
                     <ChangeModeSummaryPanel obsSlot={obsSlot} pollutant={pollutant} rows={changeSummaryRows} />
                   ) : null
                 )
-                if (rightPanelContent == null) return null
+                if (rightPanelContent == null || mapFirst) return null
                 return (
                   <div className="absolute bottom-14 right-3 top-3 z-10 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-card-lg">
                     {rightPanelContent}
