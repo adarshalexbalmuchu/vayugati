@@ -122,6 +122,13 @@ def test_near_rejects_unknown_feature_type():
         ja.NearAction(type="near", place="Ranchi", radius_km=5, what="banks")
 
 
+def test_open_top_is_stripped_unless_the_user_asked_to_see_it():
+    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="n_brick_kilns", open_top=True)])
+    assert ja.enforce_open_top(r, "Which district has the most brick kilns?").actions[0].open_top is False
+    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="n_brick_kilns", open_top=True)])
+    assert ja.enforce_open_top(r, "Which district has the most brick kilns? Show it").actions[0].open_top is True
+
+
 def test_rank_can_open_the_winner():
     r = ja.validate(resp("Ranking.", ja.RankAction(type="rank", field="n_schools", order="desc", limit=3, open_top=True)), LAYERS)
     assert r.actions[0].open_top is True

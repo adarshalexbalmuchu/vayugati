@@ -1113,7 +1113,7 @@ class ViewControl implements maplibregl.IControl {
     this.selected = f ? name : null
     if (this.select) this.select.value = this.selected ?? ''
     // Picking a district shows its profile; the chat keeps its tab when it was the chat that moved the map.
-    if (this.selected && !fromChat) this.dockTab = 'district'
+    if (this.selected) this.dockTab = fromChat && this.chatOpen ? 'ask' : 'district'
     this.applySelection()
     this.renderProfile()
     this.syncDock()

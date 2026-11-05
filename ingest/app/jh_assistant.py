@@ -288,6 +288,20 @@ def validate(parsed: AssistantResponse, layer_keys: set[str]) -> AssistantRespon
     return AssistantResponse(reply=reply, actions=out[:MAX_ACTIONS])
 
 
+# open_top moves the map and opens a profile, so it needs the user to have asked to see something.
+_WANTS_TO_SEE = re.compile(r"\b(show|open|take|go|fly|see|display|zoom|navigate|view|visit|there)\b", re.I)
+
+
+def enforce_open_top(resp: AssistantResponse, question: str) -> AssistantResponse:
+    """Strip open_top unless the question asks to see/go somewhere (the model overused it)."""
+    if _WANTS_TO_SEE.search(question):
+        return resp
+    for a in resp.actions:
+        if isinstance(a, RankAction) and a.open_top:
+            a.open_top = False
+    return resp
+
+
 # ── the model call ───────────────────────────────────────────────────────────────────────────────────
 
 _SYSTEM = f"""\
@@ -301,8 +315,9 @@ Turn the user's message (and the short conversation so far) into up to {MAX_ACTI
 (kind "place", the name as people write it, e.g. "Jhumri Tilaiya").
 - facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}. The n_* fields are \
 counts of features volunteers have mapped in OpenStreetMap (incomplete); they are not official totals.
-- rank: rank all districts by one field (desc/asc, limit up to 10). Set open_top=true when the user also wants to \
-see the winner ("which district has the most forest, show it").
+- rank: rank all districts by one field (desc/asc, limit up to 10). open_top defaults to FALSE: a plain question \
+("which district has the most forest?") only ranks and must not move the map. Set open_top=true only when the \
+user explicitly asks to see or go to the winner ("show it", "take me there", "open it").
 - near: count and list mapped features within a radius of a named place. what is one of: {", ".join(NEAR_WHAT)}. \
 Radius 1 to 50 km (default 10).
 - zoom: zoom the map in or out one step (direction in/out).
@@ -382,4 +397,4 @@ def ask(question: str, history: list[Turn], layers: list[LayerRef], state: MapSt
         return _unsupported("I can't help with that request.")
     if response.parsed_output is None:
         return _unsupported("I couldn't understand that. Try rephrasing.")
-    return validate(response.parsed_output, layer_keys)
+    return enforce_open_top(validate(response.parsed_output, layer_keys), question)
