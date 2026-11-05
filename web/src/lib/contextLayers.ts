@@ -33,6 +33,8 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Rivers, canals, lakes and reservoirs from OpenStreetMap (3 Nov 2026).' },
   { key: 'places', label: 'Towns and villages', on: true,
     note: 'Cities, towns and villages with a name in OpenStreetMap (3 Nov 2026). Villages appear from zoom 10.' },
+  { key: 'towngrid', label: 'Town grids (3 km, not wards)', on: false,
+    note: 'A 3 km grid over 29 main towns, covering their built-up land (ESA WorldCover 2021). It is a Vayu Gati working grid, NOT ward or municipal boundaries: Jharkhand ward maps are not published as GIS. Dhanbad district has its own grid.' },
   { key: 'builtup', label: 'Built-up areas (mapped)', on: false,
     note: 'Residential areas drawn in OpenStreetMap, over 0.05 km². Incomplete; ESA land cover shows built-up land everywhere.' },
   { key: 'facilities', label: 'Schools and hospitals', on: false,

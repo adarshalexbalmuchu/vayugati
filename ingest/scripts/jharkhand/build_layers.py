@@ -16,6 +16,8 @@ Steps:
                 stations and airports, power lines and substations, brick kilns (clipped to the state)
     landcover   ESA WorldCover 2021 (10 m, read at 1/8 = about 75 m from the public AWS COGs), cut to the
                 state, as a Web Mercator PNG overlay + per-district class shares (landcover_districts.json)
+    towngrids   3 km grids over the main towns (district HQs and the big industrial towns), cells chosen from
+                ESA WorldCover built-up land near each town; clearly a grid, not wards
     pack        web pack: state layers plus the Dhanbad-area features just across the West Bengal border
                 -> web/public/city-packs/jharkhand/
     curate      keeps only power plants and works on the checked list below (runs at the end of osm)
@@ -601,6 +603,90 @@ def landcover() -> None:
     print(f"landcover: {MW}x{MH} px overlay; district shares for {len(shares)} districts")
 
 
+# Towns for the grids: name -> (lng, lat, district). Coordinates come from the OSM places layer, except where marked.
+# Dhanbad, Jharia, Sindri and Chirkunda are covered by the Dhanbad district grid.
+TOWNS = {
+    "Ranchi": (85.325, 23.370, "Ranchi"), "Jamshedpur": (86.203, 22.802, "Purbi Singhbhum"),
+    "Adityapur": (86.159, 22.790, "Saraikela-Kharsawan"), "Saraikela": (85.931, 22.700, "Saraikela-Kharsawan"),
+    "Bokaro Steel City": (86.146, 23.654, "Bokaro"), "Chas": (86.175, 23.633, "Bokaro"),
+    "Phusro": (85.975, 23.760, "Bokaro"), "Ramgarh": (85.522, 23.630, "Ramgarh"),
+    "Hazaribagh": (85.362, 23.992, "Hazaribagh"), "Deoghar": (86.699, 24.490, "Deoghar"),
+    "Madhupur": (86.639, 24.274, "Deoghar"), "Giridih": (86.309, 24.186, "Giridih"),
+    "Medininagar": (84.066, 24.040, "Palamu"), "Chaibasa": (85.802, 22.550, "Pashchimi Singhbhum"),
+    "Gua": (85.388, 22.214, "Pashchimi Singhbhum"), "Godda": (87.212, 24.827, "Godda"),
+    "Sahibganj": (87.635, 25.244, "Sahibganj"), "Pakur": (87.842, 24.639, "Pakur"),
+    "Gumla": (84.542, 23.043, "Gumla"), "Lohardaga": (84.680, 23.433, "Lohardaga"),
+    "Khunti": (85.280, 23.077, "Khunti"), "Latehar": (84.500, 23.744, "Latehar"),
+    "Chatra": (84.871, 24.206, "Chatra"), "Kodarma": (85.594, 24.468, "Kodarma"),
+    "Jamtara": (86.803, 23.963, "Jamtara"), "Mihijam": (86.879, 23.853, "Jamtara"),
+    "Simdega": (84.501, 22.612, "Simdega"), "Garhwa": (83.808, 24.160, "Garhwa"),
+    "Dumka": (87.250, 24.270, "Dumka"),  # manual: Dumka is not in the OSM places layer
+}
+TOWN_GRID_KM = 3.0
+TOWN_RADIUS_KM = 12.0
+BUILTUP_MIN_PCT = 4.0  # a cell is kept if at least this share of it is built-up (ESA WorldCover class 50)
+
+
+def towngrids() -> None:
+    import numpy as np
+    import rasterio
+    from concurrent.futures import ThreadPoolExecutor
+    from rasterio.windows import from_bounds
+
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+    lat0 = 23.6
+    dlat = TOWN_GRID_KM / 110.57
+    dlng = TOWN_GRID_KM / (111.32 * math.cos(math.radians(lat0)))  # one global grid, so cells never overlap
+    w0, s0 = 83.2, 21.8
+    cands = {}  # (row, col) -> (town, distance_km)
+    for town, (lng, lat, _) in TOWNS.items():
+        r0, r1 = int((lat - 0.12 - s0) / dlat), int((lat + 0.12 - s0) / dlat) + 1
+        c0, c1 = int((lng - 0.13 - w0) / dlng), int((lng + 0.13 - w0) / dlng) + 1
+        for r in range(r0, r1 + 1):
+            for c in range(c0, c1 + 1):
+                cx, cy = w0 + (c + 0.5) * dlng, s0 + (r + 0.5) * dlat
+                d = math.hypot((cx - lng) * 111.32 * math.cos(math.radians(lat)), (cy - lat) * 110.57)
+                if d <= TOWN_RADIUS_KM and state.contains(Point(cx, cy)) and d < cands.get((r, c), ("", 1e9))[1]:
+                    cands[(r, c)] = (town, d)
+    tiles = {}
+
+    def open_tile(lat, lon):
+        key = (lat, lon)
+        if key not in tiles:
+            tiles[key] = rasterio.open(WORLDCOVER.format(t=f"N{lat:02d}E{lon:03d}"))
+        return tiles[key]
+
+    def builtup_pct(rc):
+        r, c = rc
+        w, s, e, n = w0 + c * dlng, s0 + r * dlat, w0 + (c + 1) * dlng, s0 + (r + 1) * dlat
+        hit = tot = 0
+        for lat in (21, 24):
+            for lon in (81, 84, 87):
+                if e <= lon or w >= lon + 3 or n <= lat or s >= lat + 3:
+                    continue
+                src = open_tile(lat, lon)
+                win = from_bounds(max(w, lon), max(s, lat), min(e, lon + 3), min(n, lat + 3), src.transform)
+                a = src.read(1, window=win, out_shape=(30, 30), resampling=rasterio.enums.Resampling.nearest)
+                hit += int((a == 50).sum())
+                tot += a.size
+        return rc, (100.0 * hit / tot if tot else 0.0)
+
+    # Open tiles up front (rasterio datasets are not thread-safe: one reader pool, sequential reads).
+    out = [builtup_pct(rc) for rc in sorted(cands)]
+    feats, per_town = [], collections.Counter()
+    for (r, c), pct in out:
+        town, d = cands[(r, c)]
+        if pct < BUILTUP_MIN_PCT and d > TOWN_GRID_KM:  # always keep the cell(s) under the town centre
+            continue
+        w, s, e, n = w0 + c * dlng, s0 + r * dlat, w0 + (c + 1) * dlng, s0 + (r + 1) * dlat
+        g = box(w, s, e, n)
+        per_town[town] += 1
+        feats.append(_feat(g, id=f"JH-{r:03d}-{c:03d}", town=town, district=TOWNS[town][2],
+                           builtup_pct=round(pct, 1), area_km2=round(_area_km2(g), 2)))
+    _save("town_grids_3km.geojson", _fc(feats))
+    print(f"towngrids: {len(feats)} cells over {len(per_town)} towns:", dict(per_town))
+
+
 def pack() -> None:
     import shutil
 
@@ -617,6 +703,8 @@ def pack() -> None:
         print(f"pack {out_name}: {len(feats)} in Jharkhand + {len(across)} across the border")
     for name in ("state.geojson", "districts.geojson", "fires_firms_5d.geojson", "stations.geojson"):
         shutil.copy(OUT / name, web / name)
+    if (OUT / "town_grids_3km.geojson").exists():
+        shutil.copy(OUT / "town_grids_3km.geojson", web / "town_grids.geojson")
     for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
                   "transport", "power", "kilns", "builtup"):
         if (OUT / f"state_{layer}.geojson").exists():
@@ -624,7 +712,7 @@ def pack() -> None:
 
 
 STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
-         "curate": curate, "osm_base": osm_base, "landcover": landcover, "pack": pack}
+         "curate": curate, "osm_base": osm_base, "landcover": landcover, "towngrids": towngrids, "pack": pack}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]

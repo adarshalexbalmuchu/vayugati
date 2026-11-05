@@ -69,10 +69,11 @@ const FILES = {
   power: 'power.geojson',
   kilns: 'kilns.geojson',
   builtup: 'builtup.geojson',
+  towngrid: 'town_grids.geojson',
 } as const
 /** Files the map can do without (an older pack): they load as empty. */
 const OPTIONAL = new Set(['railways', 'rivers', 'water', 'forest', 'protected', 'places', 'facilities', 'landmarks',
-  'transport', 'power', 'kilns', 'builtup'])
+  'transport', 'power', 'kilns', 'builtup', 'towngrid'])
 
 interface LandcoverMeta {
   coordinates: [[number, number], [number, number], [number, number], [number, number]]
@@ -137,6 +138,7 @@ const SRC = {
   power: 'ctx-power',
   kilns: 'ctx-kilns',
   builtup: 'ctx-builtup',
+  towngrid: 'ctx-towngrid',
 } as const
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -151,6 +153,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   water: ['ctx-water-fill', 'ctx-rivers-line'],
   places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
   builtup: ['ctx-builtup-fill'],
+  towngrid: ['ctx-towngrid-fill', 'ctx-towngrid-line'],
   facilities: ['ctx-facilities'],
   railways: ['ctx-railways-main', 'ctx-railways-siding', 'ctx-transport'],
   roads: ['ctx-roads-line'],
@@ -166,7 +169,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
   'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
-  'ctx-districts-fill']
+  'ctx-towngrid-fill', 'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -289,6 +292,10 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'fill-color': '#1B5E20', 'fill-opacity': 0.12 } })
   map.addLayer({ id: 'ctx-protected-line', type: 'line', source: SRC.protected, layout: { visibility: vis('protected') },
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
+  map.addLayer({ id: 'ctx-towngrid-fill', type: 'fill', source: SRC.towngrid, layout: { visibility: vis('towngrid') },
+    paint: { 'fill-color': '#1F6F8B', 'fill-opacity': 0.08 } })
+  map.addLayer({ id: 'ctx-towngrid-line', type: 'line', source: SRC.towngrid, layout: { visibility: vis('towngrid') },
+    paint: { 'line-color': '#1F6F8B', 'line-width': 1, 'line-dasharray': [2, 1.5] } })
   map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
   map.addLayer({ id: 'ctx-water-fill', type: 'fill', source: SRC.water, layout: { visibility: vis('water') },
@@ -460,6 +467,10 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   if (layerId === 'ctx-districts-fill') {
     line(`${props.name} district`, true)
     line('Outline: geoBoundaries (approximate, not Survey of India).')
+  } else if (layerId === 'ctx-towngrid-fill') {
+    line(`${props.town} grid cell ${props.id}`, true)
+    line(`${props.district} district · ${props.area_km2} km² · ${props.builtup_pct}% built-up (ESA WorldCover 2021)`)
+    line('A 3 km working grid by Vayu Gati. Not a ward or municipal boundary.')
   } else if (layerId === 'ctx-fires') {
     line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
     line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
