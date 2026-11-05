@@ -268,6 +268,7 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     map.addSource(id, { type: 'geojson', data: data[k as keyof PackData] })
   }
   const vis = (key: CityContextLayerKey) => (visible[key] ? 'visible' : 'none') as 'visible' | 'none'
+  if (visible.districts) hideBasemapBoundaries(map)
   const font = labelFont(map)
   // Rasters first (bottom): land cover, night lights.
   if (landcover) {
@@ -446,7 +447,28 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   })
 }
 
+/** The basemap draws its own administrative lines (from OpenStreetMap), and
+ *  in places they disagree with ours (OSM's Kodarma is 35% too small). Two sets
+ *  of borders on one map reads as an error, so the basemap's are hidden while
+ *  our outlines are shown, and restored afterwards. */
+const hiddenBasemapBoundaries = new WeakMap<maplibregl.Map, string[]>()
+function hideBasemapBoundaries(map: maplibregl.Map) {
+  const hidden: string[] = []
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.id.startsWith('ctx-') || (l as { 'source-layer'?: string })['source-layer'] !== 'boundary') continue
+    if (map.getLayoutProperty(l.id, 'visibility') === 'none') continue
+    map.setLayoutProperty(l.id, 'visibility', 'none')
+    hidden.push(l.id)
+  }
+  hiddenBasemapBoundaries.set(map, hidden)
+}
+function restoreBasemapBoundaries(map: maplibregl.Map) {
+  for (const id of hiddenBasemapBoundaries.get(map) ?? []) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+  hiddenBasemapBoundaries.delete(map)
+}
+
 function removeAll(map: maplibregl.Map) {
+  restoreBasemapBoundaries(map)
   for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
   for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT, 'ctx-landcover', 'ctx-nightlights']) if (map.getSource(id)) map.removeSource(id)
@@ -1538,7 +1560,12 @@ export default function CityContextLayers({
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible[key as CityContextLayerKey] ? 'visible' : 'none')
       }
     }
-    if (map.getSource(SRC.sources)) applyOnDemand(map, visible, controlRef.current?.is3D === true)
+    if (map.getSource(SRC.sources)) {
+      applyOnDemand(map, visible, controlRef.current?.is3D === true)
+      // Basemap borders are hidden only while ours are shown.
+      if (visible.districts && !hiddenBasemapBoundaries.has(map)) hideBasemapBoundaries(map)
+      else if (!visible.districts) restoreBasemapBoundaries(map)
+    }
     controlRef.current?.refreshLegend()
     controlRef.current?.setVisible(visible)
   }, [map, pack, visible])

@@ -2,10 +2,10 @@
  "source": "ESA WorldCover 10 m 2021 v200 (European Space Agency); class shares computed by Vayu Gati at about 180 m over geoBoundaries district outlines",
  "districts": {
   "Bokaro": {
-   "Tree cover": 37.0,
+   "Tree cover": 37.1,
    "Shrubland": 0.1,
-   "Grassland": 19.8,
-   "Cropland": 37.6,
+   "Grassland": 20.0,
+   "Cropland": 37.4,
    "Built-up": 2.6,
    "Bare / sparse vegetation": 0.5,
    "Permanent water": 2.4
@@ -86,7 +86,7 @@
    "Tree cover": 43.6,
    "Shrubland": 0.7,
    "Grassland": 17.9,
-   "Cropland": 34.2,
+   "Cropland": 34.3,
    "Built-up": 1.9,
    "Bare / sparse vegetation": 0.4,
    "Permanent water": 1.2
@@ -174,13 +174,13 @@
    "Permanent water": 1.0
   },
   "Ramgarh": {
-   "Tree cover": 35.9,
+   "Tree cover": 36.2,
    "Shrubland": 0.0,
    "Grassland": 14.2,
-   "Cropland": 44.9,
+   "Cropland": 44.5,
    "Built-up": 3.0,
-   "Bare / sparse vegetation": 0.6,
-   "Permanent water": 1.4
+   "Bare / sparse vegetation": 0.7,
+   "Permanent water": 1.5
   },
   "Ranchi": {
    "Tree cover": 34.3,

@@ -87,7 +87,7 @@ gitignored `ingest/data/`.
   Sindri); the district now has 10 (Dhanbad, Baghmara, Nirsa, Topchanchi, Tundi, Purbi Tundi, Gobindpur,
   Baliapur, Egarkund, Kaliasole; dhanbad.nic.in). No official block boundaries are published for
   download. Add blocks only from Survey of India or JSAC.
-- District outlines are fused from three open datasets (Datameet India district map / Census 2011, CC BY 2.5 India; OpenStreetMap, ODbL; geoBoundaries ADM2), per district whichever best matches Survey of India's areas (ISFR 2023), then repaired at the seams (`_fused_districts` in `build_layers.py`). Measured 6 Nov 2026: mean area error 0.8%, largest 4.1% (Sahibganj +4.1%, Godda +2.3%, Ramgarh -1.6%); Datameet alone 1.7%, OSM 3.5%, geoBoundaries 5.2%. Only the area is checked, so a district can match in area and still have a wrong shape. Survey of India's own file would settle it; use it before any
+- District outlines are fused from three open datasets (Datameet India district map / Census 2011, CC BY 2.5 India; OpenStreetMap, ODbL; geoBoundaries ADM2), per district whichever best matches Survey of India's areas (ISFR 2023), then repaired at the seams (`_fused_districts` in `build_layers.py`). Measured 6 Nov 2026: mean area error 0.9%; Datameet alone 1.7%, OSM 3.5%, geoBoundaries 5.2%. Two checks: the area, and 40 towns whose district is certain (`TEST_TOWNS`; Datameet put Mandu, a Ramgarh block, in Hazaribagh, which the area check missed): all 40 now fall in the right district. Still, a district can match in area and have a slightly wrong shape elsewhere. Survey of India's own file would settle it; use it before any
   official or printed map.
 
 ## Next steps

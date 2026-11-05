@@ -188,6 +188,35 @@ def _soi_areas() -> dict:
             for r in csv.DictReader(open(REPO / "data" / "jharkhand" / "sources" / "isfr2023_district_forest.csv"))}
 
 
+# Towns whose district is certain (district HQs and well-known block HQs). They are a second check on the
+# borders, because an area can match while a border sits in the wrong place (Datameet puts Mandu, a Ramgarh
+# block, in Hazaribagh). Each wrongly placed town costs TOWN_PENALTY points of mean area error.
+TEST_TOWNS = {
+    "Ranchi": "Ranchi", "Jamshedpur": "Purbi Singhbhum", "Dhanbad": "Dhanbad", "Bokaro": "Bokaro", "Chas": "Bokaro",
+    "Deoghar": "Deoghar", "Madhupur": "Deoghar", "Hazaribagh": "Hazaribagh", "Barhi": "Hazaribagh",
+    "Barkagaon": "Hazaribagh", "Ichak": "Hazaribagh", "Giridih": "Giridih", "Bagodar": "Giridih",
+    "Dhanwar": "Giridih", "Ramgarh": "Ramgarh", "Patratu": "Ramgarh", "Mandu": "Ramgarh", "Gola": "Ramgarh",
+    "Chitarpur": "Ramgarh", "Medininagar": "Palamu", "Daltonganj": "Palamu", "Chaibasa": "Pashchimi Singhbhum",
+    "Dumka": "Dumka", "Godda": "Godda", "Sahibganj": "Sahibganj", "Pakur": "Pakur", "Gumla": "Gumla",
+    "Lohardaga": "Lohardaga", "Kuru": "Lohardaga", "Khunti": "Khunti", "Torpa": "Khunti", "Latehar": "Latehar",
+    "Netarhat": "Latehar", "Chatra": "Chatra", "Simaria": "Chatra", "Kodarma": "Kodarma", "Jhumri Tilaiya": "Kodarma",
+    "Jamtara": "Jamtara", "Mihijam": "Jamtara", "Simdega": "Simdega", "Garhwa": "Garhwa", "Saraikela": "Saraikela-Kharsawan",
+    "Adityapur": "Saraikela-Kharsawan", "Bero": "Ranchi",
+}
+TOWN_PENALTY = 0.5
+
+
+def _test_points() -> list[tuple[str, str, "Point"]]:
+    places: dict[str, list] = {}
+    for f in json.load(open(OUT / "state_places.geojson"))["features"]:
+        places.setdefault(f["properties"]["name"], []).append(tuple(f["geometry"]["coordinates"]))
+    pts = []
+    for town, district in TEST_TOWNS.items():
+        if town in places:
+            pts.append((town, district, places[town]))
+    return pts
+
+
 def _fused_districts() -> tuple[dict, dict]:
     """Best open district borders, by checking against Survey of India's areas (ISFR 2023).
 
@@ -205,9 +234,20 @@ def _fused_districts() -> tuple[dict, dict]:
     state = unary_union(list(dm.values()))
     state = shapely_fill_holes(state)
 
+    tests = _test_points()
+
+    def misplaced(out) -> list[str]:
+        bad = []
+        for town, district, cands in tests:
+            # the place of that name nearest the true district (a name can occur in several districts)
+            pt = Point(min(cands, key=lambda c: out[district].distance(Point(c))))
+            if not out[district].contains(pt):
+                bad.append(town)
+        return bad
+
     def err(out):
         e = [abs(100 * (_area_km2(out[n]) - soi[n]) / soi[n]) for n in names]
-        return sum(e) / len(e)
+        return sum(e) / len(e) + TOWN_PENALTY * len(misplaced(out))
 
     def build(assign):
         g = {n: sources[assign[n]][n].intersection(state) for n in names}
@@ -238,6 +278,8 @@ def _fused_districts() -> tuple[dict, dict]:
                 if e < best - 0.01:
                     assign, best, improved = trial, e, True
     out = build(assign)
+    print("known towns in the wrong district:", misplaced(out) or "none",
+          f"(of {len(tests)} checked); mean area error {err(out) - TOWN_PENALTY * len(misplaced(out)):.2f}%")
     return out, assign
 
 
