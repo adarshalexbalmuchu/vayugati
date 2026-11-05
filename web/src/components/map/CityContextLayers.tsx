@@ -32,11 +32,18 @@ interface ContextPack {
   regionLabel: string
   /** [W, S, E, N] of the wider view (the state outline's extent). */
   regionBounds: [number, number, number, number]
+  /** Label of the city-scale view (the grid cells and stations). */
+  focusLabel: string
 }
 
 /** City codes with a context pack, and where its files are served from. */
 export const CONTEXT_PACKS: Record<string, ContextPack> = {
-  dhanbad: { base: '/city-packs/jharkhand', regionLabel: 'Jharkhand', regionBounds: [83.33, 21.97, 87.98, 25.34] },
+  dhanbad: {
+    base: '/city-packs/jharkhand',
+    regionLabel: 'Jharkhand',
+    regionBounds: [83.33, 21.97, 87.98, 25.34],
+    focusLabel: 'Dhanbad–Jharia coalfield',
+  },
 }
 
 export function hasContextPack(cityCode: string | null | undefined): boolean {
@@ -695,7 +702,7 @@ class ViewControl implements maplibregl.IControl {
     const row = document.createElement('div')
     row.className = 'flex items-center gap-1'
     this.button(this.pack.regionLabel, () => this.selectDistrict(null), row)
-    this.button(this.cityLabel, () => {
+    this.button(this.pack.focusLabel || this.cityLabel, () => {
       this.selectDistrict(null, false)
       map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, pitch: 0, bearing: 0, duration: 900 })
     }, row)
@@ -799,6 +806,12 @@ class ViewControl implements maplibregl.IControl {
 
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
+    // Open on the whole state, once the map has settled on its own start view.
+    map.once('idle', () => {
+      if (!alive(this.map) || this.selected) return
+      const [w, s, e, n] = this.pack.regionBounds
+      this.map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0 })
+    })
     this.el = el
     return el
   }

@@ -35,6 +35,7 @@ describe('CITY_REGISTRY', () => {
   it('has a Dhanbad entry with its centre inside its bounds', () => {
     const d = CITY_REGISTRY.dhanbad
     expect(d.label).toBe('Dhanbad–Jharia')
+    expect(d.menuLabel).toBe('Jharkhand')
     const [lng, lat] = d.center
     expect(isWithinBounds(lat, lng, d.bounds)).toBe(true)
     expect(d.widerArea).toBeNull()

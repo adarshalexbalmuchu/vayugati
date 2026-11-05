@@ -43,7 +43,7 @@ function CitySwitcher() {
       >
         {cities.map((c) => (
           <option key={c.cityCode} value={c.cityCode}>
-            {c.map.label}
+            {c.map.menuLabel ?? c.map.label}
           </option>
         ))}
       </select>

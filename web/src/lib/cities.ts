@@ -41,6 +41,8 @@ export interface CityMapSettings {
    *  only the map (no ward list, ward detail panel or status bar), and the
    *  ingest-health banner, which reports Delhi's jobs, is not shown. */
   mapFirst?: boolean
+  /** Name in the city menu when it differs from `label` (Jharkhand). */
+  menuLabel?: string
 }
 
 export const DEFAULT_CITY_CODE = 'delhi'
@@ -67,7 +69,11 @@ const DELHI: CityMapSettings = {
  *  87.36) fall outside these bounds; whether they belong to this city's map
  *  is a decision for the database import step. */
 const DHANBAD: CityMapSettings = {
+  // `label` stays Dhanbad–Jharia: it names the area the bounds below cover
+  // (incident locations, the weather pill). The city menu shows "Jharkhand"
+  // because the map covers the whole state and opens on it (CityContextLayers).
   label: 'Dhanbad–Jharia',
+  menuLabel: 'Jharkhand',
   center: [86.47, 23.84],
   defaultZoom: 10,
   bounds: { minLng: 86.06, maxLng: 86.88, minLat: 23.57, maxLat: 24.11 },
