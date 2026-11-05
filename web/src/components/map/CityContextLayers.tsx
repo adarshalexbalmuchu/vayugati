@@ -5,11 +5,13 @@ import { maptilerKey } from '../../lib/basemaps'
 import { elevationAt } from '../../lib/elevation'
 
 /**
- * Static context layers for a city pack. For Dhanbad–Jharia the pack covers
- * the whole state: Jharkhand's outline, its 24 districts, mining and quarry
- * areas, industrial land,
- * checked power plants and large works, main roads, satellite heat
- * detections, and the West Bengal reference stations.
+ * Static context layers for a city pack. For Jharkhand the pack covers the
+ * whole state, every district: outlines; ESA land cover; NASA night lights;
+ * satellite imagery and relief; forests, protected areas, rivers and water;
+ * towns, villages, built-up areas, schools and hospitals; railways, roads,
+ * power lines; mines, industry, checked power plants, brick kilns; satellite
+ * heat detections; peaks, waterfalls and dams. The list and its notes live
+ * in lib/contextLayers.ts.
  *
  * No block boundaries: no official block boundaries are published for
  * download, and the open ones are Census-era blocks that no longer match the
@@ -22,16 +24,7 @@ import { elevationAt } from '../../lib/elevation'
  * after every setStyle() (which wipes custom layers).
  */
 
-export type CityContextLayerKey = 'districts' | 'mines' | 'industry' | 'roads' | 'fires'
-export type CityContextVisibility = Record<CityContextLayerKey, boolean>
-
-export const ALL_CONTEXT_VISIBLE: CityContextVisibility = {
-  districts: true,
-  mines: true,
-  industry: true,
-  roads: true,
-  fires: true,
-}
+import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 
 interface ContextPack {
   base: string
@@ -57,20 +50,59 @@ const FILES = {
   roads: 'roads.geojson',
   fires: 'fires_firms_5d.geojson',
   stations: 'stations.geojson',
+  railways: 'railways.geojson',
+  rivers: 'rivers.geojson',
+  water: 'water.geojson',
+  forest: 'forest.geojson',
+  protected: 'protected.geojson',
+  places: 'places.geojson',
+  facilities: 'facilities.geojson',
+  landmarks: 'landmarks.geojson',
+  transport: 'transport.geojson',
+  power: 'power.geojson',
+  kilns: 'kilns.geojson',
+  builtup: 'builtup.geojson',
 } as const
+/** Files the map can do without (an older pack): they load as empty. */
+const OPTIONAL = new Set(['railways', 'rivers', 'water', 'forest', 'protected', 'places', 'facilities', 'landmarks',
+  'transport', 'power', 'kilns', 'builtup'])
+
+interface LandcoverMeta {
+  coordinates: [[number, number], [number, number], [number, number], [number, number]]
+  classes: { value: number; label: string; color: string }[]
+  source: string
+}
 
 type PackData = Record<keyof typeof FILES, FeatureCollection>
 
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
+
 const cache = new Map<string, Promise<PackData>>()
+
+const landcoverCache = new Map<string, Promise<LandcoverMeta | null>>()
+function loadLandcover(base: string): Promise<LandcoverMeta | null> {
+  let p = landcoverCache.get(base)
+  if (!p) {
+    p = fetch(`${base}/landcover_2021.json`)
+      .then((r) => (r.ok && (r.headers.get('content-type') ?? '').includes('json') ? (r.json() as Promise<LandcoverMeta>) : null))
+      .catch(() => null)
+    landcoverCache.set(base, p)
+  }
+  return p
+}
 
 function loadPack(base: string): Promise<PackData> {
   let p = cache.get(base)
   if (!p) {
     p = Promise.all(
       Object.entries(FILES).map(async ([k, file]) => {
-        const res = await fetch(`${base}/${file}`)
-        if (!res.ok) throw new Error(`${file}: HTTP ${res.status}`)
-        return [k, (await res.json()) as FeatureCollection] as const
+        const res = await fetch(`${base}/${file}`).catch(() => null)
+        const ok = res?.ok && (res.headers.get('content-type') ?? '').includes('json')
+        if (!ok) {
+          if (OPTIONAL.has(k)) return [k, EMPTY_FC] as const
+          throw new Error(`${file}: HTTP ${res?.status ?? 'network error'}`)
+        }
+        return [k, (await res!.json()) as FeatureCollection] as const
       }),
     ).then((entries) => Object.fromEntries(entries) as PackData)
     p.catch(() => cache.delete(base))
@@ -86,19 +118,48 @@ const SRC = {
   roads: 'ctx-roads',
   fires: 'ctx-fires',
   stations: 'ctx-stations',
+  railways: 'ctx-railways',
+  rivers: 'ctx-rivers',
+  water: 'ctx-water',
+  forest: 'ctx-forest',
+  protected: 'ctx-protected',
+  places: 'ctx-places',
+  facilities: 'ctx-facilities',
+  landmarks: 'ctx-landmarks',
+  transport: 'ctx-transport',
+  power: 'ctx-power',
+  kilns: 'ctx-kilns',
+  builtup: 'ctx-builtup',
 } as const
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
 const LAYERS: Record<CityContextLayerKey, string[]> = {
   districts: ['ctx-districts-fill', 'ctx-districts-line', 'ctx-state-line'],
+  landcover: ['ctx-landcover'],
+  nightlights: ['ctx-nightlights'],
+  satellite: [], // added and removed on demand (see ensureSatellite)
+  relief: [], // added and removed on demand (see ensureRelief)
+  forest: ['ctx-forest-fill'],
+  protected: ['ctx-protected-fill', 'ctx-protected-line'],
+  water: ['ctx-water-fill', 'ctx-rivers-line'],
+  places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
+  builtup: ['ctx-builtup-fill'],
+  facilities: ['ctx-facilities'],
+  railways: ['ctx-railways-main', 'ctx-railways-siding', 'ctx-transport'],
   roads: ['ctx-roads-line'],
+  power: ['ctx-power-line', 'ctx-power-sub'],
   industry: ['ctx-industry-fill', 'ctx-plants'],
   mines: ['ctx-mines-fill', 'ctx-mines-line'],
+  kilns: ['ctx-kilns'],
   fires: ['ctx-fires'],
+  landmarks: ['ctx-landmarks', 'ctx-landmarks-label'],
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-districts-fill']
+const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
+  'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
+  'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
+  'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -127,8 +188,6 @@ function maskOutside(g: Geometry): Feature<Polygon> {
   return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [WORLD_RING, ...holes] } }
 }
 
-const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
-
 /** False once map.remove() has run (MapLibre then drops its style, and
  *  getLayer/setFilter throw). React can still hold the old instance for a
  *  render, e.g. on a hot reload or when the page unmounts. */
@@ -156,14 +215,80 @@ const KIND_LABEL: Record<string, string> = {
   industrial: 'Industrial land',
   power_plant: 'Power plant',
   works: 'Large works',
+  city: 'City',
+  town: 'Town',
+  village: 'Village',
+  school: 'School',
+  college: 'College',
+  university: 'University',
+  hospital: 'Hospital',
+  clinic: 'Clinic',
+  peak: 'Hill peak',
+  waterfall: 'Waterfall',
+  dam: 'Dam',
+  rail_station: 'Railway station',
+  airport: 'Airport or airstrip',
+  substation: 'Electricity substation',
+  line: 'Power line',
+  brick_kiln: 'Brick kiln',
+  built_up: 'Built-up area',
+  forest: 'Forest or woodland',
+  protected: 'Protected area',
+  water: 'Water body',
+  river: 'River',
+  canal: 'Canal',
+  main: 'Railway line',
+  siding: 'Railway siding or yard',
 }
 
-function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibility) {
+/** A font the current style's glyph server has (taken from one of its own
+ *  label layers); null if the style has no glyphs, then no labels. */
+function labelFont(map: maplibregl.Map): string[] | null {
+  const style = map.getStyle()
+  if (!style?.glyphs) return null
+  for (const l of style.layers ?? []) {
+    const f = (l as { layout?: Record<string, unknown> }).layout?.['text-font']
+    if (Array.isArray(f) && f.every((x) => typeof x === 'string')) return f as string[]
+  }
+  return null
+}
+
+function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibility, landcover: LandcoverMeta | null, base: string) {
   if (map.getSource(SRC.sources)) return
   for (const [k, id] of Object.entries(SRC)) {
     map.addSource(id, { type: 'geojson', data: data[k as keyof PackData] })
   }
   const vis = (key: CityContextLayerKey) => (visible[key] ? 'visible' : 'none') as 'visible' | 'none'
+  const font = labelFont(map)
+  // Rasters first (bottom): land cover, night lights.
+  if (landcover) {
+    map.addSource('ctx-landcover', { type: 'image', url: `${base}/landcover_2021.png`, coordinates: landcover.coordinates })
+    map.addLayer({ id: 'ctx-landcover', type: 'raster', source: 'ctx-landcover', layout: { visibility: vis('landcover') },
+      paint: { 'raster-opacity': 0.8, 'raster-resampling': 'nearest' } })
+  }
+  map.addSource('ctx-nightlights', {
+    type: 'raster',
+    tiles: ['https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png'],
+    tileSize: 256,
+    maxzoom: 8,
+    attribution: 'Night lights: NASA Black Marble 2016 (NASA GIBS)',
+  })
+  map.addLayer({ id: 'ctx-nightlights', type: 'raster', source: 'ctx-nightlights', layout: { visibility: vis('nightlights') },
+    paint: { 'raster-opacity': 0.85 } })
+  // Areas
+  map.addLayer({ id: 'ctx-forest-fill', type: 'fill', source: SRC.forest, layout: { visibility: vis('forest') },
+    paint: { 'fill-color': '#2F7D3A', 'fill-opacity': 0.35 } })
+  map.addLayer({ id: 'ctx-protected-fill', type: 'fill', source: SRC.protected, layout: { visibility: vis('protected') },
+    paint: { 'fill-color': '#1B5E20', 'fill-opacity': 0.12 } })
+  map.addLayer({ id: 'ctx-protected-line', type: 'line', source: SRC.protected, layout: { visibility: vis('protected') },
+    paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
+  map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
+    paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
+  map.addLayer({ id: 'ctx-water-fill', type: 'fill', source: SRC.water, layout: { visibility: vis('water') },
+    paint: { 'fill-color': '#3B82C4', 'fill-opacity': 0.75 } })
+  map.addLayer({ id: 'ctx-rivers-line', type: 'line', source: SRC.rivers, layout: { visibility: vis('water') },
+    paint: { 'line-color': '#3B82C4', 'line-width': ['interpolate', ['linear'], ['zoom'], 6,
+      ['match', ['get', 'kind'], 'river', 0.8, 0.4], 11, ['match', ['get', 'kind'], 'river', 2.4, 1.2]] } })
   map.addLayer({
     id: 'ctx-districts-fill',
     type: 'fill',
@@ -195,6 +320,13 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
       ],
     },
   })
+  map.addLayer({ id: 'ctx-railways-siding', type: 'line', source: SRC.railways, filter: ['==', ['get', 'kind'], 'siding'],
+    minzoom: 9, layout: { visibility: vis('railways') }, paint: { 'line-color': '#7A4E2D', 'line-width': 1.1 } })
+  map.addLayer({ id: 'ctx-railways-main', type: 'line', source: SRC.railways, filter: ['!=', ['get', 'kind'], 'siding'],
+    layout: { visibility: vis('railways') },
+    paint: { 'line-color': '#2B2B2B', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1, 11, 2.4] } })
+  map.addLayer({ id: 'ctx-power-line', type: 'line', source: SRC.power, filter: ['==', ['get', 'kind'], 'line'],
+    layout: { visibility: vis('power') }, paint: { 'line-color': '#8E44AD', 'line-width': 1, 'line-opacity': 0.8 } })
   map.addLayer({
     id: 'ctx-industry-fill',
     type: 'fill',
@@ -219,6 +351,45 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     layout: { visibility: vis('mines') },
     paint: { 'line-color': '#1F1F1F', 'line-width': 0.6 },
   })
+  map.addLayer({ id: 'ctx-power-sub', type: 'circle', source: SRC.power, filter: ['==', ['get', 'kind'], 'substation'],
+    minzoom: 8, layout: { visibility: vis('power') },
+    paint: { 'circle-radius': 3.5, 'circle-color': '#8E44AD', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } })
+  map.addLayer({ id: 'ctx-facilities', type: 'circle', source: SRC.facilities, minzoom: 10, layout: { visibility: vis('facilities') },
+    paint: { 'circle-radius': 3.5, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
+      'circle-color': ['match', ['get', 'kind'], ['hospital', 'clinic'], '#D62D20', '#1E88E5'] } })
+  map.addLayer({ id: 'ctx-places-village', type: 'circle', source: SRC.places, filter: ['==', ['get', 'kind'], 'village'],
+    minzoom: 10, layout: { visibility: vis('places') },
+    paint: { 'circle-radius': 2.2, 'circle-color': '#5B4A3A', 'circle-opacity': 0.8 } })
+  map.addLayer({ id: 'ctx-places-town', type: 'circle', source: SRC.places, filter: ['in', ['get', 'kind'], ['literal', ['city', 'town']]],
+    layout: { visibility: vis('places') },
+    paint: { 'circle-radius': ['match', ['get', 'kind'], 'city', 5, 3.5], 'circle-color': '#FFFFFF',
+      'circle-stroke-color': '#2E2219', 'circle-stroke-width': 1.5 } })
+  map.addLayer({ id: 'ctx-transport', type: 'circle', source: SRC.transport, minzoom: 8, layout: { visibility: vis('railways') },
+    paint: { 'circle-radius': ['match', ['get', 'kind'], 'airport', 5, 3], 'circle-color': ['match', ['get', 'kind'], 'airport', '#00796B', '#2B2B2B'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } })
+  map.addLayer({ id: 'ctx-kilns', type: 'circle', source: SRC.kilns, layout: { visibility: vis('kilns') },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 2, 11, 4.5], 'circle-color': '#A0522D',
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 0.8 } })
+  map.addLayer({ id: 'ctx-landmarks', type: 'circle', source: SRC.landmarks, minzoom: 7, layout: { visibility: vis('landmarks') },
+    paint: { 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
+      'circle-color': ['match', ['get', 'kind'], 'peak', '#6D4C41', 'waterfall', '#0288D1', '#455A64'] } })
+  if (font) {
+    map.addLayer({ id: 'ctx-places-label-town', type: 'symbol', source: SRC.places,
+      filter: ['in', ['get', 'kind'], ['literal', ['city', 'town']]], minzoom: 6.5, layout: { visibility: vis('places'),
+        'text-field': ['get', 'name'], 'text-font': font, 'text-size': ['match', ['get', 'kind'], 'city', 13, 11],
+        'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-optional': true },
+      paint: { 'text-color': '#2E2219', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 } })
+    map.addLayer({ id: 'ctx-places-label-village', type: 'symbol', source: SRC.places, filter: ['==', ['get', 'kind'], 'village'],
+      minzoom: 11.5, layout: { visibility: vis('places'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10,
+        'text-offset': [0, 0.7], 'text-anchor': 'top', 'text-optional': true },
+      paint: { 'text-color': '#4A3B2E', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
+    map.addLayer({ id: 'ctx-landmarks-label', type: 'symbol', source: SRC.landmarks, minzoom: 9,
+      filter: ['!=', ['get', 'name'], ''], layout: { visibility: vis('landmarks'),
+        'text-field': ['case', ['all', ['==', ['get', 'kind'], 'peak'], ['!=', ['get', 'ele'], '']],
+          ['concat', ['get', 'name'], ' (', ['get', 'ele'], ' m)'], ['get', 'name']],
+        'text-font': font, 'text-size': 10, 'text-offset': [0, 0.8], 'text-anchor': 'top', 'text-optional': true },
+      paint: { 'text-color': '#3E2723', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
+  }
   map.addLayer({
     id: 'ctx-plants',
     type: 'circle',
@@ -265,7 +436,9 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
 function removeAll(map: maplibregl.Map) {
   for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
-  for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT]) if (map.getSource(id)) map.removeSource(id)
+  for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT, 'ctx-landcover', 'ctx-nightlights']) if (map.getSource(id)) map.removeSource(id)
+  removeSatellite(map)
+  removeRelief(map)
 }
 
 function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement {
@@ -284,6 +457,15 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
     line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
     line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
     line('A 375 m pixel that was unusually hot when the satellite passed. It can be a coal fire at the surface, industrial heat, or crop or forest burning. It is not a measured fire area.')
+  } else if (['ctx-places-town', 'ctx-places-village', 'ctx-facilities', 'ctx-landmarks', 'ctx-transport', 'ctx-power-sub',
+    'ctx-kilns', 'ctx-railways-main', 'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill',
+    'ctx-forest-fill', 'ctx-builtup-fill'].includes(layerId)) {
+    const kind = KIND_LABEL[String(props.kind)] ?? ''
+    line(String(props.name || kind || 'Mapped feature'), true)
+    if (props.name && kind) line(kind)
+    if (props.kind === 'peak' && props.ele) line(`Height as mapped: ${props.ele} m`)
+    if (props.kind === 'line' && props.voltage) line(`Voltage as mapped: ${props.voltage} V`)
+    line('Source: OpenStreetMap, mapped by volunteers (3 Nov 2026). May be incomplete or out of date.')
   } else if (props.checked) {
     line(String(props.name), true)
     line(KIND_LABEL[String(props.kind)] ?? '')
@@ -338,6 +520,80 @@ const SKY: maplibregl.SkySpecification = {
   'fog-ground-blend': 0.2,
 }
 
+/** Satellite imagery and relief are added only while switched on (or while a
+ *  district is in 3D, which manages them itself). */
+function applyOnDemand(map: maplibregl.Map, visible: CityContextVisibility, in3D: boolean) {
+  if (in3D || !alive(map)) return
+  if (visible.satellite) ensureSatellite(map, true)
+  else removeSatellite(map)
+  if (visible.relief) ensureRelief(map, !visible.satellite, visible.satellite)
+  else removeRelief(map)
+}
+
+/** Satellite imagery under the vector layers. */
+function ensureSatellite(map: maplibregl.Map, visible = true) {
+  const key = maptilerKey()
+  if (!key || !alive(map)) return
+  if (!map.getSource(SAT_SOURCE)) {
+    map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`, tileSize: 512 })
+  }
+  if (!map.getLayer(SAT_LAYER)) {
+    map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE,
+      paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 } }, anchorBelow(map, 'ctx-forest-fill'))
+  }
+  map.setLayoutProperty(SAT_LAYER, 'visibility', visible ? 'visible' : 'none')
+}
+
+function removeSatellite(map: maplibregl.Map) {
+  if (map.getLayer(SAT_LAYER)) map.removeLayer(SAT_LAYER)
+  if (map.getSource(SAT_SOURCE)) map.removeSource(SAT_SOURCE)
+}
+
+/** Hill shading plus contour lines (with height labels where the style has glyphs). */
+function ensureRelief(map: maplibregl.Map, strong: boolean, onSatellite: boolean) {
+  if (!alive(map)) return
+  const key = maptilerKey()
+  if (!map.getSource(HILLSHADE_SOURCE)) map.addSource(HILLSHADE_SOURCE, demSourceSpec())
+  if (!map.getLayer(HILLSHADE_LAYER)) {
+    map.addLayer({ id: HILLSHADE_LAYER, type: 'hillshade', source: HILLSHADE_SOURCE, paint: {
+      'hillshade-illumination-direction': 315, 'hillshade-shadow-color': '#2B2218',
+      'hillshade-highlight-color': '#FFFFFF', 'hillshade-accent-color': '#5C4B3A' } }, anchorBelow(map, 'ctx-forest-fill'))
+  }
+  map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', strong ? 0.85 : 0.4)
+  if (key && !map.getSource(CONTOUR_SOURCE)) {
+    map.addSource(CONTOUR_SOURCE, { type: 'vector', url: `https://api.maptiler.com/tiles/contours-v2/tiles.json?key=${key}` })
+  }
+  if (key && !map.getLayer(CONTOUR_LINE)) {
+    // nth_line marks index lines (every 2nd, 5th or 10th); thin lines fade in as you zoom.
+    const nth = ['coalesce', ['get', 'nth_line'], 1]
+    map.addLayer({ id: CONTOUR_LINE, type: 'line', source: CONTOUR_SOURCE, 'source-layer': 'contour', paint: {
+      'line-opacity': ['interpolate', ['linear'], ['zoom'],
+        9, ['match', nth, 10, 0.85, 5, 0.6, 0],
+        11, ['match', nth, 10, 0.9, 5, 0.75, 0.35],
+        13, ['match', nth, 10, 0.9, 5, 0.8, 0.55]] as unknown as maplibregl.ExpressionSpecification,
+      'line-width': ['match', nth, 10, 1.3, 5, 0.9, 0.5] as unknown as maplibregl.ExpressionSpecification,
+    } }, anchorBelow(map, 'ctx-districts-fill'))
+  }
+  if (map.getLayer(CONTOUR_LINE)) map.setPaintProperty(CONTOUR_LINE, 'line-color', onSatellite ? '#FFF4DC' : '#6B4F2E')
+  const font = labelFont(map)
+  if (key && font && !map.getLayer(CONTOUR_LABEL)) {
+    map.addLayer({ id: CONTOUR_LABEL, type: 'symbol', source: CONTOUR_SOURCE, 'source-layer': 'contour',
+      filter: ['in', ['get', 'nth_line'], ['literal', [5, 10]]],
+      layout: { 'symbol-placement': 'line', 'text-field': ['concat', ['to-string', ['get', 'height']], ' m'],
+        'text-font': font, 'text-size': 10, 'symbol-spacing': 350 },
+      paint: { 'text-color': '#3A2A1A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.4 } })
+  }
+}
+
+function removeRelief(map: maplibregl.Map) {
+  for (const id of [CONTOUR_LABEL, CONTOUR_LINE, HILLSHADE_LAYER]) if (map.getLayer(id)) map.removeLayer(id)
+  for (const id of [CONTOUR_SOURCE, HILLSHADE_SOURCE]) if (map.getSource(id)) map.removeSource(id)
+}
+
+function anchorBelow(map: maplibregl.Map, id: string): string | undefined {
+  return map.getLayer(id) ? id : map.getLayer('ctx-districts-fill') ? 'ctx-districts-fill' : undefined
+}
+
 /** district_profiles.json, built by ingest/scripts/jharkhand/district_profiles.py. */
 interface DistrictProfile {
   area_km2: number | null
@@ -356,6 +612,7 @@ interface DistrictProfile {
   monitors_manual_namp: number | null
   monitors_planned_jspcb: number | null
   mining_area_km2: number | null
+  landcover_pct?: Record<string, number> | null
 }
 interface ProfilesDoc {
   sources: Record<string, string>
@@ -400,6 +657,8 @@ class ViewControl implements maplibregl.IControl {
   private prevSky: maplibregl.SkySpecification | undefined = undefined
   private panel3D: HTMLDivElement | null = null
   private profileBox: HTMLDivElement | null = null
+  private lcLegend: HTMLDivElement | null = null
+  private lcMeta: LandcoverMeta | null = null
   private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
   private satellite = true
@@ -415,6 +674,8 @@ class ViewControl implements maplibregl.IControl {
     private cityLabel: string,
     private cityCenter: [number, number],
     private cityZoom: number,
+    /** The layer toggles, so leaving 3D keeps satellite/relief the viewer switched on. */
+    private wanted: () => CityContextVisibility,
   ) {}
 
   private button(label: string, onClick: () => void, parent: HTMLElement) {
@@ -495,9 +756,8 @@ class ViewControl implements maplibregl.IControl {
     sat.className = 'accent-sky-600'
     sat.addEventListener('change', () => {
       this.satellite = sat.checked
-      if (map.getLayer(SAT_LAYER)) map.setLayoutProperty(SAT_LAYER, 'visibility', this.satellite ? 'visible' : 'none')
-      if (map.getLayer(HILLSHADE_LAYER)) map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', this.satellite ? 0.4 : 0.85)
-      if (map.getLayer(CONTOUR_LINE)) map.setPaintProperty(CONTOUR_LINE, 'line-color', this.satellite ? '#FFF4DC' : '#6B4F2E')
+      ensureSatellite(map, this.satellite)
+      ensureRelief(map, !this.satellite, this.satellite)
     })
     const satText = document.createElement('span')
     satText.textContent = 'Satellite imagery (off: shaded relief only)'
@@ -509,6 +769,16 @@ class ViewControl implements maplibregl.IControl {
     panel.appendChild(note)
     el.appendChild(panel)
     this.panel3D = panel
+
+    const lc = document.createElement('div')
+    lc.className = 'mt-1.5 border-t border-slate-200 pt-1.5'
+    lc.style.display = 'none'
+    el.appendChild(lc)
+    this.lcLegend = lc
+    loadLandcover(this.pack.base).then((m) => {
+      this.lcMeta = m
+      this.refreshLegend()
+    })
 
     const fireRow = document.createElement('div')
     fireRow.className = 'mt-1.5 flex items-center gap-1 border-t border-slate-200 pt-1.5'
@@ -541,6 +811,33 @@ class ViewControl implements maplibregl.IControl {
     this.el?.remove()
     this.el = null
     this.map = null
+  }
+
+  /** Land-cover colour key, shown while that layer is on. */
+  refreshLegend() {
+    const box = this.lcLegend
+    if (!box) return
+    const on = this.wanted().landcover && this.lcMeta != null
+    box.style.display = on ? '' : 'none'
+    if (!on || box.childElementCount) return
+    const t = document.createElement('p')
+    t.className = 'mb-0.5 font-semibold'
+    t.textContent = 'Land cover (ESA WorldCover 2021)'
+    box.appendChild(t)
+    const grid = document.createElement('div')
+    grid.className = 'grid grid-cols-2 gap-x-2 gap-y-0.5'
+    for (const c of this.lcMeta!.classes) {
+      const r = document.createElement('div')
+      r.className = 'flex items-center gap-1 text-[10px]'
+      const sw = document.createElement('span')
+      sw.className = 'inline-block h-2.5 w-3 shrink-0 rounded-sm'
+      sw.style.background = c.color
+      const tx = document.createElement('span')
+      tx.textContent = c.label
+      r.append(sw, tx)
+      grid.appendChild(r)
+    }
+    box.appendChild(grid)
   }
 
   get is3D() {
@@ -680,6 +977,13 @@ class ViewControl implements maplibregl.IControl {
       'CPCB feed (5 Nov 2026) and NAMP list (19 Nov 2024)',
       p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined,
     )
+    const lc = p.landcover_pct
+    row(
+      'Land cover',
+      lc ? `${lc['Tree cover'] ?? 0}% trees · ${lc['Cropland'] ?? 0}% crops` : NA,
+      'ESA WorldCover 2021 (satellite, 10 m); computed by Vayu Gati',
+      lc ? `${lc['Grassland'] ?? 0}% grassland · ${lc['Built-up'] ?? 0}% built-up · ${lc['Permanent water'] ?? 0}% water · ${lc['Bare / sparse vegetation'] ?? 0}% bare` : undefined,
+    )
     row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), src.mining_area_km2 ?? 'No official district figure found')
     box.appendChild(dl)
     const foot = document.createElement('p')
@@ -767,77 +1071,8 @@ class ViewControl implements maplibregl.IControl {
   private apply3D() {
     const map = this.map
     if (!alive(map) || !map.isStyleLoaded()) return
-    const below = map.getLayer('ctx-districts-fill') ? 'ctx-districts-fill' : undefined
-    const key = maptilerKey()
-    if (key && !map.getSource(SAT_SOURCE)) {
-      map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`, tileSize: 512 })
-    }
-    if (key && !map.getLayer(SAT_LAYER)) {
-      map.addLayer({
-        id: SAT_LAYER,
-        type: 'raster',
-        source: SAT_SOURCE,
-        layout: { visibility: this.satellite ? 'visible' : 'none' },
-        paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 },
-      }, below)
-    }
-    if (!map.getSource(HILLSHADE_SOURCE)) map.addSource(HILLSHADE_SOURCE, demSourceSpec())
-    if (!map.getLayer(HILLSHADE_LAYER)) {
-      map.addLayer(
-        {
-          id: HILLSHADE_LAYER,
-          type: 'hillshade',
-          source: HILLSHADE_SOURCE,
-          paint: {
-            'hillshade-exaggeration': key && this.satellite ? 0.4 : 0.85,
-            'hillshade-illumination-direction': 315,
-            'hillshade-shadow-color': '#2B2218',
-            'hillshade-highlight-color': '#FFFFFF',
-            'hillshade-accent-color': '#5C4B3A',
-          },
-        },
-        below,
-      )
-    }
-    if (key && !map.getSource(CONTOUR_SOURCE)) {
-      map.addSource(CONTOUR_SOURCE, { type: 'vector', url: `https://api.maptiler.com/tiles/contours-v2/tiles.json?key=${key}` })
-    }
-    if (key && !map.getLayer(CONTOUR_LINE)) {
-      // nth_line marks index lines (every 2nd, 5th or 10th); thin lines fade in as you zoom.
-      const nth = ['coalesce', ['get', 'nth_line'], 1]
-      map.addLayer({
-        id: CONTOUR_LINE,
-        type: 'line',
-        source: CONTOUR_SOURCE,
-        'source-layer': 'contour',
-        paint: {
-          'line-color': this.satellite ? '#FFF4DC' : '#6B4F2E',
-          'line-opacity': ['interpolate', ['linear'], ['zoom'],
-            9, ['match', nth, 10, 0.85, 5, 0.6, 0],
-            11, ['match', nth, 10, 0.9, 5, 0.75, 0.35],
-            13, ['match', nth, 10, 0.9, 5, 0.8, 0.55]] as unknown as maplibregl.ExpressionSpecification,
-          'line-width': ['match', nth, 10, 1.3, 5, 0.9, 0.5] as unknown as maplibregl.ExpressionSpecification,
-        },
-      }, below)
-    }
-    const font = this.labelFont()
-    if (key && font && !map.getLayer(CONTOUR_LABEL)) {
-      map.addLayer({
-        id: CONTOUR_LABEL,
-        type: 'symbol',
-        source: CONTOUR_SOURCE,
-        'source-layer': 'contour',
-        filter: ['in', ['get', 'nth_line'], ['literal', [5, 10]]],
-        layout: {
-          'symbol-placement': 'line',
-          'text-field': ['concat', ['to-string', ['get', 'height']], ' m'],
-          'text-font': font,
-          'text-size': 10,
-          'symbol-spacing': 350,
-        },
-        paint: { 'text-color': '#3A2A1A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.4 },
-      })
-    }
+    ensureSatellite(map, this.satellite)
+    ensureRelief(map, !this.satellite, this.satellite)
     const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
     if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) map.addSource(DEM_SOURCE, demSourceSpec())
     try {
@@ -852,18 +1087,6 @@ class ViewControl implements maplibregl.IControl {
     }))
   }
 
-  /** A font the current style's glyph server has (taken from one of its own
-   *  label layers); null if the style has no glyphs, then no contour labels. */
-  private labelFont(): string[] | null {
-    const style = this.map?.getStyle()
-    if (!style?.glyphs) return null
-    for (const l of style.layers ?? []) {
-      const f = (l as { layout?: Record<string, unknown> }).layout?.['text-font']
-      if (Array.isArray(f) && f.every((x) => typeof x === 'string')) return f as string[]
-    }
-    return null
-  }
-
   private leave3D() {
     const map = this.map
     if (!map) return
@@ -873,8 +1096,11 @@ class ViewControl implements maplibregl.IControl {
       try {
         map.setTerrain(prev && map.getSource(prev.source) ? prev : null)
         if (this.prevSky) map.setSky(this.prevSky)
-        for (const id of [CONTOUR_LABEL, CONTOUR_LINE, SAT_LAYER, HILLSHADE_LAYER]) if (map.getLayer(id)) map.removeLayer(id)
-        for (const id of [CONTOUR_SOURCE, SAT_SOURCE, HILLSHADE_SOURCE]) if (map.getSource(id)) map.removeSource(id)
+        const want = this.wanted()
+        if (want.satellite) ensureSatellite(map, true)
+        else removeSatellite(map)
+        if (want.relief) ensureRelief(map, !want.satellite, want.satellite)
+        else removeRelief(map)
         if (!map.getTerrain() && map.getSource(DEM_SOURCE)) map.removeSource(DEM_SOURCE)
       } catch {
         // map is being removed
@@ -913,8 +1139,12 @@ export default function CityContextLayers({
     if (!alive(map) || !pack) return
     let cancelled = false
     let data: PackData | null = null
+    let landcover: LandcoverMeta | null = null
     const ensure = () => {
-      if (!cancelled && data && alive(map) && map.isStyleLoaded()) addAll(map, data, visibleRef.current)
+      if (!cancelled && data && alive(map) && map.isStyleLoaded()) {
+        addAll(map, data, visibleRef.current, landcover, pack.base)
+        applyOnDemand(map, visibleRef.current, controlRef.current?.is3D === true)
+      }
     }
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
     const clickable = () =>
@@ -960,9 +1190,10 @@ export default function CityContextLayers({
       else if (map.getCanvas().style.cursor === 'pointer' && hovering) map.getCanvas().style.cursor = ''
       hovering = hit
     }
-    loadPack(pack.base)
-      .then((d) => {
+    Promise.all([loadPack(pack.base), loadLandcover(pack.base)])
+      .then(([d, lc]) => {
         data = d
+        landcover = lc
         if (map.isStyleLoaded()) ensure()
         else map.once('idle', ensure)
       })
@@ -996,7 +1227,7 @@ export default function CityContextLayers({
 
   useEffect(() => {
     if (!alive(map) || !pack || !showViewControl || !cityCenter) return
-    const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom)
+    const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom, () => visibleRef.current)
     map.addControl(ctrl, 'top-left')
     // Compass and tilt indicator: drag to tilt/turn, click to reset north.
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
@@ -1025,6 +1256,8 @@ export default function CityContextLayers({
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible[key as CityContextLayerKey] ? 'visible' : 'none')
       }
     }
+    if (map.getSource(SRC.sources)) applyOnDemand(map, visible, controlRef.current?.is3D === true)
+    controlRef.current?.refreshLegend()
   }, [map, pack, visible])
 
   return null

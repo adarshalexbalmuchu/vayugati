@@ -95,6 +95,8 @@ def main() -> None:
                d["properties"]["name"] not in census]
     assert not missing, f"district names not matched: {missing}"
 
+    lc_path = OUT / "landcover_districts.json"
+    landcover = json.load(open(lc_path))["districts"] if lc_path.exists() else {}
     profiles = {}
     for d in districts:
         p = d["properties"]
@@ -124,6 +126,7 @@ def main() -> None:
             "monitors_manual_namp": p.get("manual_namp"),
             "monitors_planned_jspcb": p.get("planned_caaqms"),
             "mining_area_km2": None,
+            "landcover_pct": landcover.get(name),
         }
         print(f"{name:22s} area {f['area_km2_soi']:>5}  pop {census[name]:>8}  median {med:>4} m, highest {hi:>4} m  "
               f"fires {n_fires:>3}  plants {len(in_plants)}")
@@ -143,6 +146,8 @@ def main() -> None:
             "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); "
                         "JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
             "mining_area_km2": "No official district-wise figure found",
+            "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
+                         "about 180 m over the district outline",
             "outline": "District outlines: geoBoundaries (approximate, not Survey of India)",
         },
         "heat_detection_dates": fire_dates,

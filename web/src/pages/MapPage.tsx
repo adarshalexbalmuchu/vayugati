@@ -96,7 +96,8 @@ import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
 import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
 import { useCity } from '../lib/city'
-import { hasContextPack, type CityContextVisibility } from '../components/map/CityContextLayers'
+import { hasContextPack } from '../components/map/CityContextLayers'
+import { CONTEXT_LAYER_DEFS, ctxPanelKey, type CityContextVisibility } from '../lib/contextLayers'
 import { boundsToLngLatPair } from '../lib/cities'
 
 type Selection =
@@ -234,13 +235,7 @@ export default function MapPage() {
   const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
   const showContext = hasContextPack(cityCode)
   const contextLayers: CityContextVisibility | undefined = showContext
-    ? {
-        districts: layers.ctxDistricts,
-        mines: layers.ctxMines,
-        industry: layers.ctxIndustry,
-        roads: layers.ctxRoads,
-        fires: layers.ctxFires,
-      }
+    ? (Object.fromEntries(CONTEXT_LAYER_DEFS.map((d) => [d.key, layers[ctxPanelKey(d.key)]])) as CityContextVisibility)
     : undefined
   // Sept 2026: Layers/Legend triggers moved into the header row (next to
   // the pollutant/time toolbar) — their expanded panels still float over

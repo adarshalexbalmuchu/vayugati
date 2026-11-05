@@ -24,6 +24,8 @@ Jharkhand before those nodes exist, using the official stations and open source 
 | `fires_firms_5d.geojson` | VIIRS heat detections over Jharkhand, 1–4 Nov 2026 (a snapshot, not live) | NASA FIRMS |
 | `state_sources_osm.geojson`, `state_roads.geojson` | The same layers for all of Jharkhand, clipped to the state outline (1,373 mining and quarry areas, 712 industrial areas, 8 checked power plants; roads trunk to secondary) | OpenStreetMap, data as of 3 Nov 2026 |
 | `district_profiles.json` | One profile per district for the map's district panel: area and forest (FSI ISFR 2023, area by Survey of India), population (Census 2011 A-02), highest point and median height (Copernicus DEM GLO-90, computed), heat detections (FIRMS), checked plants, public monitors; `null` (shown as NA) where no verified figure exists, e.g. mining area. Built by `scripts/jharkhand/district_profiles.py` from the tables in `data/jharkhand/sources/` | see `data/jharkhand/sources/README.md` |
+| `state_{railways,rivers,water,forest,protected,places,builtup,facilities,transport,power,kilns,landmarks}.geojson` | Statewide base layers for every district (`osm_base` step): railways and sidings, stations and airports, rivers and canals, lakes and reservoirs, forest areas, the 12 protected areas (Betla NP + 11 WLS, matching the official list), towns and villages, built-up areas, schools and hospitals, power lines and substations, brick kilns, peaks, waterfalls and dams | OpenStreetMap, 3 Nov 2026 |
+| `landcover_districts.json` + web `landcover_2021.png` | ESA WorldCover 2021 land cover, cut to the state (`landcover` step), and each district's class shares | ESA WorldCover 10 m v200 (CC BY 4.0) |
 | `openaq_locations.json` | Every OpenAQ location in the Jharkhand box, for station matching | OpenAQ v3 |
 | `preview.html` | A standalone map of the layers (`#state` and `#dhanbad` views) | — |
 
@@ -62,6 +64,12 @@ gitignored `ingest/data/`.
 - **Public data only.** No secrets in the repo; keys live in `ingest/.env` and `web/.env.local`.
 
 ## Known limits
+
+- **City wards: none available.** No Jharkhand municipal ward boundaries are published as GIS (checked Nov 2026:
+  no official download, none in Datameet's Municipal_Spatial_Data, no admin_level 10 boundaries in OpenStreetMap).
+  OSM has 1,926 village boundaries (admin_level 9), almost all in Sahibganj (1,685), so they are not shown.
+  Ward maps would have to come from the Urban Development & Housing Department or each urban local body.
+- Night lights are NASA's 2016 Black Marble, the latest global composite served as map tiles.
 
 - OpenStreetMap is volunteer-mapped and incomplete. The 196 mining and quarry shapes are mapped areas, not
   a count of mines, and not BCCL/CMPDI lease boundaries. Never quote these counts as official figures.

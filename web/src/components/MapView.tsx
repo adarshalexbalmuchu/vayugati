@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FALLBACK_STYLE, maptilerKey } from '../lib/basemaps'
 import { useCity } from '../lib/city'
 import WindParticles from './WindParticles'
-import CityContextLayers, { type CityContextVisibility } from './map/CityContextLayers'
+import CityContextLayers from './map/CityContextLayers'
+import type { CityContextVisibility } from '../lib/contextLayers'
 import {
   areIdenticalCoords,
   clusterTooltipHtml,

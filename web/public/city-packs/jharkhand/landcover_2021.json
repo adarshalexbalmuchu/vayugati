@@ -1,0 +1,63 @@
+{
+ "coordinates": [
+  [
+   83.33119,
+   25.33303
+  ],
+  [
+   87.97792,
+   25.33303
+  ],
+  [
+   87.97792,
+   21.97128
+  ],
+  [
+   83.33119,
+   21.97128
+  ]
+ ],
+ "classes": [
+  {
+   "value": 10,
+   "label": "Tree cover",
+   "color": "#006400"
+  },
+  {
+   "value": 20,
+   "label": "Shrubland",
+   "color": "#FFBB22"
+  },
+  {
+   "value": 30,
+   "label": "Grassland",
+   "color": "#FFFF4C"
+  },
+  {
+   "value": 40,
+   "label": "Cropland",
+   "color": "#F096FF"
+  },
+  {
+   "value": 50,
+   "label": "Built-up",
+   "color": "#FA0000"
+  },
+  {
+   "value": 60,
+   "label": "Bare / sparse vegetation",
+   "color": "#B4B4B4"
+  },
+  {
+   "value": 80,
+   "label": "Permanent water",
+   "color": "#0064C8"
+  },
+  {
+   "value": 90,
+   "label": "Herbaceous wetland",
+   "color": "#0096A0"
+  }
+ ],
+ "source": "ESA WorldCover 10 m 2021 v200, European Space Agency (CC BY 4.0)"
+}

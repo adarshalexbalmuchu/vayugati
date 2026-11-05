@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, Layers2 } from 'lucide-react'
+import { CONTEXT_LAYER_DEFS, CONTEXT_PANEL_KEYS, ctxPanelKey, isContextPanelKey, type ContextPanelKey } from '../../lib/contextLayers'
 
 export type MapLayerKey =
   | 'wardBoundaries'
@@ -17,21 +18,9 @@ export type MapLayerKey =
   | 'aqiHeatmap'
   | 'vegetation3D'
   | 'landUse'
-  | 'ctxDistricts'
-  | 'ctxMines'
-  | 'ctxIndustry'
-  | 'ctxRoads'
-  | 'ctxFires'
-
-/** Context-layer toggles, shown only for a city with a context pack
- *  (CityContextLayers.tsx), mapped to that component's keys. */
-export const CONTEXT_LAYER_KEYS = {
-  ctxDistricts: 'districts',
-  ctxMines: 'mines',
-  ctxIndustry: 'industry',
-  ctxRoads: 'roads',
-  ctxFires: 'fires',
-} as const
+  /** Context-layer toggles (lib/contextLayers.ts), shown only for a city
+   *  with a context pack. */
+  | ContextPanelKey
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
@@ -49,11 +38,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'aqiExtrusion',
   'buildings3D',
   'vegetation3D',
-  'ctxDistricts',
-  'ctxMines',
-  'ctxIndustry',
-  'ctxRoads',
-  'ctxFires',
+  ...CONTEXT_PANEL_KEYS,
 ]
 
 /** Groups define the UI structure. Order within each group matches LAYER_ORDER.
@@ -77,7 +62,7 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
   {
     label: CONTEXT_GROUP,
     subtitle: 'Geospatial features, not air-quality measurements',
-    keys: ['ctxDistricts', 'ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires'],
+    keys: CONTEXT_PANEL_KEYS,
   },
   {
     label: 'Operations',
@@ -175,31 +160,9 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
   },
-  ctxDistricts: {
-    label: 'State and district outlines',
-    available: false,
-    note: 'Jharkhand and its 24 districts. Outlines from geoBoundaries (approximate, not Survey of India). Click a district, or pick one, to see it in 3D.',
-  },
-  ctxMines: {
-    label: 'Mining and quarry areas',
-    available: false,
-    note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (data as of 3 Nov 2026). Not official lease boundaries, and some areas are missing. Shapes are not a count of mines.',
-  },
-  ctxIndustry: {
-    label: 'Industry and power plants',
-    available: false,
-    note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026). Unconfirmed sites are left off, so some are missing.',
-  },
-  ctxRoads: {
-    label: 'Major roads',
-    available: false,
-    note: 'Main roads from OpenStreetMap (trunk, primary and secondary classes; data as of 3 Nov 2026). Coal-haul roads are not shown separately.',
-  },
-  ctxFires: {
-    label: 'Satellite heat detections',
-    available: false,
-    note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, 1–4 Nov 2026 (not updated yet). Each dot is a 375 m pixel that read unusually hot. It can be a surface coal fire, industrial heat or open burning. Not a measured fire area.',
-  },
+  ...(Object.fromEntries(
+    CONTEXT_LAYER_DEFS.map((d) => [ctxPanelKey(d.key), { label: d.label, available: false, note: d.note }]),
+  ) as Record<ContextPanelKey, { label: string; available: boolean; note: string }>),
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -233,11 +196,7 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   aqiHeatmap: true,
   vegetation3D: false,
   landUse: false,
-  ctxDistricts: true,
-  ctxMines: true,
-  ctxIndustry: true,
-  ctxRoads: true,
-  ctxFires: true,
+  ...(Object.fromEntries(CONTEXT_LAYER_DEFS.map((d) => [ctxPanelKey(d.key), d.on])) as Record<ContextPanelKey, boolean>),
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -369,7 +328,7 @@ export default function MapLayerControl({
       meta = { ...meta, available: true }
     } else if (key === 'landUse' && landUseAvailable) {
       meta = { ...meta, available: true }
-    } else if (key in CONTEXT_LAYER_KEYS && cityContextAvailable) {
+    } else if (isContextPanelKey(key) && cityContextAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'predictedHotspots' && forecastSuppressed) {
       meta = { ...meta, available: false, note: 'Unavailable — latest forecast run failed.' }
