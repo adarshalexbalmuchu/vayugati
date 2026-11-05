@@ -27,6 +27,8 @@ import { elevationAt } from '../../lib/elevation'
 import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE } from '../../lib/contextLayers'
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 import { useState } from 'react'
+import MapAssistant from './MapAssistant'
+import type { ProfilesDoc as FactsDoc } from '../../lib/jhFacts'
 
 interface ContextPack {
   base: string
@@ -1577,5 +1579,29 @@ export default function CityContextLayers({
     controlRef.current?.setVisible(visible)
   }, [map, pack, visible])
 
-  return null
+  // The "Ask the map" assistant (React, portalled into the map container). Actions run through the same
+  // controls the viewer uses: the layer switches and the district picker.
+  const [factsDoc, setFactsDoc] = useState<FactsDoc | null>(null)
+  useEffect(() => {
+    if (!pack || !showViewControl) return
+    let live = true
+    loadProfiles(pack.base).then((d) => { if (live) setFactsDoc(d as unknown as FactsDoc | null) })
+    return () => { live = false }
+  }, [pack, showViewControl])
+  if (!alive(map) || !pack || !showViewControl) return null
+  return (
+    <MapAssistant
+      container={map.getContainer()}
+      layers={CONTEXT_LAYER_DEFS.map((d) => ({ key: d.key, label: d.label }))}
+      profiles={factsDoc}
+      handlers={{
+        setLayers: (patch) => changeRef.current(patch as Partial<CityContextVisibility>),
+        goDistrict: (name) => controlRef.current?.selectDistrict(name),
+        goPlace: (lng, lat) => {
+          controlRef.current?.selectDistrict(null, false)
+          map.flyTo({ center: [lng, lat], zoom: 11.5, pitch: 0, bearing: 0, duration: 1400 })
+        },
+      }}
+    />
+  )
 }

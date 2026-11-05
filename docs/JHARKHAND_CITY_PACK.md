@@ -115,3 +115,24 @@ gitignored `ingest/data/`.
 - Do not write to the production database, and never use the Supabase service key.
 - Keep Delhi working; it is live data.
 - Work on a branch and open a pull request.
+
+
+## The map assistant ("Ask the map")
+
+A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
+
+- **Language only.** `ingest/app/jh_assistant.py` has Claude turn a message (plus the last few turns) into at most
+  three typed actions: `set_layers`, `go_to` (state, district or place), `facts` (one district, chosen fields),
+  `rank` (all districts by one field) or `unsupported`. Model: `JH_ASSISTANT_MODEL` (default `claude-haiku-5-5`).
+  Endpoint `POST /jharkhand/ask`, public and rate limited with the GeoAI budget (20 per IP per hour).
+- **The model never states a figure.** Every number is read by the browser from `district_profiles.json`
+  (`web/src/lib/jhFacts.ts`) and shown with its source. The server rejects any reply wording that contains a digit.
+- **Validation** (second gate, `validate()`): layer keys must be ones the client sent; districts must be one of the
+  24 (Census spelling, with aliases); places must resolve to a real place in `places.geojson`, and the server, not the
+  model, supplies the coordinates.
+- **No air-quality answers.** The map holds no readings; the assistant says so and offers likely-source layers
+  (mines, industry, power, kilns, heat detections, rail, roads) instead.
+- Needs `ANTHROPIC_API_KEY` in `ingest/.env` and the web pack files readable at `JH_PACK_DIR` (default
+  `web/public/city-packs/jharkhand`). Tests: `ingest/tests/test_jh_assistant.py`, `web/src/lib/jhFacts.test.ts`.
+- Limits: it cannot chain on a result (e.g. "show the mines of the most populous district" ranks, then shows mines
+  but does not fly to the answer).

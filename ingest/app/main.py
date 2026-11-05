@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from . import anomaly_detection, attribution, vayutrace_attribution
 from . import classify as classify_mod
 from . import geoai as geoai_mod
+from . import jh_assistant as jh_assistant_mod
 from . import (
     config,
     data_gov_cpcb,
@@ -813,3 +814,19 @@ def geoai_query(req: GeoAiRequest, request: Request):
     entities = [{"type": e.type, "id": e.id, "name": e.name} for e in req.entities]
     result = geoai_mod.parse_geo_query(req.question, entities)
     return result.model_dump()
+
+
+class JhAssistantRequest(BaseModel):
+    question: str = Field(max_length=400)
+    history: list[jh_assistant_mod.Turn] = Field(default_factory=list, max_length=12)
+    layers: list[jh_assistant_mod.LayerRef] = Field(default_factory=list, max_length=40)
+
+
+@app.post("/jharkhand/ask")
+def jharkhand_ask(req: JhAssistantRequest, request: Request):
+    """Public, rate-limited endpoint for the Jharkhand map assistant (no X-Ingest-Key; the browser calls it).
+    Claude only turns the message into a few typed actions (see jh_assistant.py); it never states a figure, and
+    every action is re-validated here before it is returned. Shares the GeoAI rate-limit budget."""
+    ip = request.client.host if request.client else "unknown"
+    _check_geoai_rate_limit(ip)
+    return jh_assistant_mod.ask(req.question, req.history, req.layers).model_dump()
