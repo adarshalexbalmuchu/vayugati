@@ -134,5 +134,9 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
   (mines, industry, power, kilns, heat detections, rail, roads) instead.
 - Needs `ANTHROPIC_API_KEY` in `ingest/.env` and the web pack files readable at `JH_PACK_DIR` (default
   `web/public/city-packs/jharkhand`). Tests: `ingest/tests/test_jh_assistant.py`, `web/src/lib/jhFacts.test.ts`.
-- Limits: it cannot chain on a result (e.g. "show the mines of the most populous district" ranks, then shows mines
-  but does not fly to the answer).
+- `near`: counts and lists mapped features within a radius (1-50 km) of a named place, computed in the browser from the
+  map's own files (`web/src/lib/jhNear.ts`): mines, industrial areas, plants, kilns, schools, hospitals, towns,
+  villages, heat detections, peaks, rail stations, substations. `rank` with `open_top` also flies to the winner.
+  The `n_*` fields are counts of OpenStreetMap-mapped features per district (`osm_counts` in the profiles): what is
+  mapped, not complete totals (e.g. Simdega shows 1 school).
+- Limits: it cannot chain on an arbitrary result beyond `open_top`; it holds no air-quality readings.

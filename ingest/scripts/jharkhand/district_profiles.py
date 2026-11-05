@@ -91,6 +91,41 @@ AREA_NOTES = {
 }
 
 
+# Counts of mapped OpenStreetMap features per district (volunteer-mapped, 3 Nov 2026: incomplete, not official).
+OSM_COUNTS = {
+    "mining_areas": ("sources.geojson", lambda p: p.get("kind") == "mine"),
+    "industrial_areas": ("sources.geojson", lambda p: p.get("kind") == "industrial"),
+    "brick_kilns": ("kilns.geojson", lambda p: True),
+    "schools": ("facilities.geojson", lambda p: p.get("kind") in ("school", "college", "university")),
+    "hospitals": ("facilities.geojson", lambda p: p.get("kind") in ("hospital", "clinic")),
+    "rail_stations": ("transport.geojson", lambda p: p.get("kind") == "rail_station"),
+    "peaks": ("landmarks.geojson", lambda p: p.get("kind") == "peak"),
+    "substations": ("power.geojson", lambda p: p.get("kind") == "substation"),
+    "towns": ("places.geojson", lambda p: p.get("kind") in ("city", "town")),
+    "villages": ("places.geojson", lambda p: p.get("kind") == "village"),
+}
+
+
+def osm_counts(district_geoms: dict) -> dict:
+    from shapely.prepared import prep
+
+    prepared = {n: prep(g) for n, g in district_geoms.items()}
+    out = {n: {k: 0 for k in OSM_COUNTS} for n in district_geoms}
+    cache: dict[str, list] = {}
+    for key, (fname, pred) in OSM_COUNTS.items():
+        if fname not in cache:
+            cache[fname] = json.load(open(WEB / fname))["features"]
+        for f in cache[fname]:
+            if not pred(f["properties"]):
+                continue
+            pt = shape(f["geometry"]).representative_point()
+            for n, pg in prepared.items():
+                if pg.contains(pt):
+                    out[n][key] += 1
+                    break
+    return out
+
+
 def main() -> None:
     districts = json.load(open(OUT / "districts.geojson"))["features"]
     isfr = {r["district"]: r for r in csv.DictReader(open(SRC / "isfr2023_district_forest.csv"))}
@@ -106,6 +141,8 @@ def main() -> None:
 
     lc_path = OUT / "landcover_districts.json"
     landcover = json.load(open(lc_path))["districts"] if lc_path.exists() else {}
+    geoms_for_counts = {d["properties"]["name"]: make_valid(shape(d["geometry"])) for d in districts}
+    counts = osm_counts(geoms_for_counts)
     profiles = {}
     for d in districts:
         p = d["properties"]
@@ -140,6 +177,7 @@ def main() -> None:
             "monitors_planned_jspcb": p.get("planned_caaqms"),
             "mining_area_km2": None,
             "landcover_pct": landcover.get(name),
+            "osm_counts": counts[name],
         }
         print(f"{name:22s} area {f['area_km2_soi']:>5}  pop {census[name]:>8}  median {med:>4} m, highest {hi:>4} m  "
               f"fires {n_fires:>3}  plants {len(in_plants)}")
@@ -160,6 +198,8 @@ def main() -> None:
             "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); "
                         "JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
             "mining_area_km2": "No official district-wise figure found",
+            "osm_counts": "Counts of features mapped in OpenStreetMap by volunteers (3 Nov 2026), by the feature's "
+                          "position. Incomplete: a count is what is mapped, not what exists",
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",
             "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file",

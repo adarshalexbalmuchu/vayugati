@@ -65,7 +65,8 @@ def test_unknown_place_is_unsupported():
 
 def test_reply_with_digits_is_replaced():
     r = ja.validate(resp("Ranchi has 2.9 million people.", ja.FactsAction(type="facts", district="Ranchi", fields=["population"])), LAYERS)
-    assert r.reply == ja._NEUTRAL_REPLY
+    assert r.reply == "Showing facts for Ranchi from the checked data."
+    assert not any(ch.isdigit() for ch in r.reply)
 
 
 def test_reply_without_digits_is_kept():
@@ -75,7 +76,7 @@ def test_reply_without_digits_is_kept():
 
 def test_overlong_reply_is_replaced():
     r = ja.validate(resp("a" * 400, ja.FactsAction(type="facts", district="Ranchi", fields=["area"])), LAYERS)
-    assert r.reply == ja._NEUTRAL_REPLY
+    assert r.reply == "Showing facts for Ranchi from the checked data."
 
 
 def test_facts_district_is_validated_and_fields_deduped():
@@ -100,3 +101,27 @@ def test_no_api_key_gives_an_honest_unsupported(monkeypatch):
     monkeypatch.setattr(ja.config, "ANTHROPIC_API_KEY", "")
     r = ja.ask("hello", [], [ja.LayerRef(key="mines", label="Mines")])
     assert r.actions[0].type == "unsupported"
+
+
+def test_near_resolves_place_and_clamps_radius():
+    r = ja.validate(resp("Looking.", ja.NearAction(type="near", place="bokaro", radius_km=100, what="schools")), LAYERS)
+    a = r.actions[0]
+    assert a.type == "near" and a.radius_km == ja.MAX_NEAR_KM and a.what == "schools"
+    assert a.place_name and 85 < a.lng < 87 and 23 < a.lat < 24.5
+
+
+def test_near_with_unknown_place_is_unsupported():
+    r = ja.validate(resp("Looking.", ja.NearAction(type="near", place="Xyzzyville", radius_km=10, what="mines")), LAYERS)
+    assert r.actions[0].type == "unsupported"
+
+
+def test_near_rejects_unknown_feature_type():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        ja.NearAction(type="near", place="Ranchi", radius_km=5, what="banks")
+
+
+def test_rank_can_open_the_winner():
+    r = ja.validate(resp("Ranking.", ja.RankAction(type="rank", field="n_schools", order="desc", limit=3, open_top=True)), LAYERS)
+    assert r.actions[0].open_top is True

@@ -39,13 +39,20 @@ PACK_DIR = Path(os.getenv("JH_PACK_DIR", str(Path(__file__).resolve().parents[2]
 FIELDS = (
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
     "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
-    "monitors_planned",
+    "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
+    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages",
 )
 FieldName = Literal[
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
     "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
-    "monitors_planned",
+    "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
+    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages",
 ]
+NEAR_WHAT = ("mines", "industrial", "plants", "kilns", "schools", "hospitals", "towns", "villages", "heat",
+             "peaks", "rail_stations", "substations")
+NearWhat = Literal["mines", "industrial", "plants", "kilns", "schools", "hospitals", "towns", "villages", "heat",
+                   "peaks", "rail_stations", "substations"]
+MIN_NEAR_KM, MAX_NEAR_KM = 1.0, 50.0
 
 
 class SetLayersAction(BaseModel):
@@ -69,6 +76,19 @@ class RankAction(BaseModel):
     field: FieldName
     order: Literal["desc", "asc"] = "desc"
     limit: int = Field(default=5, ge=1, le=10)
+    # also fly to the top-ranked district and open it ("which district has the most forest, show it")
+    open_top: bool = False
+
+
+class NearAction(BaseModel):
+    type: Literal["near"]
+    place: str  # a named place; resolved by the server
+    radius_km: float = Field(default=10.0, ge=0.1, le=100.0)
+    what: NearWhat
+    # filled by validate(): the resolved place
+    place_name: str | None = None
+    lng: float | None = None
+    lat: float | None = None
 
 
 class FactsAction(BaseModel):
@@ -82,7 +102,7 @@ class UnsupportedAction(BaseModel):
     reason: str
 
 
-Action = SetLayersAction | GoToAction | RankAction | FactsAction | UnsupportedAction
+Action = SetLayersAction | GoToAction | RankAction | NearAction | FactsAction | UnsupportedAction
 
 
 class AssistantResponse(BaseModel):
@@ -179,6 +199,20 @@ def resolve_place(name: str | None) -> dict | None:
 _NEUTRAL_REPLY = "Here is what I found."
 
 
+def _default_reply(actions: list) -> str:
+    """A digit-free sentence built from the actions themselves, used when the model's own wording is unusable."""
+    for a in actions:
+        if isinstance(a, NearAction) and a.place_name:
+            return f"Searching around {a.place_name} for mapped {a.what.replace('_', ' ')}."
+        if isinstance(a, RankAction):
+            return "Ranking the districts on the checked data."
+        if isinstance(a, FactsAction):
+            return f"Showing facts for {a.district} from the checked data."
+        if isinstance(a, GoToAction) and a.name:
+            return f"Showing {a.name}."
+    return _NEUTRAL_REPLY
+
+
 def _unsupported(reason: str) -> AssistantResponse:
     return AssistantResponse(reply=reason, actions=[UnsupportedAction(type="unsupported", reason=reason)])
 
@@ -209,6 +243,13 @@ def validate(parsed: AssistantResponse, layer_keys: set[str]) -> AssistantRespon
             d = resolve_district(a.district)
             out.append(FactsAction(type="facts", district=d, fields=list(dict.fromkeys(a.fields))) if d else
                        UnsupportedAction(type="unsupported", reason="I don't know that district."))
+        elif isinstance(a, NearAction):
+            p = resolve_place(a.place)
+            if not p:
+                out.append(UnsupportedAction(type="unsupported", reason="I couldn't find that place on the map. Try a nearby town."))
+            else:
+                r = min(max(a.radius_km, MIN_NEAR_KM), MAX_NEAR_KM)
+                out.append(NearAction(type="near", place=a.place, radius_km=r, what=a.what, place_name=p["name"], lng=p["lng"], lat=p["lat"]))
         elif isinstance(a, RankAction):
             out.append(a)
         else:
@@ -220,7 +261,7 @@ def validate(parsed: AssistantResponse, layer_keys: set[str]) -> AssistantRespon
         if not reply or re.search(r"\d", reply) or len(reply) > MAX_REPLY_CHARS:
             if re.search(r"\d", reply or ""):
                 log.info("assistant reply contained digits; replaced")
-            reply = _NEUTRAL_REPLY
+            reply = _default_reply(out)
     return AssistantResponse(reply=reply, actions=out[:MAX_ACTIONS])
 
 
@@ -235,8 +276,12 @@ Turn the user's message (and the short conversation so far) into up to {MAX_ACTI
 - set_layers: turn map layers on or off by key (from the list you are given). Use only=true to show just those layers.
 - go_to: fly to the whole state, a district (kind "district", name one of the 24), or a named place \
 (kind "place", the name as people write it, e.g. "Jhumri Tilaiya").
-- facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}.
-- rank: rank all districts by one field (desc/asc, limit up to 10).
+- facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}. The n_* fields are \
+counts of features volunteers have mapped in OpenStreetMap (incomplete); they are not official totals.
+- rank: rank all districts by one field (desc/asc, limit up to 10). Set open_top=true when the user also wants to \
+see the winner ("which district has the most forest, show it").
+- near: count and list mapped features within a radius of a named place. what is one of: {", ".join(NEAR_WHAT)}. \
+Radius 1 to 50 km (default 10).
 - unsupported: when the request can't be done, with a short honest reason.
 
 Rules, all of them important:
@@ -254,7 +299,10 @@ Kodarma, Hazaribagh, Sahibganj ...).
 5. Combine actions when natural: e.g. "show mines and rivers in Hazaribagh" is go_to(district Hazaribagh) then \
 set_layers(on mines, water). "Which district has the most forest?" is rank(forest_km2 desc). "Tell me about \
 Ranchi" is go_to(district) plus facts(area, population, forest_pct, highest_point, heat_detections).
-6. Layer guidance: coal and quarries are "mines"; likely pollution sources are mines, industry, kilns, power, \
+6. "Mines" and "industrial" are mapped areas, "plants" are the checked power plants and large works. Questions \
+like "how many schools are within 10 km of Ranchi" are near actions; "which district has the most schools" is a \
+rank on n_schools. Never present mapped counts as complete.
+7. Layer guidance: coal and quarries are "mines"; likely pollution sources are mines, industry, kilns, power, \
 railways, roads and fires; greenery is forest, protected, landcover; people are places, builtup, facilities.
 """
 

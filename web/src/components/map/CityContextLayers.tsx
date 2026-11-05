@@ -1597,10 +1597,11 @@ export default function CityContextLayers({
       handlers={{
         setLayers: (patch) => changeRef.current(patch as Partial<CityContextVisibility>),
         goDistrict: (name) => controlRef.current?.selectDistrict(name),
-        goPlace: (lng, lat) => {
+        goPlace: (lng, lat, _name, zoom = 11.5) => {
           controlRef.current?.selectDistrict(null, false)
-          map.flyTo({ center: [lng, lat], zoom: 11.5, pitch: 0, bearing: 0, duration: 1400 })
+          map.flyTo({ center: [lng, lat], zoom, pitch: 0, bearing: 0, duration: 1400 })
         },
+        getFile: async (file) => (await loadPack(pack.base).catch(() => null))?.[file] ?? null,
       }}
     />
   )

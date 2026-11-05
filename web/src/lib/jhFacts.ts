@@ -19,6 +19,7 @@ export interface DistrictProfile {
   monitors_manual_namp: number | null
   monitors_planned_jspcb: number | null
   landcover_pct?: Record<string, number> | null
+  osm_counts?: Record<string, number> | null
 }
 
 export interface ProfilesDoc {
@@ -31,6 +32,8 @@ export type FactField =
   | 'area' | 'population' | 'forest_pct' | 'forest_km2' | 'highest_point' | 'typical_height' | 'heat_detections'
   | 'tree_cover_pct' | 'cropland_pct' | 'builtup_pct' | 'water_pct'
   | 'monitors_continuous' | 'monitors_manual' | 'monitors_planned'
+  | 'n_mining_areas' | 'n_industrial_areas' | 'n_brick_kilns' | 'n_schools' | 'n_hospitals' | 'n_rail_stations'
+  | 'n_peaks' | 'n_substations' | 'n_towns' | 'n_villages'
 
 interface FieldDef {
   label: string
@@ -43,6 +46,11 @@ interface FieldDef {
 const ISFR = 'Forest Survey of India, ISFR 2023'
 const ESA = 'ESA WorldCover 2021 (satellite, 10 m); shares computed by Vayu Gati'
 const DEM = 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati'
+
+const OSM = 'OpenStreetMap, mapped by volunteers (3 Nov 2026): what is mapped, not a complete count'
+const osmCount = (key: string, label: string): FieldDef => ({
+  label, unit: '', get: (p) => p.osm_counts?.[key], source: OSM,
+})
 
 export const FIELD_DEFS: Record<FactField, FieldDef> = {
   area: { label: 'Area', unit: ' km²', get: (p) => p.area_km2, source: 'Survey of India area in ISFR 2023 (Kodarma, Hazaribagh: district website)' },
@@ -59,6 +67,16 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   monitors_continuous: { label: 'Continuous air monitors in the CPCB feed', unit: '', get: (p) => p.monitors_continuous_in_feed, source: 'CPCB real-time feed, 5 Nov 2026' },
   monitors_manual: { label: 'Manual air monitors', unit: '', get: (p) => p.monitors_manual_namp, source: 'CPCB NAMP station list, 19 Nov 2024' },
   monitors_planned: { label: 'Continuous monitors planned', unit: '', get: (p) => p.monitors_planned_jspcb, source: 'JSPCB tender, 6 Dec 2025' },
+  n_mining_areas: osmCount('mining_areas', 'Mapped mining and quarry areas'),
+  n_industrial_areas: osmCount('industrial_areas', 'Mapped industrial areas'),
+  n_brick_kilns: osmCount('brick_kilns', 'Mapped brick kilns'),
+  n_schools: osmCount('schools', 'Mapped schools and colleges'),
+  n_hospitals: osmCount('hospitals', 'Mapped hospitals and clinics'),
+  n_rail_stations: osmCount('rail_stations', 'Mapped railway stations'),
+  n_peaks: osmCount('peaks', 'Mapped hill peaks'),
+  n_substations: osmCount('substations', 'Mapped electricity substations'),
+  n_towns: osmCount('towns', 'Mapped cities and towns'),
+  n_villages: osmCount('villages', 'Mapped villages'),
 }
 
 export function formatValue(f: FactField, v: number | null | undefined): string {
