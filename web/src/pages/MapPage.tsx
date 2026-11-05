@@ -235,6 +235,7 @@ export default function MapPage() {
   const showContext = hasContextPack(cityCode)
   const contextLayers: CityContextVisibility | undefined = showContext
     ? {
+        districts: layers.ctxDistricts,
         mines: layers.ctxMines,
         industry: layers.ctxIndustry,
         roads: layers.ctxRoads,
