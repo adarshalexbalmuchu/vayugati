@@ -297,6 +297,8 @@ export default function OverviewChoroplethMap({
         id: FILL,
         type: 'fill',
         source: SRC,
+        // Map-first city: the Delhi-style ward cells (Dhanbad's grid) are not drawn.
+        layout: { visibility: hideAqiOverlays ? 'none' : 'visible' },
         paint: {
           'fill-color': AQI_COLOR_EXPR,
           'fill-opacity': [
@@ -313,6 +315,8 @@ export default function OverviewChoroplethMap({
         id: LINE,
         type: 'line',
         source: SRC,
+        // Map-first city: the Delhi-style ward cells (Dhanbad's grid) are not drawn.
+        layout: { visibility: hideAqiOverlays ? 'none' : 'visible' },
         paint: {
           'line-color': [
             'case',
@@ -339,6 +343,8 @@ export default function OverviewChoroplethMap({
         id: CIRCLE,
         type: 'circle',
         source: CSRC,
+        // Map-first city: the Delhi-style ward cells (Dhanbad's grid) are not drawn.
+        layout: { visibility: hideAqiOverlays ? 'none' : 'visible' },
         paint: {
           'circle-color': AQI_COLOR_EXPR,
           'circle-radius': [
