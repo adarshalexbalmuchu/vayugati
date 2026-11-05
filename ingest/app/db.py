@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from supabase import Client, create_client
 
-from . import config, stuck_sensors
+from . import aqi, config, stuck_sensors
 
 
 @lru_cache(maxsize=1)
