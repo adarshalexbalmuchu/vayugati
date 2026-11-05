@@ -115,7 +115,7 @@ export default function OverviewChoroplethMap({
   latestReadingAgeMinutes,
   onWardsFlaggedClick,
   showViewControl = false,
-  hideKpiBar = false,
+  hideAqiOverlays = false,
 }: {
   wards: WardSummary[]
   selectedWardId: number | null
@@ -131,8 +131,9 @@ export default function OverviewChoroplethMap({
   onWardsFlaggedClick?: () => void
   /** Add the Jharkhand / city zoom buttons (map-only overview). */
   showViewControl?: boolean
-  /** Hide the glass KPI bar (map-first cities: its figures are Delhi's jobs). */
-  hideKpiBar?: boolean
+  /** Hide the AQI legend and the glass KPI bar (map-first cities: no AQI
+   *  readings on the map yet, and the KPI figures are Delhi's jobs). */
+  hideAqiOverlays?: boolean
 }) {
   const navigate = useNavigate()
   const { cityId, cityCode, map: city } = useCity()
@@ -594,6 +595,7 @@ export default function OverviewChoroplethMap({
           (bottom-right). Same real liquid-glass <GlassSurface> as the KPI
           bar below and the Map page toolbar (Sept 2026), replacing the
           earlier flat bg-white/90 + backdrop-blur-sm approximation. */}
+      {!hideAqiOverlays && (
       <div className="absolute right-2 top-10 z-10">
         <GlassSurface radiusClassName="rounded-lg" className="px-2 py-1.5">
           <p className="mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-500">AQI</p>
@@ -618,6 +620,7 @@ export default function OverviewChoroplethMap({
           )}
         </GlassSurface>
       </div>
+      )}
 
       {/* City KPI bar — real Apple-style "liquid glass" (Sept 2026, 2nd
           pass): the first pass here was a flat translucent+blur
@@ -630,7 +633,7 @@ export default function OverviewChoroplethMap({
           CityKpiRow's compact variant text colours are unchanged — dark
           text reads correctly here since this map (unlike the Map page's
           default dark basemap) uses the light 'terrain' style. */}
-      {!hideKpiBar && (
+      {!hideAqiOverlays && (
       <div className="absolute bottom-2 left-2 right-14 z-10">
         <GlassSurface radiusClassName="rounded-xl" className="flex items-stretch justify-between gap-1 px-1 py-1">
           <CityKpiRow

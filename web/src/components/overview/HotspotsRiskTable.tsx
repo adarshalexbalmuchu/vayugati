@@ -1679,7 +1679,7 @@ export default function HotspotsRiskTable({
             latestReadingAgeMinutes={latestReadingAgeMinutes}
             onWardsFlaggedClick={onWardsFlaggedClick}
             showViewControl={mapOnly}
-            hideKpiBar={mapOnly}
+            hideAqiOverlays={mapOnly}
           />
         </div>
 
