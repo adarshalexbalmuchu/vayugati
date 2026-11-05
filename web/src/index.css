@@ -93,3 +93,32 @@
   background: rgba(100, 116, 139, 0.3);
   border-radius: 999px;
 }
+
+
+/* Map popups on the Jharkhand map: the platform's cream card instead of MapLibre's plain white box. */
+.ctx-popup .maplibregl-popup-content {
+  background: #f6efe4;
+  border: 1px solid rgb(36 17 9 / 0.12);
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 8px 28px rgb(36 17 9 / 0.18);
+}
+.ctx-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: #f6efe4; }
+.ctx-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.ctx-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: #f6efe4; }
+.ctx-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #f6efe4; }
+.ctx-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #f6efe4; }
+.ctx-popup .maplibregl-popup-close-button {
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 22px;
+  color: #6b4a2a;
+}
+.ctx-popup .maplibregl-popup-close-button:hover { background: #fff; color: #241109; }

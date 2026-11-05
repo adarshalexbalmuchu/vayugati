@@ -478,45 +478,104 @@ function removeAll(map: maplibregl.Map) {
   removeRelief(map)
 }
 
-function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement {
+/** Which district a point is in (ray casting over the district outlines). */
+function districtAt(fc: FeatureCollection | undefined, lng: number, lat: number): string | null {
+  if (!fc) return null
+  const inRing = (ring: number[][]) => {
+    let inside = false
+    for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
+      const [xi, yi] = ring[a]
+      const [xj, yj] = ring[b]
+      if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+    }
+    return inside
+  }
+  const inPoly = (poly: number[][][]) => inRing(poly[0]) && !poly.slice(1).some(inRing)
+  for (const f of fc.features) {
+    const g = f.geometry
+    const hit = g.type === 'Polygon' ? inPoly(g.coordinates) : g.type === 'MultiPolygon' ? g.coordinates.some(inPoly) : false
+    if (hit) return String(f.properties?.name ?? '')
+  }
+  return null
+}
+
+const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be incomplete or out of date.'
+
+/** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
+function popupNode(props: Record<string, unknown>, layerId: string, district: string | null): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'text-xs leading-snug space-y-1'
-  const line = (text: string, bold = false) => {
-    const p = document.createElement('p')
-    p.textContent = text
-    if (bold) p.className = 'font-semibold'
-    el.appendChild(p)
-  }
-  if (layerId === 'ctx-districts-fill') {
-    line(`${props.name} district`, true)
-    line('Outline: open data (Datameet / Census 2011, OpenStreetMap, geoBoundaries), not Survey of India’s own file.')
-  } else if (layerId === 'ctx-towngrid-fill') {
-    line(`${props.town} grid cell ${props.id}`, true)
-    line(`${props.district} district · ${props.area_km2} km² · ${props.builtup_pct}% built-up (ESA WorldCover 2021)`)
-    line('A 3 km working grid by Vayu Gati. Not a ward or municipal boundary.')
+  el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 font-site text-xs text-ink-800'
+  let eyebrow = ''
+  let title = ''
+  const rows: [string, string][] = []
+  let note = ''
+  let source = ''
+  const kind = KIND_LABEL[String(props.kind)] ?? ''
+  if (layerId === 'ctx-towngrid-fill') {
+    eyebrow = 'Working grid cell'
+    title = `${props.town} · ${props.id}`
+    rows.push(['District', String(props.district)], ['Area', `${props.area_km2} km²`], ['Built-up land', `${props.builtup_pct}%`])
+    note = 'A 3 km grid by Vayu Gati. It is not a ward or municipal boundary.'
+    source = 'Built-up share: ESA WorldCover 2021'
   } else if (layerId === 'ctx-fires') {
-    line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
-    line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
-    line('A 375 m pixel that was unusually hot when the satellite passed. It can be a coal fire at the surface, industrial heat, or crop or forest burning. It is not a measured fire area.')
-  } else if (['ctx-places-town', 'ctx-places-village', 'ctx-facilities', 'ctx-landmarks', 'ctx-transport', 'ctx-power-sub',
-    'ctx-kilns', 'ctx-railways-main', 'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill',
-    'ctx-forest-fill', 'ctx-builtup-fill'].includes(layerId)) {
-    const kind = KIND_LABEL[String(props.kind)] ?? ''
-    line(String(props.name || kind || 'Mapped feature'), true)
-    if (props.name && kind) line(kind)
-    if (props.kind === 'peak' && props.ele) line(`Height as mapped: ${props.ele} m`)
-    if (props.kind === 'line' && props.voltage) line(`Voltage as mapped: ${props.voltage} V`)
-    line('Source: OpenStreetMap, mapped by volunteers (3 Nov 2026). May be incomplete or out of date.')
+    eyebrow = 'Satellite heat detection'
+    title = String(props.date ?? 'Heat spot')
+    rows.push(['Time', props.daynight === 'N' ? 'Night pass' : 'Day pass'], ['Fire radiative power', `${props.frp ?? '—'} MW`])
+    if (district) rows.push(['District', district])
+    note = 'A 375 m pixel that was unusually hot: a coal fire, industrial heat, or crop or forest burning. Not a measured fire area.'
+    source = 'NASA FIRMS (VIIRS), dates in UTC'
   } else if (props.checked) {
-    line(String(props.name), true)
-    line(KIND_LABEL[String(props.kind)] ?? '')
-    if (props.operator) line(`Operator: ${props.operator}`)
-    line('Location: OpenStreetMap. Name and operator checked by Vayu Gati, Nov 2026.')
+    eyebrow = kind || 'Checked site'
+    title = String(props.name)
+    if (props.operator) rows.push(['Operator', String(props.operator)])
+    if (district) rows.push(['District', district])
+    source = 'Location: OpenStreetMap. Name and operator checked by Vayu Gati, Nov 2026.'
   } else {
-    line(String(props.name || KIND_LABEL[String(props.kind)] || 'Mapped feature'), true)
-    if (props.name) line(KIND_LABEL[String(props.kind)] ?? '')
-    line('Source: OpenStreetMap, mapped by volunteers. Not an official lease or land-use boundary, and some areas are missing.')
+    eyebrow = kind || 'Mapped feature'
+    title = String(props.name || kind || 'Mapped feature')
+    if (props.name === undefined || props.name === '') rows.push(['Name', 'not mapped'])
+    if (props.kind === 'peak' && props.ele) rows.push(['Height as mapped', `${props.ele} m`])
+    if (props.kind === 'line' && props.voltage) rows.push(['Voltage as mapped', `${props.voltage} V`])
+    if (district) rows.push(['District', district])
+    const polygonLayers = ['ctx-mines-fill', 'ctx-industry-fill', 'ctx-forest-fill', 'ctx-builtup-fill', 'ctx-protected-fill', 'ctx-water-fill']
+    if (['ctx-mines-fill', 'ctx-industry-fill'].includes(layerId)) note = 'Not an official lease or land-use boundary, and some areas are missing.'
+    else if (polygonLayers.includes(layerId)) note = 'Outline as drawn by volunteers; approximate.'
+    source = OSM_SOURCE
   }
+  const e = document.createElement('p')
+  e.className = 'pr-5 text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+  e.textContent = eyebrow
+  const t = document.createElement('p')
+  t.className = 'mt-1 pr-5 font-display text-2xl leading-[1.05] text-ink-900'
+  t.textContent = title
+  el.append(e, t)
+  if (rows.length) {
+    const dl = document.createElement('dl')
+    dl.className = 'mt-2.5 divide-y divide-ink-900/10 rounded-lg border border-ink-900/10 bg-white'
+    for (const [k, v] of rows) {
+      const r = document.createElement('div')
+      r.className = 'flex items-baseline justify-between gap-3 px-2.5 py-1.5'
+      const dt = document.createElement('dt')
+      dt.className = 'text-ink-600'
+      dt.textContent = k
+      const dd = document.createElement('dd')
+      dd.className = 'text-right font-semibold text-ink-900'
+      dd.textContent = v
+      r.append(dt, dd)
+      dl.appendChild(r)
+    }
+    el.appendChild(dl)
+  }
+  if (note) {
+    const n = document.createElement('p')
+    n.className = 'mt-2 leading-snug text-ink-700'
+    n.textContent = note
+    el.appendChild(n)
+  }
+  const f = document.createElement('p')
+  f.className = 'mt-2.5 border-t border-ink-900/10 pt-2 text-[10px] leading-snug text-ink-500'
+  f.textContent = source
+  el.appendChild(f)
   return el
 }
 
@@ -1512,21 +1571,28 @@ export default function CityContextLayers({
         map.once('idle', ensure)
       }
     }
-    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px', className: 'ctx-popup' })
     const clickable = () =>
       CLICKABLE.filter((id) => map.getLayer(id) && (id !== 'ctx-districts-fill' || map.getZoom() < DISTRICT_CLICK_MAX_ZOOM))
     const showElevation = (e: maplibregl.MapMouseEvent, extra?: HTMLElement) => {
       const el = extra ?? document.createElement('div')
-      if (!extra) el.className = 'text-xs leading-snug space-y-1'
-      const p = document.createElement('p')
-      p.className = 'text-slate-500'
-      p.textContent = 'Elevation: reading…'
-      el.appendChild(p)
+      if (!extra) el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 font-site text-xs text-ink-800'
+      const box = document.createElement('div')
+      box.className = `${extra ? 'mt-2.5' : ''} rounded-lg bg-white px-2.5 py-2 border border-ink-900/10`
+      const lab = document.createElement('p')
+      lab.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+      lab.textContent = 'Ground elevation'
+      const val = document.createElement('p')
+      val.className = 'font-display text-3xl leading-none text-ink-900'
+      val.textContent = '…'
+      const src = document.createElement('p')
+      src.className = 'mt-1 text-[10px] leading-snug text-ink-500'
+      src.textContent = 'MapTiler terrain model, about 30 m grid'
+      box.append(lab, val, src)
+      el.appendChild(box)
       popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map)
       elevationAt(e.lngLat.lng, e.lngLat.lat).then((h) => {
-        p.textContent = h == null
-          ? 'Elevation not available.'
-          : `Elevation about ${h.toLocaleString('en-IN')} m above sea level (MapTiler terrain model, about 30 m grid).`
+        val.textContent = h == null ? 'Not available' : `${h.toLocaleString('en-IN')} m`
       })
     }
     const onClick = (e: maplibregl.MapMouseEvent) => {
@@ -1543,7 +1609,7 @@ export default function CityContextLayers({
         controlRef.current.selectDistrict(String(f.properties?.name))
         return
       }
-      const node = popupNode(f.properties ?? {}, f.layer.id)
+      const node = popupNode(f.properties ?? {}, f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat))
       if (in3D) showElevation(e, node)
       else popup.setLngLat(e.lngLat).setDOMContent(node).addTo(map)
     }
