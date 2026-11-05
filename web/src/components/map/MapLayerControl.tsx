@@ -17,6 +17,7 @@ export type MapLayerKey =
   | 'aqiHeatmap'
   | 'vegetation3D'
   | 'landUse'
+  | 'ctxDistricts'
   | 'ctxMines'
   | 'ctxIndustry'
   | 'ctxRoads'
@@ -26,6 +27,7 @@ export type MapLayerKey =
 /** Context-layer toggles, shown only for a city with a context pack
  *  (CityContextLayers.tsx), mapped to that component's keys. */
 export const CONTEXT_LAYER_KEYS = {
+  ctxDistricts: 'districts',
   ctxMines: 'mines',
   ctxIndustry: 'industry',
   ctxRoads: 'roads',
@@ -49,6 +51,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'aqiExtrusion',
   'buildings3D',
   'vegetation3D',
+  'ctxDistricts',
   'ctxMines',
   'ctxIndustry',
   'ctxRoads',
@@ -67,7 +70,7 @@ export const LAYER_ORDER: MapLayerKey[] = [
  *  review of this page from a researcher/policy-maker's perspective flagged
  *  these three as visual flourish that competes for attention with real
  *  data layers, not that they're broken or should be removed). */
-const CONTEXT_GROUP = 'Coalfield context'
+const CONTEXT_GROUP = 'Jharkhand context'
 
 const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] = [
   {
@@ -77,7 +80,7 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
   {
     label: CONTEXT_GROUP,
     subtitle: 'Mapped features, not air-quality measurements',
-    keys: ['ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxReference'],
+    keys: ['ctxDistricts', 'ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxReference'],
   },
   {
     label: 'Operations',
@@ -175,6 +178,11 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
   },
+  ctxDistricts: {
+    label: 'Districts and monitoring',
+    available: false,
+    note: 'Jharkhand’s 24 districts, shaded by government monitoring: continuous stations reporting in the CPCB feed (5 Nov 2026), manual stations (CPCB NAMP list, 19 Nov 2024), continuous stations planned (JSPCB tender, 6 Dec 2025). Outlines from geoBoundaries, approximate.',
+  },
   ctxMines: {
     label: 'Mining and quarry areas',
     available: false,
@@ -183,7 +191,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
   ctxIndustry: {
     label: 'Industry and power plants',
     available: false,
-    note: 'Industrial land from OpenStreetMap (purple). Yellow dots: 6 power plants and 2 large works whose names and operators were checked against the operators’ own publications. Others may be missing.',
+    note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026). Unconfirmed sites are left off, so some are missing.',
   },
   ctxRoads: {
     label: 'Major roads',
@@ -193,7 +201,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
   ctxFires: {
     label: 'Satellite heat detections',
     available: false,
-    note: 'NASA FIRMS VIIRS detections, 1–4 Nov 2026 (not updated yet). Each dot is a 375 m pixel that read unusually hot. It can be a surface coal fire, industrial heat or open burning. Not a measured fire area.',
+    note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, 1–4 Nov 2026 (not updated yet). Each dot is a 375 m pixel that read unusually hot. It can be a surface coal fire, industrial heat or open burning. Not a measured fire area.',
   },
   ctxReference: {
     label: 'West Bengal reference stations',
@@ -233,6 +241,7 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   aqiHeatmap: true,
   vegetation3D: false,
   landUse: false,
+  ctxDistricts: true,
   ctxMines: true,
   ctxIndustry: true,
   ctxRoads: true,
@@ -304,7 +313,7 @@ export default function MapLayerControl({
   /** True when a vector basemap is loaded — same gate as buildings. */
   landUseAvailable?: boolean
   /** True when the active city has a context pack (CityContextLayers);
-   *  the "Coalfield context" group is hidden otherwise. */
+   *  the "Jharkhand context" group is hidden otherwise. */
   cityContextAvailable?: boolean
   forecastSuppressed?: boolean
   /** Controlled open state (Sept 2026 addition) — lets a caller (MapPage's

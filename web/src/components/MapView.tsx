@@ -288,7 +288,7 @@ interface Props {
   /** Colour-code land use polygons (industrial/commercial/residential). */
   showLandUse?: boolean
   /** Which of the active city's context layers (mines, industry, roads,
-   *  fires, blocks, reference stations; see CityContextLayers) to show.
+   *  fires, districts, reference stations; see CityContextLayers) to show.
    *  Omitted = none, so the small embeds stay as they are. */
   contextLayers?: CityContextVisibility
   /** Stable string key derived from the current selection in MapPage.  When
@@ -1668,7 +1668,17 @@ export default function MapView({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} className="h-full w-full" />
       <WindParticles map={mapInstance} points={windPoints} visible={showWind} />
-      {contextLayers && <CityContextLayers map={mapInstance} cityCode={cityCode} visible={contextLayers} />}
+      {contextLayers && (
+        <CityContextLayers
+          map={mapInstance}
+          cityCode={cityCode}
+          visible={contextLayers}
+          showViewControl
+          cityLabel={cityMap.label}
+          cityCenter={cityMap.center}
+          cityZoom={cityMap.defaultZoom}
+        />
+      )}
     </div>
   )
 }

@@ -22,8 +22,14 @@ Jharkhand before those nodes exist, using the official stations and open source 
 | `sources_osm.geojson` | Mining and quarry areas, industrial land, and 6 power plants and 2 large works whose names and operators were checked (`CHECKED_SITES` in `build_layers.py`) | OpenStreetMap, Geofabrik eastern-zone extract, data as of 3 Nov 2026 |
 | `roads_major.geojson` | Motorway, trunk, primary and secondary roads around Dhanbad | OpenStreetMap |
 | `fires_firms_5d.geojson` | VIIRS heat detections over Jharkhand, 1–4 Nov 2026 (a snapshot, not live) | NASA FIRMS |
+| `state_sources_osm.geojson`, `state_roads.geojson` | The same layers for all of Jharkhand, clipped to the state outline (1,373 mining and quarry areas, 712 industrial areas, 8 checked power plants; roads trunk to secondary) | OpenStreetMap, data as of 3 Nov 2026 |
 | `openaq_locations.json` | Every OpenAQ location in the Jharkhand box, for station matching | OpenAQ v3 |
 | `preview.html` | A standalone map of the layers (`#state` and `#dhanbad` views) | — |
+
+The web app serves a state pack from `web/public/city-packs/jharkhand/`, built by the `pack` step:
+the state layers plus the Dhanbad-area features just across the West Bengal border (Santaldih,
+Raghunathpur, Panchet and Maithon). On `/map` with Dhanbad–Jharia selected, the "Jharkhand" and
+"Dhanbad–Jharia" buttons switch between the state view and the coalfield.
 
 Preview: from `data/jharkhand/processed/`, run `python3 -m http.server 8765` and open
 `http://127.0.0.1:8765/preview.html#state` or `#dhanbad`.
@@ -58,6 +64,8 @@ gitignored `ingest/data/`.
 
 - OpenStreetMap is volunteer-mapped and incomplete. The 196 mining and quarry shapes are mapped areas, not
   a count of mines, and not BCCL/CMPDI lease boundaries. Never quote these counts as official figures.
+- Statewide, Mahadev Prasad STPP is left off because its current owner could not be confirmed, and so
+  are dams, solar mini-grids and small works.
 - Power plants and works: only those on `CHECKED_SITES` are kept. Dropped on 5 Nov 2026: 10 unnamed
   power-plant features, "BCCL Powerhouse" and "Bokaro Works Power Plant" (identity or status not
   confirmed), PDIL (not confirmed) and a small engineering workshop. Add a site only after checking it

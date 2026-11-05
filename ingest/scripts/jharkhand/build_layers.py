@@ -9,7 +9,10 @@ Steps:
     stations    CPCB data.gov.in real-time feed + OpenAQ -> continuous stations; adds manual (NAMP)
                 and planned (JSPCB tender) station counts to the district layer
     fires       NASA FIRMS VIIRS (SNPP + NOAA-20), last 5 days, Jharkhand bounding box
-    osm         Geofabrik eastern-zone extract -> mines, industry, power plants, works, major roads
+    osm         Geofabrik eastern-zone extract -> mines, industry, power plants, works, major roads, Dhanbad area
+    osm_state   the same for all of Jharkhand (features inside the state outline; roads trunk to secondary)
+    pack        web pack: state layers plus the Dhanbad-area features just across the West Bengal border
+                -> web/public/city-packs/jharkhand/
     curate      keeps only power plants and works on the checked list below (runs at the end of osm)
 
 No block layer: geoBoundaries ADM3 has 11 Census-era blocks for Dhanbad (e.g. Jharia-Cum-Jorapokhar-Cum-
@@ -41,6 +44,7 @@ REPO = Path(__file__).resolve().parents[3]
 OUT = REPO / "data" / "jharkhand" / "processed"
 DOWNLOADS = REPO / "ingest" / "data" / "downloads" / "geoboundaries"
 PBF = REPO / "ingest" / "data" / "osm" / "eastern-zone-latest.osm.pbf"
+RAW = REPO / "ingest" / "data" / "osm"  # uncurated OSM output (gitignored); curate() reads from here
 ENV = dotenv_values(REPO / "ingest" / ".env")
 UA = {"User-Agent": "vayugati-mapping/1.0"}
 
@@ -238,12 +242,23 @@ def fires() -> None:
 
 
 def osm() -> None:
+    _osm(DHANBAD_BBOX, "sources_osm.geojson", "roads_major.geojson", clip=None)
+    curate("sources_osm.geojson")
+
+
+def osm_state() -> None:
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+    _osm(state.bounds, "state_sources_osm.geojson", "state_roads.geojson", clip=state, simplify=0.0003)
+    curate("state_sources_osm.geojson")
+
+
+def _osm(bbox, sources_name: str, roads_name: str, clip=None, simplify: float = 0.0) -> None:
     import osmium
     from osmium.geom import GeoJSONFactory
 
     if not PBF.exists():
         sys.exit(f"missing {PBF}: download https://download.geofabrik.de/asia/india/eastern-zone-latest.osm.pbf")
-    w, s, e, n = DHANBAD_BBOX
+    w, s, e, n = bbox
     fab = GeoJSONFactory()
 
     def inside(lon, lat):
@@ -304,11 +319,32 @@ def osm() -> None:
 
     h = Handler()
     h.apply_file(str(PBF), locations=True)
-    _save("sources_osm.geojson", _fc(h.areas + h.points))
-    _save("roads_major.geojson", _fc(h.roads))
-    print("osm:", dict(collections.Counter(f["properties"]["kind"] for f in h.areas + h.points)),
-          "roads", len(h.roads))
-    curate()
+    sources, roads = h.areas + h.points, h.roads
+    if clip is not None:
+        from shapely.prepared import prep
+        inside_state = prep(clip)
+
+        def keep(f):
+            try:
+                g = make_valid(shape(f["geometry"]))
+            except Exception:  # noqa: BLE001
+                return None
+            if g.is_empty or not inside_state.intersects(g.representative_point()):
+                return None
+            if simplify and g.geom_type != "Point":
+                g = g.simplify(simplify, preserve_topology=True)
+                if g.is_empty:
+                    return None
+            f["geometry"] = mapping(g)
+            return f
+
+        sources = [f for f in map(keep, sources) if f]
+        roads = [f for f in map(keep, roads) if f]
+    with open(RAW / sources_name, "w") as fh:
+        json.dump(_fc(sources), fh)
+    _save(roads_name, _fc(roads))
+    print(f"{sources_name}:", dict(collections.Counter(f["properties"]["kind"] for f in sources)),
+          f"{roads_name}", len(roads))
 
 
 # Power plants and large works kept on the map, keyed by their OpenStreetMap name, with the name and
@@ -325,12 +361,20 @@ CHECKED_SITES = {
     "HINDUSTAN URVARAK & RASAYAN LIMITED SINDRI (HURL)": ("HURL Sindri fertiliser plant",
                                                          "Hindustan Urvarak & Rasayan Ltd (HURL)"),
     "ACC": ("ACC Sindri cement grinding unit", "ACC Ltd (Adani Group)"),
+    # Statewide (Jharkhand). Not added: Mahadev Prasad STPP (current owner unconfirmed), a second
+    # "Jojobera Tata Unit 6" feature (same plant), dams, solar mini-grids, unnamed or small sites.
+    "Bokaro Thermal Power Station": ("Bokaro Thermal Power Station", "Damodar Valley Corporation (DVC)"),
+    "Koderma Thermal Power Station": ("Koderma Thermal Power Station", "Damodar Valley Corporation (DVC)"),
+    "Tenughat Thermal Power Plant": ("Tenughat Thermal Power Station",
+                                     "Tenughat Vidyut Nigam Ltd (TVNL), Government of Jharkhand"),
+    "North Karanpura Thermal Power Station": ("North Karanpura Super Thermal Power Project", "NTPC Ltd"),
+    "Jojobera power plant": ("Jojobera Power Plant", "Tata Power"),
+    "Godda Thermal Power Station": ("Godda Ultra Supercritical Thermal Power Plant", "Adani Power (Adani Group)"),
 }
 
 
-def curate() -> None:
-    path = OUT / "sources_osm.geojson"
-    fc = json.load(open(path))
+def curate(name: str = "sources_osm.geojson") -> None:
+    fc = json.load(open(RAW / name if (RAW / name).exists() else OUT / name))
     kept, dropped = [], []
     for f in fc["features"]:
         p = f["properties"]
@@ -345,11 +389,30 @@ def curate() -> None:
             if f["geometry"]["type"] != "Point":  # one dot per site, not one per outline vertex
                 f["geometry"] = mapping(make_valid(shape(f["geometry"])).representative_point())
         kept.append(f)
-    _save("sources_osm.geojson", _fc(kept))
-    print("curate: dropped", len(dropped), dropped)
+    _save(name, _fc(kept))
+    print(f"curate {name}: dropped", len(dropped), dropped)
 
 
-STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "curate": curate}
+def pack() -> None:
+    import shutil
+
+    web = REPO / "web" / "public" / "city-packs" / "jharkhand"
+    web.mkdir(parents=True, exist_ok=True)
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+    for state_name, local_name, out_name in (("state_sources_osm.geojson", "sources_osm.geojson", "sources.geojson"),
+                                             ("state_roads.geojson", "roads_major.geojson", "roads.geojson")):
+        feats = json.load(open(OUT / state_name))["features"]
+        across = [f for f in json.load(open(OUT / local_name))["features"]
+                  if not state.contains(make_valid(shape(f["geometry"])).representative_point())]
+        with open(web / out_name, "w") as fh:
+            json.dump(_round(_fc(feats + across)), fh, separators=(",", ":"), ensure_ascii=False)
+        print(f"pack {out_name}: {len(feats)} in Jharkhand + {len(across)} across the border")
+    for name in ("state.geojson", "districts.geojson", "fires_firms_5d.geojson", "stations.geojson"):
+        shutil.copy(OUT / name, web / name)
+
+
+STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
+         "curate": curate, "pack": pack}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]
