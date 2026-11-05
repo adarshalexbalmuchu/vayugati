@@ -240,7 +240,6 @@ export default function MapPage() {
         industry: layers.ctxIndustry,
         roads: layers.ctxRoads,
         fires: layers.ctxFires,
-        reference: layers.ctxReference,
       }
     : undefined
   // Sept 2026: Layers/Legend triggers moved into the header row (next to

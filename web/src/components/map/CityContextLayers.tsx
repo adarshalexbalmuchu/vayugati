@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
-import type { FeatureCollection } from 'geojson'
+import type { Feature, FeatureCollection, Geometry, Polygon, Position } from 'geojson'
+import { maptilerKey } from '../../lib/basemaps'
 
 /**
  * Static context layers for a city pack. For Dhanbad–Jharia the pack covers
@@ -20,7 +21,7 @@ import type { FeatureCollection } from 'geojson'
  * after every setStyle() (which wipes custom layers).
  */
 
-export type CityContextLayerKey = 'districts' | 'mines' | 'industry' | 'roads' | 'fires' | 'reference'
+export type CityContextLayerKey = 'districts' | 'mines' | 'industry' | 'roads' | 'fires'
 export type CityContextVisibility = Record<CityContextLayerKey, boolean>
 
 export const ALL_CONTEXT_VISIBLE: CityContextVisibility = {
@@ -29,7 +30,6 @@ export const ALL_CONTEXT_VISIBLE: CityContextVisibility = {
   industry: true,
   roads: true,
   fires: true,
-  reference: true,
 }
 
 interface ContextPack {
@@ -94,15 +94,54 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   industry: ['ctx-industry-fill', 'ctx-plants'],
   mines: ['ctx-mines-fill', 'ctx-mines-line'],
   fires: ['ctx-fires'],
-  reference: ['ctx-reference'],
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-reference', 'ctx-plants', 'ctx-fires', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-districts-fill']
+const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
 const DISTRICT_CLICK_MAX_ZOOM = 9
+
+/** Layers that are not tied to a toggle: the masks and the selected-district outline. */
+const MASK_STATE = 'ctx-mask-state'
+const MASK_DISTRICT = 'ctx-mask-district'
+const DISTRICT_SELECTED = 'ctx-district-selected'
+const MASK_COLOR = '#EFECE6'
+
+const WORLD_RING: Position[] = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]
+
+function ringArea(r: Position[]): number {
+  let a = 0
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] - r[i][0]) * (r[j][1] + r[i][1])
+  return a / 2
+}
+
+/** The world with `g` cut out, so everything outside `g` can be covered. */
+function maskOutside(g: Geometry): Feature<Polygon> {
+  const outers: Position[][] =
+    g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((p) => p[0]) : []
+  // Holes wind opposite to the outer ring (WORLD_RING is counter-clockwise).
+  const holes = outers.map((r) => (ringArea(r) > 0 ? r : [...r].reverse()))
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [WORLD_RING, ...holes] } }
+}
+
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
+
+function bboxOf(g: Geometry): [number, number, number, number] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity
+  const walk = (c: unknown): void => {
+    if (Array.isArray(c) && typeof c[0] === 'number') {
+      const [x, y] = c as number[]
+      if (x < w) w = x
+      if (x > e) e = x
+      if (y < s) s = y
+      if (y > n) n = y
+    } else if (Array.isArray(c)) c.forEach(walk)
+  }
+  if ('coordinates' in g) walk(g.coordinates)
+  return [w, s, e, n]
+}
 
 const KIND_LABEL: Record<string, string> = {
   mine: 'Mining or quarry area',
@@ -131,13 +170,6 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     source: SRC.districts,
     layout: { visibility: vis('districts') },
     paint: { 'line-color': '#5B4A3A', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.6, 10, 1.4], 'line-opacity': 0.8 },
-  })
-  map.addLayer({
-    id: 'ctx-state-line',
-    type: 'line',
-    source: SRC.state,
-    layout: { visibility: vis('districts') },
-    paint: { 'line-color': '#2E2219', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 10, 2.6] },
   })
   map.addLayer({
     id: 'ctx-roads-line',
@@ -199,19 +231,33 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     layout: { visibility: vis('fires') },
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 2, 10, 3.5], 'circle-color': '#E4572E', 'circle-opacity': 0.85 },
   })
+  // Everything outside the selected district is dimmed, and everything
+  // outside Jharkhand is covered: the platform shows Jharkhand only.
+  map.addSource(MASK_DISTRICT, { type: 'geojson', data: EMPTY_FC })
+  map.addLayer({ id: MASK_DISTRICT, type: 'fill', source: MASK_DISTRICT, paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 0.72 } })
+  const stateGeom = data.state.features[0]?.geometry
+  map.addSource(MASK_STATE, { type: 'geojson', data: stateGeom ? maskOutside(stateGeom) : EMPTY_FC })
+  map.addLayer({ id: MASK_STATE, type: 'fill', source: MASK_STATE, paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 1 } })
   map.addLayer({
-    id: 'ctx-reference',
-    type: 'circle',
-    source: SRC.stations,
-    filter: ['==', ['get', 'role'], 'reference_candidate'],
-    layout: { visibility: vis('reference') },
-    paint: { 'circle-radius': 6, 'circle-color': '#2B88D8', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
+    id: 'ctx-state-line',
+    type: 'line',
+    source: SRC.state,
+    layout: { visibility: vis('districts') },
+    paint: { 'line-color': '#2E2219', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 10, 2.6] },
+  })
+  map.addLayer({
+    id: DISTRICT_SELECTED,
+    type: 'line',
+    source: SRC.districts,
+    filter: ['==', ['get', 'name'], ''],
+    paint: { 'line-color': '#B5542E', 'line-width': 3 },
   })
 }
 
 function removeAll(map: maplibregl.Map) {
+  for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
-  for (const id of Object.values(SRC)) if (map.getSource(id)) map.removeSource(id)
+  for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT]) if (map.getSource(id)) map.removeSource(id)
 }
 
 function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement {
@@ -230,10 +276,6 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
     line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
     line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
     line('A 375 m pixel that was unusually hot when the satellite passed. It can be a coal fire at the surface, industrial heat, or crop or forest burning. It is not a measured fire area.')
-  } else if (layerId === 'ctx-reference') {
-    line(String(props.name ?? 'Reference station'), true)
-    line('Government continuous monitoring station run by the West Bengal Pollution Control Board; data published through CPCB.')
-    line('Outside Jharkhand. Vayu Gati may use it as a reference for checking its own sensors.')
   } else if (props.checked) {
     line(String(props.name), true)
     line(KIND_LABEL[String(props.kind)] ?? '')
@@ -247,10 +289,71 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   return el
 }
 
-/** Jharkhand / city zoom buttons. Plain DOM so it can live inside
- *  MapLibre's control corners. */
+/** Height exaggeration in the district 3D view. Jharkhand's relief (about
+ *  100 to 1,350 m) reads as flat at true scale over a whole district; the
+ *  control states this factor whenever 3D is on. */
+const EXAGGERATION_3D = 2
+/** MapView's own terrain source on /map (MapTiler); reused when present. */
+const MAPVIEW_DEM_SOURCE = 'maptiler-terrain-dem'
+const DEM_SOURCE = 'ctx-dem'
+const HILLSHADE_SOURCE = 'ctx-hillshade-dem'
+const HILLSHADE_LAYER = 'ctx-hillshade'
+const SAT_SOURCE = 'ctx-satellite'
+const SAT_LAYER = 'ctx-satellite'
+
+function demSourceSpec(): maplibregl.RasterDEMSourceSpecification {
+  const key = maptilerKey()
+  if (key) {
+    // MapTiler Terrain RGB v2: a global 30 m-class elevation model.
+    return { type: 'raster-dem', url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`, tileSize: 512, maxzoom: 14 }
+  }
+  // Keyless fallback: AWS Open Data Terrain Tiles (SRTM and other public DEMs).
+  return {
+    type: 'raster-dem',
+    tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+    encoding: 'terrarium',
+    tileSize: 256,
+    maxzoom: 14,
+    attribution: 'Elevation: AWS Terrain Tiles (SRTM and others)',
+  }
+}
+
+const SKY: maplibregl.SkySpecification = {
+  'sky-color': '#9CC3E4',
+  'horizon-color': '#E9EEF2',
+  'fog-color': '#EFECE6',
+  'sky-horizon-blend': 0.5,
+  'horizon-fog-blend': 0.6,
+  'fog-ground-blend': 0.2,
+}
+
+function fmtDay(d: string): string {
+  const [, m, day] = d.split('-').map(Number)
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${day} ${months[m - 1]}`
+}
+
+/** Jharkhand / city buttons, a district picker that shows the chosen
+ *  district in 3D (terrain, relief shading and satellite imagery, the rest
+ *  of the state dimmed), and a day-by-day player for the satellite heat
+ *  detections. Plain DOM so it can live inside MapLibre's control corners. */
 class ViewControl implements maplibregl.IControl {
   private el: HTMLDivElement | null = null
+  private map: maplibregl.Map | null = null
+  private districts: Feature[] = []
+  private selected: string | null = null
+  private select: HTMLSelectElement | null = null
+  private on3D = false
+  private prevTerrain: maplibregl.TerrainSpecification | null = null
+  private prevSky: maplibregl.SkySpecification | undefined = undefined
+  private note3D: HTMLParagraphElement | null = null
+  private fireDates: string[] = []
+  private fireDay: string | null = null // null = all days
+  private fireRow: HTMLDivElement | null = null
+  private fireLabel: HTMLSpanElement | null = null
+  private playBtn: HTMLButtonElement | null = null
+  private timer: ReturnType<typeof setInterval> | null = null
+
   constructor(
     private pack: ContextPack,
     private cityLabel: string,
@@ -258,33 +361,268 @@ class ViewControl implements maplibregl.IControl {
     private cityZoom: number,
   ) {}
 
+  private button(label: string, onClick: () => void, parent: HTMLElement) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = label
+    b.className = 'rounded-md border border-slate-200 px-2 py-1 font-medium hover:bg-slate-100'
+    b.addEventListener('click', onClick)
+    parent.appendChild(b)
+    return b
+  }
+
   onAdd(map: maplibregl.Map) {
+    this.map = map
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl rounded-lg border border-slate-200/80 bg-white/95 p-1.5 text-xs text-slate-700 shadow-sm backdrop-blur-sm'
+    el.className = 'maplibregl-ctrl w-[250px] rounded-lg border border-slate-200/80 bg-white/95 p-1.5 text-xs text-slate-700 shadow-sm backdrop-blur-sm'
     const row = document.createElement('div')
-    row.className = 'flex gap-1'
-    const btn = (label: string, onClick: () => void) => {
-      const b = document.createElement('button')
-      b.type = 'button'
-      b.textContent = label
-      b.className = 'rounded-md border border-slate-200 px-2 py-1 font-medium hover:bg-slate-100'
-      b.addEventListener('click', onClick)
-      row.appendChild(b)
-    }
-    btn(this.pack.regionLabel, () => {
-      const [w, s, e, n] = this.pack.regionBounds
-      map.fitBounds([[w, s], [e, n]], { padding: 40, duration: 800 })
-    })
-    btn(this.cityLabel, () => map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, duration: 800 }))
+    row.className = 'flex items-center gap-1'
+    this.button(this.pack.regionLabel, () => this.selectDistrict(null), row)
+    this.button(this.cityLabel, () => {
+      this.selectDistrict(null, false)
+      map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, pitch: 0, bearing: 0, duration: 900 })
+    }, row)
     el.appendChild(row)
 
+    const pick = document.createElement('label')
+    pick.className = 'mt-1.5 flex items-center gap-1.5'
+    const pickText = document.createElement('span')
+    pickText.className = 'font-semibold'
+    pickText.textContent = 'District in 3D'
+    const select = document.createElement('select')
+    select.className = 'min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs'
+    select.addEventListener('change', () => this.selectDistrict(select.value || null))
+    pick.append(pickText, select)
+    el.appendChild(pick)
+    this.select = select
+    this.fillSelect()
+
+    const note = document.createElement('p')
+    note.className = 'mt-1 text-[10px] leading-snug text-slate-500'
+    note.style.display = 'none'
+    note.textContent = `Terrain: MapTiler elevation, heights ×${EXAGGERATION_3D}. Imagery: satellite. Right-drag or Ctrl-drag to tilt and turn.`
+    el.appendChild(note)
+    this.note3D = note
+
+    const fireRow = document.createElement('div')
+    fireRow.className = 'mt-1.5 flex items-center gap-1 border-t border-slate-200 pt-1.5'
+    fireRow.style.display = 'none'
+    const title = document.createElement('span')
+    title.className = 'font-semibold'
+    title.textContent = 'Heat detections'
+    fireRow.appendChild(title)
+    this.playBtn = this.button('▶', () => this.togglePlay(), fireRow)
+    this.playBtn.setAttribute('aria-label', 'Play heat detections day by day')
+    this.button('All', () => { this.stopPlay(); this.setFireDay(null) }, fireRow)
+    const label = document.createElement('span')
+    label.className = 'ml-auto tabular-nums text-slate-600'
+    fireRow.appendChild(label)
+    this.fireLabel = label
+    el.appendChild(fireRow)
+    this.fireRow = fireRow
+
+    map.on('styledata', this.reapply)
+    map.on('style.load', this.onStyleLoad)
     this.el = el
     return el
   }
 
   onRemove() {
+    this.stopPlay()
+    this.map?.off('styledata', this.reapply)
+    this.map?.off('style.load', this.onStyleLoad)
+    if (this.on3D) this.leave3D()
     this.el?.remove()
     this.el = null
+    this.map = null
+  }
+
+  /** Called once the pack is loaded. */
+  setPackData(data: PackData) {
+    this.districts = [...data.districts.features].sort((a, b) =>
+      String(a.properties?.name).localeCompare(String(b.properties?.name)))
+    this.fillSelect()
+    this.fireDates = [...new Set(data.fires.features.map((f) => String(f.properties?.date ?? '')))].filter(Boolean).sort()
+    if (this.fireRow) this.fireRow.style.display = this.fireDates.length > 1 ? '' : 'none'
+    this.updateFireLabel()
+  }
+
+  private fillSelect() {
+    const sel = this.select
+    if (!sel) return
+    sel.replaceChildren()
+    const all = document.createElement('option')
+    all.value = ''
+    all.textContent = `Whole ${this.pack.regionLabel}`
+    sel.appendChild(all)
+    for (const f of this.districts) {
+      const o = document.createElement('option')
+      o.value = String(f.properties?.name)
+      o.textContent = String(f.properties?.name)
+      sel.appendChild(o)
+    }
+    sel.value = this.selected ?? ''
+  }
+
+  /** Show one district in 3D (null: back to the flat state view). */
+  selectDistrict(name: string | null, fly = true) {
+    const map = this.map
+    if (!map) return
+    const f = name ? this.districts.find((d) => d.properties?.name === name) : undefined
+    this.selected = f ? name : null
+    if (this.select) this.select.value = this.selected ?? ''
+    this.applySelection()
+    if (f) {
+      if (!this.on3D) this.enter3D()
+      const [w, s, e, n] = bboxOf(f.geometry)
+      map.fitBounds([[w, s], [e, n]], { padding: 40, pitch: 60, bearing: -20, maxZoom: 11, duration: 1400 })
+    } else {
+      if (this.on3D) this.leave3D()
+      if (fly) {
+        const [w, s, e, n] = this.pack.regionBounds
+        map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 0, bearing: 0, duration: 1000 })
+      }
+    }
+  }
+
+  /** Mask and outline for the selected district. */
+  private applySelection() {
+    const map = this.map
+    if (!map || !map.getLayer(DISTRICT_SELECTED)) return
+    const f = this.selected ? this.districts.find((d) => d.properties?.name === this.selected) : undefined
+    map.setFilter(DISTRICT_SELECTED, ['==', ['get', 'name'], this.selected ?? ''])
+    ;(map.getSource(MASK_DISTRICT) as maplibregl.GeoJSONSource | undefined)?.setData(f ? maskOutside(f.geometry) : EMPTY_FC)
+    // Mapped areas go translucent over the imagery in 3D.
+    for (const id of ['ctx-mines-fill', 'ctx-industry-fill']) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'fill-opacity', f ? 0.25 : id === 'ctx-mines-fill' ? 0.7 : 0.55)
+    }
+  }
+
+  private updateFireLabel() {
+    if (!this.fireLabel) return
+    const n = this.fireDates.length
+    this.fireLabel.textContent = this.fireDay
+      ? `${fmtDay(this.fireDay)} (UTC)`
+      : n ? `${fmtDay(this.fireDates[0])}–${fmtDay(this.fireDates[n - 1])}` : ''
+  }
+
+  private setFireDay(day: string | null) {
+    this.fireDay = day
+    this.updateFireLabel()
+    this.reapply()
+  }
+
+  private togglePlay() {
+    if (this.timer) return this.stopPlay()
+    if (!this.fireDates.length) return
+    if (this.playBtn) this.playBtn.textContent = '❚❚'
+    let i = this.fireDay ? this.fireDates.indexOf(this.fireDay) : -1
+    const step = () => {
+      i = (i + 1) % this.fireDates.length
+      this.setFireDay(this.fireDates[i])
+    }
+    step()
+    this.timer = setInterval(step, 1500)
+  }
+
+  private stopPlay() {
+    if (this.timer) clearInterval(this.timer)
+    this.timer = null
+    if (this.playBtn) this.playBtn.textContent = '▶'
+  }
+
+  /** Re-apply the fire-day filter and the district selection after our
+   *  layers are re-created (style reloads). */
+  private reapply = () => {
+    const map = this.map
+    if (!map) return
+    if (map.getLayer('ctx-fires')) {
+      const want: maplibregl.FilterSpecification | null = this.fireDay ? ['==', ['get', 'date'], this.fireDay] : null
+      if (JSON.stringify(map.getFilter('ctx-fires') ?? null) !== JSON.stringify(want)) map.setFilter('ctx-fires', want)
+    }
+    if (map.getLayer(DISTRICT_SELECTED)) {
+      const want = JSON.stringify(['==', ['get', 'name'], this.selected ?? ''])
+      if (JSON.stringify(map.getFilter(DISTRICT_SELECTED)) !== want) this.applySelection()
+    }
+  }
+
+  private onStyleLoad = () => {
+    // A basemap switch wipes imagery and relief; put 3D back if it was on.
+    if (this.on3D) this.apply3D()
+  }
+
+  private enter3D() {
+    const map = this.map
+    if (!map) return
+    this.on3D = true
+    this.prevTerrain = map.getTerrain()
+    this.prevSky = map.getSky()
+    this.apply3D()
+    if (this.note3D) this.note3D.style.display = ''
+  }
+
+  private apply3D() {
+    const map = this.map
+    if (!map || !map.isStyleLoaded()) return
+    const below = map.getLayer('ctx-districts-fill') ? 'ctx-districts-fill' : undefined
+    const key = maptilerKey()
+    if (key && !map.getSource(SAT_SOURCE)) {
+      map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`, tileSize: 512 })
+    }
+    if (key && !map.getLayer(SAT_LAYER)) {
+      map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE, paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.05 } }, below)
+    }
+    if (!map.getSource(HILLSHADE_SOURCE)) map.addSource(HILLSHADE_SOURCE, demSourceSpec())
+    if (!map.getLayer(HILLSHADE_LAYER)) {
+      map.addLayer(
+        {
+          id: HILLSHADE_LAYER,
+          type: 'hillshade',
+          source: HILLSHADE_SOURCE,
+          paint: {
+            'hillshade-exaggeration': key ? 0.35 : 0.6,
+            'hillshade-illumination-direction': 315,
+            'hillshade-shadow-color': '#2B2218',
+            'hillshade-highlight-color': '#FFFFFF',
+            'hillshade-accent-color': '#5C4B3A',
+          },
+        },
+        below,
+      )
+    }
+    const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
+    if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) map.addSource(DEM_SOURCE, demSourceSpec())
+    try {
+      map.setSky(SKY)
+    } catch {
+      // older styles without sky support
+    }
+    // setTerrain during an animation can crash MapLibre (maplibre-gl-js#6011,
+    // see MapView.tsx): wait for idle, then one more frame.
+    map.once('idle', () => requestAnimationFrame(() => {
+      if (this.on3D && this.map) this.map.setTerrain({ source, exaggeration: EXAGGERATION_3D })
+    }))
+  }
+
+  private leave3D() {
+    const map = this.map
+    if (!map) return
+    this.on3D = false
+    const prev = this.prevTerrain
+    const done = () => {
+      try {
+        map.setTerrain(prev && map.getSource(prev.source) ? prev : null)
+        if (this.prevSky) map.setSky(this.prevSky)
+        for (const id of [SAT_LAYER, HILLSHADE_LAYER]) if (map.getLayer(id)) map.removeLayer(id)
+        for (const id of [SAT_SOURCE, HILLSHADE_SOURCE]) if (map.getSource(id)) map.removeSource(id)
+        if (!map.getTerrain() && map.getSource(DEM_SOURCE)) map.removeSource(DEM_SOURCE)
+      } catch {
+        // map is being removed
+      }
+    }
+    if (map.isMoving()) map.once('idle', () => requestAnimationFrame(done))
+    else done()
+    if (this.note3D) this.note3D.style.display = 'none'
   }
 }
 
@@ -300,7 +638,7 @@ export default function CityContextLayers({
   map: maplibregl.Map | null
   cityCode: string | null
   visible: CityContextVisibility
-  /** Add the Jharkhand / city zoom buttons. */
+  /** Add the Jharkhand / city buttons, the district 3D picker and the heat-detection player. */
   showViewControl?: boolean
   cityLabel?: string
   cityCenter?: [number, number]
@@ -309,6 +647,7 @@ export default function CityContextLayers({
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const pack = cityCode ? CONTEXT_PACKS[cityCode] : undefined
+  const controlRef = useRef<ViewControl | null>(null)
 
   useEffect(() => {
     if (!map || !pack) return
@@ -327,6 +666,10 @@ export default function CityContextLayers({
       if (!hits.length) return
       // queryRenderedFeatures returns topmost first.
       const f = hits[0]
+      if (f.layer.id === 'ctx-districts-fill' && controlRef.current) {
+        controlRef.current.selectDistrict(String(f.properties?.name))
+        return
+      }
       popup.setLngLat(e.lngLat).setDOMContent(popupNode(f.properties ?? {}, f.layer.id)).addTo(map)
     }
     let hovering = false
@@ -345,6 +688,12 @@ export default function CityContextLayers({
         else map.once('idle', ensure)
       })
       .catch((err) => console.warn('[CityContextLayers]', err))
+    // Keep the view on Jharkhand (with a margin) while this pack is shown.
+    const prevMaxBounds = map.getMaxBounds()
+    {
+      const [w, so, e, n] = pack.regionBounds
+      map.setMaxBounds([[w - 2, so - 1.5], [e + 2, n + 1.5]])
+    }
     map.on('style.load', ensure)
     map.on('click', onClick)
     map.on('mousemove', onMove)
@@ -355,6 +704,7 @@ export default function CityContextLayers({
       map.off('mousemove', onMove)
       popup.remove()
       try {
+        map.setMaxBounds(prevMaxBounds)
         removeAll(map)
       } catch {
         // the map may already be removed on unmount
@@ -366,7 +716,12 @@ export default function CityContextLayers({
     if (!map || !pack || !showViewControl || !cityCenter) return
     const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom)
     map.addControl(ctrl, 'top-left')
+    controlRef.current = ctrl
+    loadPack(pack.base)
+      .then((d) => ctrl.setPackData(d))
+      .catch(() => {})
     return () => {
+      controlRef.current = null
       try {
         map.removeControl(ctrl)
       } catch {

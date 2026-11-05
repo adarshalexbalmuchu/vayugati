@@ -22,7 +22,6 @@ export type MapLayerKey =
   | 'ctxIndustry'
   | 'ctxRoads'
   | 'ctxFires'
-  | 'ctxReference'
 
 /** Context-layer toggles, shown only for a city with a context pack
  *  (CityContextLayers.tsx), mapped to that component's keys. */
@@ -32,7 +31,6 @@ export const CONTEXT_LAYER_KEYS = {
   ctxIndustry: 'industry',
   ctxRoads: 'roads',
   ctxFires: 'fires',
-  ctxReference: 'reference',
 } as const
 
 export const LAYER_ORDER: MapLayerKey[] = [
@@ -56,7 +54,6 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'ctxIndustry',
   'ctxRoads',
   'ctxFires',
-  'ctxReference',
 ]
 
 /** Groups define the UI structure. Order within each group matches LAYER_ORDER.
@@ -80,7 +77,7 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
   {
     label: CONTEXT_GROUP,
     subtitle: 'Geospatial features, not air-quality measurements',
-    keys: ['ctxDistricts', 'ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxReference'],
+    keys: ['ctxDistricts', 'ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires'],
   },
   {
     label: 'Operations',
@@ -181,7 +178,7 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
   ctxDistricts: {
     label: 'State and district outlines',
     available: false,
-    note: 'Jharkhand and its 24 districts. Outlines from geoBoundaries (approximate, not Survey of India). Click a district for its name.',
+    note: 'Jharkhand and its 24 districts. Outlines from geoBoundaries (approximate, not Survey of India). Click a district, or pick one, to see it in 3D.',
   },
   ctxMines: {
     label: 'Mining and quarry areas',
@@ -202,11 +199,6 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     label: 'Satellite heat detections',
     available: false,
     note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, 1–4 Nov 2026 (not updated yet). Each dot is a 375 m pixel that read unusually hot. It can be a surface coal fire, industrial heat or open burning. Not a measured fire area.',
-  },
-  ctxReference: {
-    label: 'West Bengal reference stations',
-    available: false,
-    note: 'Government continuous stations in Asansol and Durgapur, run by WBPCB, data via CPCB. Outside Dhanbad district.',
   },
 }
 
@@ -246,7 +238,6 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   ctxIndustry: true,
   ctxRoads: true,
   ctxFires: true,
-  ctxReference: true,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
