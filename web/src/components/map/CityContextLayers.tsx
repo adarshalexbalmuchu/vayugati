@@ -676,6 +676,8 @@ class ViewControl implements maplibregl.IControl {
   private prevSky: maplibregl.SkySpecification | undefined = undefined
   private panel3D: HTMLDivElement | null = null
   private profileBox: HTMLDivElement | null = null
+  private toolbar: HTMLDivElement | null = null
+  private tab: 'overview' | 'nature' | 'sources' = 'overview'
   private lcLegend: HTMLDivElement | null = null
   private lcMeta: LandcoverMeta | null = null
   private profiles: ProfilesDoc | null = null
@@ -750,10 +752,18 @@ class ViewControl implements maplibregl.IControl {
     this.fillSelect()
 
     // District profile
+    // The profile is its own docked panel (a bottom sheet on phones), not part of this card.
     const profile = document.createElement('div')
+    profile.className = 'absolute bottom-24 left-2 right-2 z-10 max-h-[52svh] overflow-y-auto rounded-2xl bg-white/95 p-3 text-xs text-slate-700 shadow-card ring-1 ring-slate-900/5 backdrop-blur-sm md:bottom-24 md:left-auto md:right-3 md:top-3 md:max-h-none md:w-[340px]'
     profile.style.display = 'none'
-    body.appendChild(profile)
+    map.getContainer().appendChild(profile)
     this.profileBox = profile
+    // Bottom toolbar: 3D controls and the heat-detection player.
+    const toolbar = document.createElement('div')
+    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-2xl bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-card ring-1 ring-slate-900/5 backdrop-blur-sm md:left-1/2 md:right-auto md:-translate-x-1/2'
+    toolbar.style.display = 'none'
+    map.getContainer().appendChild(toolbar)
+    this.toolbar = toolbar
     loadProfiles(this.pack.base).then((d) => {
       this.profiles = d
       this.renderProfile()
@@ -761,11 +771,12 @@ class ViewControl implements maplibregl.IControl {
 
     // 3D view controls (only with a district open)
     const panel = document.createElement('div')
-    panel.className = 'space-y-2 rounded-xl bg-slate-50 p-2.5'
+    panel.className = 'flex flex-wrap items-center gap-x-4 gap-y-1'
     panel.style.display = 'none'
+    panel.title = 'Contours every 10–100 m with heights. Click the ground for its elevation. Right-drag or Ctrl-drag to tilt and turn.'
     const ph = document.createElement('p')
     ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
-    ph.textContent = '3D view'
+    ph.textContent = '3D'
     const hRow = document.createElement('label')
     hRow.className = 'flex items-center gap-2'
     const hText = document.createElement('span')
@@ -777,7 +788,7 @@ class ViewControl implements maplibregl.IControl {
     slider.max = '6'
     slider.step = '0.5'
     slider.value = String(this.exaggeration)
-    slider.className = 'min-w-0 flex-1 accent-sky-600'
+    slider.className = 'w-28 accent-sky-600'
     slider.setAttribute('aria-label', 'Height exaggeration')
     slider.addEventListener('input', () => {
       this.exaggeration = Number(slider.value)
@@ -787,7 +798,7 @@ class ViewControl implements maplibregl.IControl {
     })
     hRow.append(hText, slider)
     const satRow = document.createElement('label')
-    satRow.className = 'flex cursor-pointer items-center justify-between gap-2'
+    satRow.className = 'flex cursor-pointer items-center gap-2'
     const satText = document.createElement('span')
     satText.className = 'font-medium text-slate-700'
     satText.textContent = 'Satellite imagery'
@@ -801,11 +812,8 @@ class ViewControl implements maplibregl.IControl {
       ensureRelief(map, !this.satellite, this.satellite)
     })
     satRow.append(satText, sat)
-    const tip = document.createElement('p')
-    tip.className = 'text-[10px] leading-snug text-slate-500'
-    tip.textContent = 'Contours every 10–100 m with heights. Click the ground for its elevation. Right-drag or Ctrl-drag to tilt and turn.'
-    panel.append(ph, hRow, satRow, tip)
-    body.appendChild(panel)
+    panel.append(ph, hRow, satRow)
+    toolbar.appendChild(panel)
     this.panel3D = panel
 
     // Land-cover key (while that layer is on)
@@ -820,7 +828,7 @@ class ViewControl implements maplibregl.IControl {
 
     // Heat detections over time
     const fireRow = document.createElement('div')
-    fireRow.className = 'flex items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2'
+    fireRow.className = 'flex items-center gap-2'
     fireRow.style.display = 'none'
     const ft = document.createElement('div')
     ft.className = 'min-w-0 flex-1'
@@ -836,7 +844,7 @@ class ViewControl implements maplibregl.IControl {
     const all = this.button('All', () => { this.stopPlay(); this.setFireDay(null) }, fireRow)
     fireRow.insertBefore(ft, this.playBtn)
     void all
-    body.appendChild(fireRow)
+    toolbar.appendChild(fireRow)
     this.fireRow = fireRow
 
     map.on('styledata', this.reapply)
@@ -856,7 +864,17 @@ class ViewControl implements maplibregl.IControl {
     map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
   }
 
+  /** Show the bottom toolbar only while it has something to show. */
+  private syncToolbar() {
+    const t = this.toolbar
+    if (!t) return
+    const any = [this.panel3D, this.fireRow].some((n) => n && n.style.display !== 'none')
+    t.style.display = any ? '' : 'none'
+  }
+
   onRemove() {
+    this.profileBox?.remove()
+    this.toolbar?.remove()
     this.stopPlay()
     this.map?.off('styledata', this.reapply)
     this.map?.off('style.load', this.onStyleLoad)
@@ -905,6 +923,7 @@ class ViewControl implements maplibregl.IControl {
     this.fillSelect()
     this.fireDates = [...new Set(data.fires.features.map((f) => String(f.properties?.date ?? '')))].filter(Boolean).sort()
     if (this.fireRow) this.fireRow.style.display = this.fireDates.length > 1 ? '' : 'none'
+    this.syncToolbar()
     this.updateFireLabel()
   }
 
@@ -984,6 +1003,20 @@ class ViewControl implements maplibregl.IControl {
     }
     const num = (v: number | null | undefined, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
 
+    // Tabs: Overview | Nature | Sources
+    const tabs = el('div', 'mb-3 flex gap-1 rounded-xl bg-slate-100 p-1')
+    const panes = { overview: el('div', ''), nature: el('div', 'space-y-3'), sources: el('div', '') }
+    ;(['overview', 'nature', 'sources'] as const).forEach((k) => {
+      const b = el('button', '', k === 'overview' ? 'Overview' : k === 'nature' ? 'Nature' : 'Sources') as HTMLButtonElement
+      b.type = 'button'
+      b.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`
+      b.addEventListener('click', () => { this.tab = k; this.renderProfile() })
+      tabs.appendChild(b)
+      panes[k].style.display = this.tab === k ? '' : 'none'
+    })
+    box.appendChild(tabs)
+    box.append(panes.overview, panes.nature, panes.sources)
+
     // Key figures
     const grid = el('div', 'grid grid-cols-2 gap-1.5')
     const tile = (k: string, v: string, sub?: string) => {
@@ -997,7 +1030,7 @@ class ViewControl implements maplibregl.IControl {
     tile('Population (2011)', num(p.population_2011))
     tile('Forest cover', p.forest_pct == null ? NA : `${p.forest_pct}%`, p.forest_km2 == null ? undefined : `${nf.format(Math.round(p.forest_km2))} km²`)
     tile('Highest point', num(p.elevation_max_m, ' m'), p.elevation_median_m == null ? undefined : `typical ${nf.format(p.elevation_median_m)} m`)
-    box.appendChild(grid)
+    panes.overview.appendChild(grid)
 
     // Stacked bar helper
     const bar = (parts: { label: string; pct: number; color: string }[]) => {
@@ -1038,7 +1071,7 @@ class ViewControl implements maplibregl.IControl {
         { label: 'Not forest', pct: Math.max(0, Math.round((100 - vd - md - op) * 10) / 10), color: '#E5E7EB' },
       ]))
     } else fsec.appendChild(el('p', 'text-slate-300', NA))
-    box.appendChild(fsec)
+    panes.nature.appendChild(fsec)
 
     // Land cover (satellite)
     const lsec = el('div', 'mt-3')
@@ -1047,7 +1080,32 @@ class ViewControl implements maplibregl.IControl {
     if (lc) {
       lsec.appendChild(bar(Object.entries(lc).map(([k, v]) => ({ label: k, pct: v, color: LC_COLORS[k] ?? '#999' }))))
     } else lsec.appendChild(el('p', 'text-slate-300', NA))
-    box.appendChild(lsec)
+    panes.nature.appendChild(lsec)
+
+    // Relief: typical and highest ground height against the state's range (about 0 to 1,400 m)
+    const rsec = el('div', '')
+    rsec.appendChild(label('Relief (Copernicus DEM)'))
+    if (p.elevation_median_m != null && p.elevation_max_m != null) {
+      const track = el('div', 'relative h-6')
+      track.appendChild(el('div', 'absolute left-0 right-0 top-2.5 h-1 rounded-full bg-gradient-to-r from-emerald-200 via-amber-200 to-stone-400'))
+      const mark = (m: number, text: string, color: string) => {
+        const d = el('div', 'absolute top-0 -translate-x-1/2')
+        d.style.left = `${Math.min(100, Math.max(0, (m / 1400) * 100))}%`
+        const dot = el('div', 'mt-1.5 h-3 w-3 rounded-full border-2 border-white shadow')
+        dot.style.background = color
+        dot.title = text
+        d.appendChild(dot)
+        track.appendChild(d)
+      }
+      mark(p.elevation_median_m, `Typical ${nf.format(p.elevation_median_m)} m`, '#0369A1')
+      mark(p.elevation_max_m, `Highest ${nf.format(p.elevation_max_m)} m`, '#B5542E')
+      rsec.appendChild(track)
+      const lg = el('div', 'flex justify-between text-[10px] text-slate-600')
+      lg.append(el('span', '', '0 m'), el('span', 'font-semibold text-sky-700', `typical ${nf.format(p.elevation_median_m)} m`),
+        el('span', 'font-semibold text-orange-800', `highest ${nf.format(p.elevation_max_m)} m`), el('span', '', '1,400 m'))
+      rsec.appendChild(lg)
+    } else rsec.appendChild(el('p', 'text-slate-300', NA))
+    panes.nature.appendChild(rsec)
 
     // In the district
     const rows = el('div', 'mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200')
@@ -1067,13 +1125,13 @@ class ViewControl implements maplibregl.IControl {
     row('Public air monitors', p.monitors_continuous_in_feed == null ? NA : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
       p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined)
     row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), p.mining_area_km2 == null ? 'No official district figure' : undefined)
-    box.appendChild(rows)
+    panes.overview.appendChild(rows)
 
     // Sources, folded away
     const src = doc?.sources ?? {}
-    const det = el('details', 'mt-3 rounded-xl border border-slate-200 px-2.5 py-1.5')
-    det.appendChild(el('summary', 'cursor-pointer text-[11px] font-medium text-slate-600', 'Sources and notes'))
-    const ul = el('ul', 'mt-1.5 space-y-1 text-[10px] leading-snug text-slate-500')
+    const det = el('div', '')
+    det.appendChild(label('Where each figure comes from'))
+    const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-slate-500')
     for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
       ['landcover', 'Land cover'], ['heat_detections', 'Heat detections'], ['power_plants', 'Plants and works'],
       ['monitors', 'Monitors'], ['outline', 'Outline']] as const) {
@@ -1085,7 +1143,7 @@ class ViewControl implements maplibregl.IControl {
     }
     ul.appendChild(el('li', '', 'NA: no verified government figure found.'))
     det.appendChild(ul)
-    box.appendChild(det)
+    panes.sources.appendChild(det)
   }
 
   /** Mask and outline for the selected district. */
@@ -1162,6 +1220,7 @@ class ViewControl implements maplibregl.IControl {
     this.prevSky = map.getSky()
     this.apply3D()
     if (this.panel3D) this.panel3D.style.display = ''
+    this.syncToolbar()
   }
 
   private apply3D() {
@@ -1205,6 +1264,7 @@ class ViewControl implements maplibregl.IControl {
     if (map.isMoving()) map.once('idle', () => requestAnimationFrame(done))
     else done()
     if (this.panel3D) this.panel3D.style.display = 'none'
+    this.syncToolbar()
   }
 }
 
