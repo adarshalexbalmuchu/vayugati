@@ -292,6 +292,8 @@ interface Props {
    *  fires, districts, reference stations; see CityContextLayers) to show.
    *  Omitted = none, so the small embeds stay as they are. */
   contextLayers?: CityContextVisibility
+  /** Change context layers from the map's own layer control (the page owns the state). */
+  onContextLayersChange?: (patch: Partial<CityContextVisibility>) => void
   /** Stable string key derived from the current selection in MapPage.  When
    *  it changes to a value that does not match the spiderfy stack's owner,
    *  the expansion is collapsed.  Defaults to 'none' (no selection). */
@@ -353,6 +355,7 @@ export default function MapView({
   onToolClick,
   toolGeoJSON,
   contextLayers,
+  onContextLayersChange,
 }: Props) {
   // Used when no `center` is passed (the bare embeds); read at map creation.
   const { map: cityMap, cityCode } = useCity()
@@ -1674,6 +1677,7 @@ export default function MapView({
           map={mapInstance}
           cityCode={cityCode}
           visible={contextLayers}
+          onVisibleChange={onContextLayersChange}
           showViewControl
         />
       )}

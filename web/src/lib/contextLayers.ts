@@ -39,21 +39,21 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Residential areas drawn in OpenStreetMap, over 0.05 km². Incomplete; ESA land cover shows built-up land everywhere.' },
   { key: 'facilities', label: 'Schools and hospitals', on: false,
     note: 'Schools, colleges, hospitals and clinics in OpenStreetMap (3 Nov 2026), from zoom 10. Many are missing.' },
-  { key: 'railways', label: 'Railways and stations', on: true,
+  { key: 'railways', label: 'Railways and stations', on: false,
     note: 'Railway lines, coal sidings and stations from OpenStreetMap (3 Nov 2026).' },
-  { key: 'roads', label: 'Main roads', on: true,
+  { key: 'roads', label: 'Main roads', on: false,
     note: 'Main roads from OpenStreetMap (trunk, primary and secondary; 3 Nov 2026).' },
   { key: 'power', label: 'Power lines and substations', on: false,
     note: 'Transmission lines and substations from OpenStreetMap (3 Nov 2026).' },
-  { key: 'mines', label: 'Mining and quarry areas', on: true,
+  { key: 'mines', label: 'Mining and quarry areas', on: false,
     note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (3 Nov 2026). Not official lease boundaries; many are missing (e.g. large parts of the North Karanpura coalfield).' },
-  { key: 'industry', label: 'Industry and power plants', on: true,
+  { key: 'industry', label: 'Industry and power plants', on: false,
     note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026).' },
-  { key: 'kilns', label: 'Brick kilns', on: true,
+  { key: 'kilns', label: 'Brick kilns', on: false,
     note: 'Brick kilns mapped in OpenStreetMap. Far from complete: most kilns are not mapped.' },
   { key: 'fires', label: 'Satellite heat detections', on: true,
     note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, last 5 days. Each dot is a 375 m pixel that read unusually hot: a surface coal fire, industrial heat or open burning. Not a measured fire area.' },
-  { key: 'landmarks', label: 'Peaks, waterfalls and dams', on: true,
+  { key: 'landmarks', label: 'Peaks, waterfalls and dams', on: false,
     note: 'Hill peaks (with height where mapped), waterfalls and dams from OpenStreetMap.' },
 ] as const satisfies readonly ContextLayerDef[]
 
@@ -71,4 +71,21 @@ export const ctxPanelKey = (k: CityContextLayerKey): ContextPanelKey => `ctx_${k
 export const CONTEXT_PANEL_KEYS: ContextPanelKey[] = CONTEXT_LAYER_DEFS.map((d) => ctxPanelKey(d.key))
 export function isContextPanelKey(k: string): k is ContextPanelKey {
   return k.startsWith('ctx_')
+}
+
+/** Themes for the on-map layer control, and a colour swatch per layer. */
+export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = [
+  { label: 'Boundaries', keys: ['districts', 'towngrid'] },
+  { label: 'Imagery and terrain', keys: ['satellite', 'relief', 'landcover', 'nightlights'] },
+  { label: 'Nature', keys: ['forest', 'protected', 'water', 'landmarks'] },
+  { label: 'People', keys: ['places', 'builtup', 'facilities'] },
+  { label: 'Transport and energy', keys: ['railways', 'roads', 'power'] },
+  { label: 'Industry and fires', keys: ['mines', 'industry', 'kilns', 'fires'] },
+]
+
+export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
+  districts: '#2E2219', towngrid: '#1F6F8B', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
+  nightlights: '#E9B949', forest: '#2F7D3A', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
+  places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
+  power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',
 }

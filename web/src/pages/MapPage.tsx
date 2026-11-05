@@ -97,7 +97,7 @@ import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
 import { useCity } from '../lib/city'
 import { hasContextPack } from '../components/map/CityContextLayers'
-import { CONTEXT_LAYER_DEFS, ctxPanelKey, type CityContextVisibility } from '../lib/contextLayers'
+import { CONTEXT_LAYER_DEFS, ctxPanelKey, type CityContextLayerKey, type CityContextVisibility } from '../lib/contextLayers'
 import { boundsToLngLatPair } from '../lib/cities'
 
 type Selection =
@@ -1356,6 +1356,12 @@ export default function MapPage() {
                 showVegetation3D={layers.vegetation3D && maptilerKey() != null}
                 showLandUse={layers.landUse && maptilerKey() != null}
                 contextLayers={contextLayers}
+                onContextLayersChange={(patch) =>
+                  setLayers((prev) => ({
+                    ...prev,
+                    ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [ctxPanelKey(k as CityContextLayerKey), v])),
+                  }))
+                }
                 selectionKey={selectionKey}
                 selectedIncidentCoords={selectedIncidentCoords}
                 activeToolKind={activeTool.kind}

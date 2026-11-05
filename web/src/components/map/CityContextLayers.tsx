@@ -24,7 +24,9 @@ import { elevationAt } from '../../lib/elevation'
  * after every setStyle() (which wipes custom layers).
  */
 
+import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE } from '../../lib/contextLayers'
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
+import { useState } from 'react'
 
 interface ContextPack {
   base: string
@@ -694,7 +696,83 @@ class ViewControl implements maplibregl.IControl {
     private pack: ContextPack,
     /** The layer toggles, so leaving 3D keeps satellite/relief the viewer switched on. */
     private wanted: () => CityContextVisibility,
+    /** Change layers from the control's own checkboxes. */
+    private onChange: (patch: Partial<CityContextVisibility>) => void,
   ) {}
+
+  private layerInputs: Partial<Record<CityContextLayerKey, HTMLInputElement>> = {}
+  private layerCount: HTMLSpanElement | null = null
+
+  /** Sync the checkboxes with the current visibility. */
+  setVisible(v: CityContextVisibility) {
+    for (const [k, input] of Object.entries(this.layerInputs)) input.checked = v[k as CityContextLayerKey]
+    if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
+  }
+
+  /** The layer control: themed groups of checkboxes, with all / none / defaults. */
+  private buildLayerControl(): HTMLElement {
+    const wrap = document.createElement('details')
+    wrap.open = true
+    wrap.className = 'rounded-xl border border-ink-900/10 bg-white'
+    const sum = document.createElement('summary')
+    sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
+    const st = document.createElement('span')
+    st.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    st.textContent = 'Map layers'
+    const count = document.createElement('span')
+    count.className = 'text-[11px] font-semibold tabular-nums text-ink-800'
+    this.layerCount = count
+    sum.append(st, count)
+    wrap.appendChild(sum)
+    const inner = document.createElement('div')
+    inner.className = 'space-y-2.5 border-t border-ink-900/10 px-2.5 py-2.5'
+    const quick = document.createElement('div')
+    quick.className = 'flex gap-1'
+    const qbtn = (label: string, patch: () => Partial<CityContextVisibility>) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.textContent = label
+      b.className = 'focus-ring flex-1 rounded-md border border-ink-900/15 px-2 py-1 text-[11px] font-medium text-ink-800 hover:bg-cream'
+      b.addEventListener('click', () => this.onChange(patch()))
+      quick.appendChild(b)
+    }
+    const all = (on: boolean) => Object.fromEntries(CONTEXT_LAYER_DEFS.map((d) => [d.key, on])) as CityContextVisibility
+    qbtn('Defaults', () => ({ ...DEFAULT_CONTEXT_VISIBLE }))
+    qbtn('All on', () => all(true))
+    qbtn('All off', () => all(false))
+    inner.appendChild(quick)
+    const defs = new Map(CONTEXT_LAYER_DEFS.map((d) => [d.key as CityContextLayerKey, d]))
+    for (const g of CONTEXT_GROUPS) {
+      const sec = document.createElement('div')
+      const gl = document.createElement('p')
+      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+      gl.textContent = g.label
+      sec.appendChild(gl)
+      for (const key of g.keys) {
+        const d = defs.get(key)!
+        const row = document.createElement('label')
+        row.className = 'flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-cream'
+        row.title = d.note
+        const input = document.createElement('input')
+        input.type = 'checkbox'
+        input.className = 'h-3.5 w-3.5 shrink-0 accent-ink-700'
+        input.addEventListener('change', () => this.onChange({ [key]: input.checked }))
+        this.layerInputs[key] = input
+        const sw = document.createElement('span')
+        sw.className = 'h-2.5 w-2.5 shrink-0 rounded-sm border border-ink-900/20'
+        sw.style.background = CONTEXT_SWATCH[key]
+        const tx = document.createElement('span')
+        tx.className = 'min-w-0 flex-1 text-xs text-ink-900'
+        tx.textContent = d.label
+        row.append(input, sw, tx)
+        sec.appendChild(row)
+      }
+      inner.appendChild(sec)
+    }
+    wrap.appendChild(inner)
+    this.setVisible(this.wanted())
+    return wrap
+  }
 
   private button(label: string, onClick: () => void, parent: HTMLElement) {
     const b = document.createElement('button')
@@ -750,6 +828,8 @@ class ViewControl implements maplibregl.IControl {
     body.appendChild(pick)
     this.select = select
     this.fillSelect()
+
+    body.appendChild(this.buildLayerControl())
 
     // District profile
     // The profile is its own docked panel (a bottom sheet on phones), not part of this card.
@@ -1301,15 +1381,28 @@ class ViewControl implements maplibregl.IControl {
 export default function CityContextLayers({
   map,
   cityCode,
-  visible,
+  visible: visibleProp,
+  onVisibleChange,
   showViewControl = false,
 }: {
   map: maplibregl.Map | null
   cityCode: string | null
+  /** Which layers are on. Controlled by the page when `onVisibleChange` is given
+   *  (the Map page's Layers menu); otherwise this is only the starting state and
+   *  the on-map layer control keeps its own. */
   visible: CityContextVisibility
+  onVisibleChange?: (patch: Partial<CityContextVisibility>) => void
   /** Add the Jharkhand / city buttons, the district 3D picker and the heat-detection player. */
   showViewControl?: boolean
 }) {
+  const [local, setLocal] = useState<CityContextVisibility>(visibleProp)
+  const visible = onVisibleChange ? visibleProp : local
+  const change = (patch: Partial<CityContextVisibility>) => {
+    if (onVisibleChange) onVisibleChange(patch)
+    else setLocal((v) => ({ ...v, ...patch }))
+  }
+  const changeRef = useRef(change)
+  changeRef.current = change
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const pack = cityCode ? CONTEXT_PACKS[cityCode] : undefined
@@ -1416,7 +1509,7 @@ export default function CityContextLayers({
 
   useEffect(() => {
     if (!alive(map) || !pack || !showViewControl) return
-    const ctrl = new ViewControl(pack, () => visibleRef.current)
+    const ctrl = new ViewControl(pack, () => visibleRef.current, (patch) => changeRef.current(patch))
     map.addControl(ctrl, 'top-left')
     // Compass and tilt indicator: drag to tilt/turn, click to reset north.
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
@@ -1447,6 +1540,7 @@ export default function CityContextLayers({
     }
     if (map.getSource(SRC.sources)) applyOnDemand(map, visible, controlRef.current?.is3D === true)
     controlRef.current?.refreshLegend()
+    controlRef.current?.setVisible(visible)
   }, [map, pack, visible])
 
   return null
