@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jharkhand map layers</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, sans-serif; background: #f6efe4; }
+  #map { position: absolute; inset: 0; }
+  #legend { position: absolute; top: 12px; left: 12px; background: #fff; padding: 10px 12px; border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2); max-width: 300px; }
+  #legend h1 { font-size: 15px; margin: 0 0 6px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .note { color: #555; margin-top: 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="legend"></div>
+<script>
+const view = location.hash.replace('#', '') || 'state'
+const L = document.getElementById('legend')
+const legend = {
+  state: `<h1>Jharkhand: official monitoring</h1>
+    <div class="row"><span class="sw" style="background:#1f6fbf"></span>District with continuous stations in the daily feed</div>
+    <div class="row"><span class="sw" style="background:#8ec1ea"></span>District with manual stations only</div>
+    <div class="row"><span class="sw" style="background:#f3d9a4"></span>District with planned stations (Dec 2025 tender)</div>
+    <div class="row"><span class="sw" style="background:#efe7da"></span>No station</div>
+    <div class="row"><span class="dot" style="background:#e4572e"></span>Fire hotspot, last 5 days (NASA FIRMS)</div>
+    <div class="row"><span class="dot" style="background:#111;border:2px solid #fff"></span>Continuous station (CPCB feed)</div>
+    <div class="note">Boundaries: geoBoundaries (ODbL). Stations: CPCB data.gov.in, 5 Nov 2026; CPCB NAMP list, Nov 2024; JSPCB tender, Dec 2025.</div>`,
+  dhanbad: `<h1>Dhanbad district: working map</h1>
+    <div class="row"><span class="sw" style="background:transparent;border:1px solid #6b4a2a"></span>3 km grid cell (265)</div>
+    <div class="row"><span class="sw" style="background:#3d3d3d"></span>Mine or quarry (OSM)</div>
+    <div class="row"><span class="sw" style="background:#9b6bd1"></span>Industrial land (OSM)</div>
+    <div class="row"><span class="dot" style="background:#ffbf00;border:2px solid #333"></span>Power plant or large works</div>
+    <div class="row"><span class="sw" style="background:#c0392b;height:3px"></span>Major road</div>
+    <div class="row"><span class="dot" style="background:#e4572e"></span>Fire hotspot, last 5 days</div>
+    <div class="row"><span class="dot" style="background:#111;border:2px solid #fff"></span>Station in Jharkhand</div>
+    <div class="row"><span class="dot" style="background:#2b88d8;border:2px solid #fff"></span>Reference candidate (Asansol, Durgapur)</div>
+    <div class="note">OSM features from the Geofabrik eastern-zone extract, Nov 2026.</div>`,
+}[view]
+L.innerHTML = legend
+const map = new maplibregl.Map({
+  container: 'map',
+  style: { version: 8, glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: { base: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+    layers: [{ id: 'base', type: 'raster', source: 'base' }] },
+  bounds: view === 'state' ? [[83.3, 21.95], [87.95, 25.35]] : [[86.08, 23.55], [87.2, 24.12]],
+  fitBoundsOptions: { padding: { top: 20, bottom: 20, left: view === 'state' ? 320 : 300, right: 20 } },
+})
+const add = (id, url) => map.addSource(id, { type: 'geojson', data: url })
+map.on('load', () => {
+  add('districts', 'districts.geojson'); add('state', 'state.geojson'); add('fires', 'fires_firms_5d.geojson')
+  add('stations', 'stations.geojson'); add('grid', 'dhanbad_grid_3km.geojson'); add('blocks', 'dhanbad_blocks.geojson')
+  add('sources', 'sources_osm.geojson'); add('roads', 'roads_major.geojson')
+  if (view === 'state') {
+    map.addLayer({ id: 'd-fill', type: 'fill', source: 'districts', paint: { 'fill-opacity': 0.75, 'fill-color': ['case',
+      ['>', ['get', 'continuous_in_feed'], 0], '#1f6fbf', ['>', ['get', 'manual_namp'], 0], '#8ec1ea', ['>', ['get', 'planned_caaqms'], 0], '#f3d9a4', '#efe7da'] } })
+    map.addLayer({ id: 'd-line', type: 'line', source: 'districts', paint: { 'line-color': '#fff', 'line-width': 1 } })
+    map.addLayer({ id: 's-line', type: 'line', source: 'state', paint: { 'line-color': '#422b1c', 'line-width': 2 } })
+    map.addLayer({ id: 'd-label', type: 'symbol', source: 'districts', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } })
+  } else {
+    map.addLayer({ id: 'grid', type: 'line', source: 'grid', paint: { 'line-color': '#6b4a2a', 'line-width': 0.5, 'line-opacity': 0.6 } })
+    map.addLayer({ id: 'blocks', type: 'line', source: 'blocks', paint: { 'line-color': '#422b1c', 'line-width': 1.6 } })
+    map.addLayer({ id: 'roads', type: 'line', source: 'roads', paint: { 'line-color': '#c0392b', 'line-width': ['match', ['get', 'highway'], 'trunk', 2, 'primary', 1.5, 1], 'line-opacity': 0.8 } })
+    map.addLayer({ id: 'mines', type: 'fill', source: 'sources', filter: ['==', ['get', 'kind'], 'mine'], paint: { 'fill-color': '#3d3d3d', 'fill-opacity': 0.8 } })
+    map.addLayer({ id: 'industry', type: 'fill', source: 'sources', filter: ['==', ['get', 'kind'], 'industrial'], paint: { 'fill-color': '#9b6bd1', 'fill-opacity': 0.7 } })
+    map.addLayer({ id: 'plants', type: 'circle', source: 'sources', filter: ['in', ['get', 'kind'], ['literal', ['power_plant', 'works']]], paint: { 'circle-radius': 6, 'circle-color': '#ffbf00', 'circle-stroke-color': '#333', 'circle-stroke-width': 1.5 } })
+    map.addLayer({ id: 'b-label', type: 'symbol', source: 'blocks', layout: { 'text-field': ['get', 'name'], 'text-size': 10, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#422b1c', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } })
+  }
+  map.addLayer({ id: 'fires', type: 'circle', source: 'fires', paint: { 'circle-radius': 3, 'circle-color': '#e4572e', 'circle-opacity': 0.85 } })
+  map.addLayer({ id: 'stations', type: 'circle', source: 'stations', paint: { 'circle-radius': 6,
+    'circle-color': ['match', ['get', 'role'], 'jharkhand', '#111', '#2b88d8'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } })
+})
+</script>
+</body>
+</html>
