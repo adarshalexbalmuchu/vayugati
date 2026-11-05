@@ -1073,6 +1073,10 @@ class ViewControl implements maplibregl.IControl {
     return this.on3D
   }
 
+  get selectedName(): string | null {
+    return this.selected
+  }
+
   /** Called once the pack is loaded. */
   setPackData(data: PackData) {
     this.districts = [...data.districts.features].sort((a, b) =>
@@ -1650,7 +1654,7 @@ export default function CityContextLayers({
       slot={chatSlot}
       open={chatOpen}
       onOpenChange={setChatOpen}
-      layers={CONTEXT_LAYER_DEFS.map((d) => ({ key: d.key, label: d.label }))}
+      layers={CONTEXT_LAYER_DEFS.map((d) => ({ key: d.key, label: d.label, note: d.note }))}
       profiles={factsDoc}
       handlers={{
         setLayers: (patch) => changeRef.current(patch as Partial<CityContextVisibility>),
@@ -1659,6 +1663,13 @@ export default function CityContextLayers({
           controlRef.current?.selectDistrict(null, false)
           map.flyTo({ center: [lng, lat], zoom, pitch: 0, bearing: 0, duration: 1400 })
         },
+        getState: () => ({
+          layers_on: Object.entries(visibleRef.current).filter(([, on]) => on).map(([k]) => k),
+          district: controlRef.current?.selectedName ?? null,
+          zoom: map.getZoom(),
+          view3d: controlRef.current?.is3D === true,
+        }),
+        zoom: (direction) => (direction === 'in' ? map.zoomIn({ duration: 600 }) : map.zoomOut({ duration: 600 })),
         getFile: async (file) => (await loadPack(pack.base).catch(() => null))?.[file] ?? null,
       }}
     />

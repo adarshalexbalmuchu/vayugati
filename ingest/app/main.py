@@ -820,6 +820,7 @@ class JhAssistantRequest(BaseModel):
     question: str = Field(max_length=400)
     history: list[jh_assistant_mod.Turn] = Field(default_factory=list, max_length=12)
     layers: list[jh_assistant_mod.LayerRef] = Field(default_factory=list, max_length=40)
+    state: jh_assistant_mod.MapState | None = None
 
 
 @app.post("/jharkhand/ask")
@@ -829,4 +830,4 @@ def jharkhand_ask(req: JhAssistantRequest, request: Request):
     every action is re-validated here before it is returned. Shares the GeoAI rate-limit budget."""
     ip = request.client.host if request.client else "unknown"
     _check_geoai_rate_limit(ip)
-    return jh_assistant_mod.ask(req.question, req.history, req.layers).model_dump()
+    return jh_assistant_mod.ask(req.question, req.history, req.layers, req.state).model_dump()

@@ -125,3 +125,18 @@ def test_near_rejects_unknown_feature_type():
 def test_rank_can_open_the_winner():
     r = ja.validate(resp("Ranking.", ja.RankAction(type="rank", field="n_schools", order="desc", limit=3, open_top=True)), LAYERS)
     assert r.actions[0].open_top is True
+
+
+def test_zoom_and_overview_pass_through_and_have_digit_free_fallbacks():
+    r = ja.validate(resp("Zooming in 2 steps.", ja.ZoomAction(type="zoom", direction="in")), LAYERS)
+    assert r.reply == "Zooming in." and r.actions[0].type == "zoom"
+    r = ja.validate(resp("Overview of 24 districts.", ja.OverviewAction(type="overview")), LAYERS)
+    assert r.reply == "Here is an overview of Jharkhand from the checked data."
+
+
+def test_state_block_names_layers_district_and_view():
+    layers = [ja.LayerRef(key="mines", label="Mining areas"), ja.LayerRef(key="water", label="Rivers")]
+    block = ja._state_block(ja.MapState(layers_on=["mines"], district="Ranchi", zoom=9.0, view3d=True), layers)
+    assert "Mining areas" in block and "Ranchi" in block and "a district" in block and "3D" in block
+    assert ja._state_block(None, layers) == ""
+    assert "whole state" in ja._state_block(ja.MapState(zoom=6.0), layers)

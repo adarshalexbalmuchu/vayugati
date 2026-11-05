@@ -120,3 +120,30 @@ export function fieldSource(field: FactField): string {
   return FIELD_DEFS[field].source
 }
 
+
+export interface OverviewRow { label: string; value: string; source: string }
+
+/** The whole state, summed or extremised from the checked district profiles. */
+export function stateOverview(doc: ProfilesDoc): OverviewRow[] {
+  const ds = Object.entries(doc.districts)
+  const sum = (get: (p: DistrictProfile) => number | null | undefined) =>
+    ds.reduce((t, [, p]) => t + (get(p) ?? 0), 0)
+  const fmt = (n: number, d = 0) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: d }).format(n)
+  const isfrArea = sum((p) => (p as DistrictProfile & { area_isfr_km2?: number }).area_isfr_km2 ?? p.area_km2)
+  const forest = sum((p) => p.forest_km2)
+  const top = ds.reduce((best, [n, p]) => ((p.elevation_max_m ?? -1) > (best[1].elevation_max_m ?? -1) ? [n, p] : best), ds[0])
+  const most = (get: (p: DistrictProfile) => number | null | undefined) =>
+    ds.reduce((best, [n, p]) => ((get(p) ?? -1) > (get(best[1]) ?? -1) ? [n, p] : best), ds[0])[0]
+  const rows: OverviewRow[] = [
+    { label: 'Districts', value: String(ds.length), source: 'Census of India 2011' },
+    { label: 'Population (2011)', value: fmt(sum((p) => p.population_2011)), source: FIELD_DEFS.population.source },
+    { label: 'Area', value: `${fmt(isfrArea)} km²`, source: 'Survey of India, in ISFR 2023' },
+    { label: 'Forest cover', value: `${fmt(forest)} km² (${fmt((forest / isfrArea) * 100, 1)}% of the state)`, source: ISFR },
+    { label: 'Highest point', value: `${fmt(top[1].elevation_max_m ?? 0)} m, in ${top[0]}`, source: DEM },
+    { label: 'Most populous district', value: most((p) => p.population_2011), source: FIELD_DEFS.population.source },
+    { label: 'Most forest', value: most((p) => p.forest_km2), source: ISFR },
+    { label: 'Satellite heat detections', value: `${fmt(sum((p) => p.heat_detections))}, most in ${most((p) => p.heat_detections)}`, source: FIELD_DEFS.heat_detections.source },
+    { label: 'Continuous air monitors in the CPCB feed', value: fmt(sum((p) => p.monitors_continuous_in_feed)), source: FIELD_DEFS.monitors_continuous.source },
+  ]
+  return rows
+}

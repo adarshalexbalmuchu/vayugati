@@ -97,12 +97,22 @@ class FactsAction(BaseModel):
     fields: list[FieldName] = Field(min_length=1, max_length=8)
 
 
+class ZoomAction(BaseModel):
+    type: Literal["zoom"]
+    direction: Literal["in", "out"]
+
+
+class OverviewAction(BaseModel):
+    """A summary of the whole state from the checked district data (the app computes every figure)."""
+    type: Literal["overview"]
+
+
 class UnsupportedAction(BaseModel):
     type: Literal["unsupported"]
     reason: str
 
 
-Action = SetLayersAction | GoToAction | RankAction | NearAction | FactsAction | UnsupportedAction
+Action = SetLayersAction | GoToAction | RankAction | NearAction | FactsAction | ZoomAction | OverviewAction | UnsupportedAction
 
 
 class AssistantResponse(BaseModel):
@@ -113,6 +123,15 @@ class AssistantResponse(BaseModel):
 class LayerRef(BaseModel):
     key: str = Field(max_length=40)
     label: str = Field(max_length=120)
+    note: str = Field(default="", max_length=500)  # what the layer shows and where it comes from
+
+
+class MapState(BaseModel):
+    """What the viewer is looking at right now (sent by the browser with each message)."""
+    layers_on: list[str] = Field(default_factory=list, max_length=40)
+    district: str | None = Field(default=None, max_length=60)
+    zoom: float | None = None
+    view3d: bool = False
 
 
 class Turn(BaseModel):
@@ -208,6 +227,10 @@ def _default_reply(actions: list) -> str:
             return "Ranking the districts on the checked data."
         if isinstance(a, FactsAction):
             return f"Showing facts for {a.district} from the checked data."
+        if isinstance(a, OverviewAction):
+            return "Here is an overview of Jharkhand from the checked data."
+        if isinstance(a, ZoomAction):
+            return f"Zooming {a.direction}."
         if isinstance(a, GoToAction) and a.name:
             return f"Showing {a.name}."
     return _NEUTRAL_REPLY
@@ -250,7 +273,7 @@ def validate(parsed: AssistantResponse, layer_keys: set[str]) -> AssistantRespon
             else:
                 r = min(max(a.radius_km, MIN_NEAR_KM), MAX_NEAR_KM)
                 out.append(NearAction(type="near", place=a.place, radius_km=r, what=a.what, place_name=p["name"], lng=p["lng"], lat=p["lat"]))
-        elif isinstance(a, RankAction):
+        elif isinstance(a, (RankAction, ZoomAction, OverviewAction)):
             out.append(a)
         else:
             out.append(a)
@@ -282,6 +305,8 @@ counts of features volunteers have mapped in OpenStreetMap (incomplete); they ar
 see the winner ("which district has the most forest, show it").
 - near: count and list mapped features within a radius of a named place. what is one of: {", ".join(NEAR_WHAT)}. \
 Radius 1 to 50 km (default 10).
+- zoom: zoom the map in or out one step (direction in/out).
+- overview: a summary of the whole state from the checked data (the app computes the figures).
 - unsupported: when the request can't be done, with a short honest reason.
 
 Rules, all of them important:
@@ -302,7 +327,16 @@ Ranchi" is go_to(district) plus facts(area, population, forest_pct, highest_poin
 6. "Mines" and "industrial" are mapped areas, "plants" are the checked power plants and large works. Questions \
 like "how many schools are within 10 km of Ranchi" are near actions; "which district has the most schools" is a \
 rank on n_schools. Never present mapped counts as complete.
-7. Layer guidance: coal and quarries are "mines"; likely pollution sources are mines, industry, kilns, power, \
+7. You are told what is on the screen right now (layers on, open district, zoom). Use it. "I can't see it" or \
+"where is it" usually means the layer is off, or it is too small at this zoom: switch it on and, for small things \
+(peaks, kilns, schools, villages, substations, heat detections), also use zoom in; mention in the reply what the \
+layer looks like (small dots, areas, lines). "Do it again", "that", "this" and "here" refer to the previous turn or \
+the open district. "Tell me about this" with a district open is facts for that district; with none open it is an \
+overview of the state. "Give me some info", "what is this map", "what can you do" is an overview action plus a \
+short plain description of what the map holds and how to use it.
+8. Explain layers from the layer notes you are given (what it shows, source, caveats) in plain words, without \
+digits. The notes are the only truth about a layer: do not add facts beyond them.
+9. Layer guidance: coal and quarries are "mines"; likely pollution sources are mines, industry, kilns, power, \
 railways, roads and fires; greenery is forest, protected, landcover; people are places, builtup, facilities.
 """
 
@@ -311,15 +345,25 @@ def _client() -> anthropic.Anthropic | None:
     return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY) if config.ANTHROPIC_API_KEY else None
 
 
-def ask(question: str, history: list[Turn], layers: list[LayerRef]) -> AssistantResponse:
+def _state_block(state: MapState | None, layers: list[LayerRef]) -> str:
+    if state is None:
+        return ""
+    labels = {l.key: l.label for l in layers}
+    on = ", ".join(labels.get(k, k) for k in state.layers_on) or "none"
+    zoom = "unknown" if state.zoom is None else ("the whole state" if state.zoom < 8 else "a district" if state.zoom < 10.5 else "close up")
+    return (f"\nOn screen now: layers on: {on}. Open district: {state.district or 'none (state view)'}. "
+            f"View: {zoom}{', tilted 3D' if state.view3d else ''}.\n")
+
+
+def ask(question: str, history: list[Turn], layers: list[LayerRef], state: MapState | None = None) -> AssistantResponse:
     client = _client()
     if client is None:
         log.warning("No ANTHROPIC_API_KEY set - assistant unavailable")
         return _unsupported("The assistant is not configured on this deployment.")
     layer_keys = {l.key for l in layers}
-    layer_lines = "\n".join(f"- {l.key}: {l.label}" for l in layers)
+    layer_lines = "\n".join(f"- {l.key}: {l.label}" + (f" ({l.note})" if l.note else "") for l in layers)
     messages = [{"role": t.role, "content": t.text} for t in history[-MAX_HISTORY:]]
-    messages.append({"role": "user", "content": f"Layers (key: label):\n{layer_lines}\n\nMessage: {question}"})
+    messages.append({"role": "user", "content": f"Layers (key: label (note)):\n{layer_lines}\n{_state_block(state, layers)}\nMessage: {question}"})
     # the API needs the first message to be from the user
     while messages and messages[0]["role"] != "user":
         messages.pop(0)

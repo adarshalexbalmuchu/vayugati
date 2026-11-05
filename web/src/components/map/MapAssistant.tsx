@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUp, MessageCircle, X } from 'lucide-react'
-import { askAssistant, type AssistantAction, type AssistantTurn } from '../../lib/jhAssistant'
+import { askAssistant, type AssistantAction, type AssistantTurn, type MapStateForAssistant } from '../../lib/jhAssistant'
 import type { FeatureCollection } from 'geojson'
-import { factsFor, fieldSource, FIELD_DEFS, rankDistricts, type FactRow, type FactField, type ProfilesDoc, type RankRow } from '../../lib/jhFacts'
+import { factsFor, fieldSource, FIELD_DEFS, rankDistricts, stateOverview, type FactRow, type FactField, type OverviewRow, type ProfilesDoc, type RankRow } from '../../lib/jhFacts'
 import { near, NEAR_SPECS, type NearHit, type NearWhat, type NearSpec } from '../../lib/jhNear'
 
 /** What the assistant's actions do on the map; supplied by CityContextLayers. */
@@ -13,6 +13,9 @@ export interface AssistantHandlers {
   goPlace: (lng: number, lat: number, name: string, zoom?: number) => void
   /** A data file of the map's pack ('sources', 'facilities', 'places' ...). */
   getFile: (file: NearSpec['file']) => Promise<FeatureCollection | null>
+  /** What is on screen now, sent with every message so "I can't see it" and "this" make sense. */
+  getState: () => MapStateForAssistant
+  zoom: (direction: 'in' | 'out') => void
 }
 
 /** The map layer that shows what a "near" question counts. */
@@ -26,6 +29,7 @@ type Card =
   | { kind: 'facts'; district: string; rows: FactRow[] }
   | { kind: 'rank'; field: FactField; order: 'desc' | 'asc'; rows: RankRow[] }
   | { kind: 'near'; place: string; radiusKm: number; count: number; nearest: NearHit[]; spec: NearSpec }
+  | { kind: 'overview'; rows: OverviewRow[] }
   | { kind: 'note'; text: string }
   | { kind: 'done'; text: string }
 
@@ -62,7 +66,7 @@ export default function MapAssistant({
   slot: HTMLElement | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  layers: { key: string; label: string }[]
+  layers: { key: string; label: string; note?: string }[]
   profiles: ProfilesDoc | null
   handlers: AssistantHandlers
 }) {
@@ -105,6 +109,11 @@ export default function MapAssistant({
         handlers.setLayers({ [NEAR_LAYER[a.what]]: true })
         handlers.goPlace(a.lng, a.lat, a.place_name, Math.min(14, Math.max(8.5, 14.9 - Math.log2(a.radius_km))))
         cards.push({ kind: 'near', place: a.place_name, radiusKm: a.radius_km, count: r.count, nearest: r.nearest, spec })
+      } else if (a.type === 'zoom') {
+        handlers.zoom(a.direction)
+        cards.push({ kind: 'done', text: `Zoomed ${a.direction}` })
+      } else if (a.type === 'overview') {
+        cards.push(profiles ? { kind: 'overview', rows: stateOverview(profiles) } : { kind: 'note', text: 'The district data has not loaded yet. Please try again.' })
       } else if (a.type === 'unsupported') {
         cards.push({ kind: 'note', text: a.reason })
       }
@@ -119,7 +128,7 @@ export default function MapAssistant({
     const history: AssistantTurn[] = msgs.map((m) => ({ role: m.role, text: m.text }))
     setMsgs((m) => [...m, { role: 'user', text: question }])
     setBusy(true)
-    const r = await askAssistant(question, history, layers)
+    const r = await askAssistant(question, history, layers, handlers.getState())
     setBusy(false)
     if (!r.ok) { setMsgs((m) => [...m, { role: 'assistant', text: r.reason }]); return }
     const cards = await execute(r.data.actions)
@@ -211,6 +220,24 @@ function ResultCard({ card }: { card: Card }) {
   }
   if (card.kind === 'note') {
     return <p className="rounded-lg border border-ink-900/10 bg-white px-2.5 py-2 text-ink-700">{card.text}</p>
+  }
+  if (card.kind === 'overview') {
+    return (
+      <div className="rounded-xl border border-ink-900/10 bg-white">
+        <p className="border-b border-ink-900/10 px-2.5 py-1.5 font-display text-lg leading-none text-ink-900">Jharkhand at a glance</p>
+        <dl className="divide-y divide-ink-900/10">
+          {card.rows.map((r) => (
+            <div key={r.label} className="px-2.5 py-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-ink-600">{r.label}</dt>
+                <dd className="text-right font-semibold tabular-nums text-ink-900">{r.value}</dd>
+              </div>
+              <p className="text-[10px] leading-snug text-ink-500">{r.source}</p>
+            </div>
+          ))}
+        </dl>
+      </div>
+    )
   }
   if (card.kind === 'near') {
     return (

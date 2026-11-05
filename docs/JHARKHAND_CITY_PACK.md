@@ -139,4 +139,9 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
   villages, heat detections, peaks, rail stations, substations. `rank` with `open_top` also flies to the winner.
   The `n_*` fields are counts of OpenStreetMap-mapped features per district (`osm_counts` in the profiles): what is
   mapped, not complete totals (e.g. Simdega shows 1 school).
+- **Screen context.** Every message carries what is on screen (layers on, open district, zoom, 3D) and each layer's
+  note, so "I can't see it", "do it again", "tell me about this" make sense; plus `zoom` and `overview` actions
+  (the state overview is summed from the profiles and equals the official totals: 3,29,88,134 people, 79,716 km2,
+  23,766 km2 of forest). Cost control: the default model is Haiku 5.5 (the cheapest); Sonnet 5.5 was tried and
+  rejected on cost. Switch with `JH_ASSISTANT_MODEL`.
 - Limits: it cannot chain on an arbitrary result beyond `open_top`; it holds no air-quality readings.

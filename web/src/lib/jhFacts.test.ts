@@ -44,3 +44,14 @@ describe('Jharkhand assistant facts (read from the checked profiles)', () => {
     expect(rankDistricts(doc, 'monitors_continuous', 'desc', 10)[0].district).toBe('Dhanbad')
   })
 })
+
+describe('state overview', () => {
+  it('sums to the official state totals', async () => {
+    const { stateOverview } = await import('./jhFacts')
+    const rows = Object.fromEntries(stateOverview(doc).map((r) => [r.label, r.value]))
+    expect(rows['Districts']).toBe('24')
+    expect(rows['Population (2011)']).toBe('3,29,88,134') // Census 2011 state total
+    expect(rows['Area']).toBe('79,716 km²') // ISFR 2023 state total
+    expect(rows['Forest cover']).toMatch(/^23,766 km² \(29\.8%/) // ISFR 2023: 23,765.78 km2, 29.81%
+  })
+})
