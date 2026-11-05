@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection, Geometry, Polygon, Position } from 'geojson'
 import { maptilerKey } from '../../lib/basemaps'
+import { elevationAt } from '../../lib/elevation'
 
 /**
  * Static context layers for a city pack. For Dhanbad–Jharia the pack covers
@@ -289,10 +290,13 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   return el
 }
 
-/** Height exaggeration in the district 3D view. Jharkhand's relief (about
- *  100 to 1,350 m) reads as flat at true scale over a whole district; the
- *  control states this factor whenever 3D is on. */
-const EXAGGERATION_3D = 2
+/** Default height exaggeration in the district 3D view. Jharkhand's relief
+ *  (about 100 to 1,350 m) reads as flat at true scale over a whole district;
+ *  the control shows the factor and lets the viewer change it (1x to 6x). */
+const EXAGGERATION_3D = 3
+const CONTOUR_SOURCE = 'ctx-contours'
+const CONTOUR_LINE = 'ctx-contours-line'
+const CONTOUR_LABEL = 'ctx-contours-label'
 /** MapView's own terrain source on /map (MapTiler); reused when present. */
 const MAPVIEW_DEM_SOURCE = 'maptiler-terrain-dem'
 const DEM_SOURCE = 'ctx-dem'
@@ -346,7 +350,9 @@ class ViewControl implements maplibregl.IControl {
   private on3D = false
   private prevTerrain: maplibregl.TerrainSpecification | null = null
   private prevSky: maplibregl.SkySpecification | undefined = undefined
-  private note3D: HTMLParagraphElement | null = null
+  private panel3D: HTMLDivElement | null = null
+  private exaggeration = EXAGGERATION_3D
+  private satellite = true
   private fireDates: string[] = []
   private fireDay: string | null = null // null = all days
   private fireRow: HTMLDivElement | null = null
@@ -397,12 +403,52 @@ class ViewControl implements maplibregl.IControl {
     this.select = select
     this.fillSelect()
 
+    const panel = document.createElement('div')
+    panel.className = 'mt-1.5 space-y-1 border-t border-slate-200 pt-1.5'
+    panel.style.display = 'none'
+    const hRow = document.createElement('label')
+    hRow.className = 'flex items-center gap-1.5'
+    const hText = document.createElement('span')
+    hText.className = 'w-[78px] shrink-0 font-semibold'
+    hText.textContent = `Heights ×${this.exaggeration}`
+    const slider = document.createElement('input')
+    slider.type = 'range'
+    slider.min = '1'
+    slider.max = '6'
+    slider.step = '0.5'
+    slider.value = String(this.exaggeration)
+    slider.className = 'min-w-0 flex-1 accent-sky-600'
+    slider.setAttribute('aria-label', 'Height exaggeration')
+    slider.addEventListener('input', () => {
+      this.exaggeration = Number(slider.value)
+      hText.textContent = `Heights ×${this.exaggeration}`
+      const t = map.getTerrain()
+      if (this.on3D && t) map.setTerrain({ ...t, exaggeration: this.exaggeration })
+    })
+    hRow.append(hText, slider)
+    panel.appendChild(hRow)
+    const satRow = document.createElement('label')
+    satRow.className = 'flex items-center gap-1.5'
+    const sat = document.createElement('input')
+    sat.type = 'checkbox'
+    sat.checked = this.satellite
+    sat.className = 'accent-sky-600'
+    sat.addEventListener('change', () => {
+      this.satellite = sat.checked
+      if (map.getLayer(SAT_LAYER)) map.setLayoutProperty(SAT_LAYER, 'visibility', this.satellite ? 'visible' : 'none')
+      if (map.getLayer(HILLSHADE_LAYER)) map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', this.satellite ? 0.4 : 0.85)
+      if (map.getLayer(CONTOUR_LINE)) map.setPaintProperty(CONTOUR_LINE, 'line-color', this.satellite ? '#FFF4DC' : '#6B4F2E')
+    })
+    const satText = document.createElement('span')
+    satText.textContent = 'Satellite imagery (off: shaded relief only)'
+    satRow.append(sat, satText)
+    panel.appendChild(satRow)
     const note = document.createElement('p')
-    note.className = 'mt-1 text-[10px] leading-snug text-slate-500'
-    note.style.display = 'none'
-    note.textContent = `Terrain: MapTiler elevation, heights ×${EXAGGERATION_3D}. Imagery: satellite. Right-drag or Ctrl-drag to tilt and turn.`
-    el.appendChild(note)
-    this.note3D = note
+    note.className = 'text-[10px] leading-snug text-slate-500'
+    note.textContent = 'Contour lines every 10 to 100 m, with heights. Click the ground for its elevation. Drag with the right mouse button (or Ctrl + drag) to tilt and turn; the compass resets north.'
+    panel.appendChild(note)
+    el.appendChild(panel)
+    this.panel3D = panel
 
     const fireRow = document.createElement('div')
     fireRow.className = 'mt-1.5 flex items-center gap-1 border-t border-slate-200 pt-1.5'
@@ -435,6 +481,10 @@ class ViewControl implements maplibregl.IControl {
     this.el?.remove()
     this.el = null
     this.map = null
+  }
+
+  get is3D() {
+    return this.on3D
   }
 
   /** Called once the pack is loaded. */
@@ -475,7 +525,7 @@ class ViewControl implements maplibregl.IControl {
     if (f) {
       if (!this.on3D) this.enter3D()
       const [w, s, e, n] = bboxOf(f.geometry)
-      map.fitBounds([[w, s], [e, n]], { padding: 40, pitch: 60, bearing: -20, maxZoom: 11, duration: 1400 })
+      map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 65, bearing: -25, maxZoom: 11.5, duration: 1600 })
     } else {
       if (this.on3D) this.leave3D()
       if (fly) {
@@ -558,7 +608,7 @@ class ViewControl implements maplibregl.IControl {
     this.prevTerrain = map.getTerrain()
     this.prevSky = map.getSky()
     this.apply3D()
-    if (this.note3D) this.note3D.style.display = ''
+    if (this.panel3D) this.panel3D.style.display = ''
   }
 
   private apply3D() {
@@ -570,7 +620,13 @@ class ViewControl implements maplibregl.IControl {
       map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`, tileSize: 512 })
     }
     if (key && !map.getLayer(SAT_LAYER)) {
-      map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE, paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.05 } }, below)
+      map.addLayer({
+        id: SAT_LAYER,
+        type: 'raster',
+        source: SAT_SOURCE,
+        layout: { visibility: this.satellite ? 'visible' : 'none' },
+        paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 },
+      }, below)
     }
     if (!map.getSource(HILLSHADE_SOURCE)) map.addSource(HILLSHADE_SOURCE, demSourceSpec())
     if (!map.getLayer(HILLSHADE_LAYER)) {
@@ -580,7 +636,7 @@ class ViewControl implements maplibregl.IControl {
           type: 'hillshade',
           source: HILLSHADE_SOURCE,
           paint: {
-            'hillshade-exaggeration': key ? 0.35 : 0.6,
+            'hillshade-exaggeration': key && this.satellite ? 0.4 : 0.85,
             'hillshade-illumination-direction': 315,
             'hillshade-shadow-color': '#2B2218',
             'hillshade-highlight-color': '#FFFFFF',
@@ -589,6 +645,45 @@ class ViewControl implements maplibregl.IControl {
         },
         below,
       )
+    }
+    if (key && !map.getSource(CONTOUR_SOURCE)) {
+      map.addSource(CONTOUR_SOURCE, { type: 'vector', url: `https://api.maptiler.com/tiles/contours-v2/tiles.json?key=${key}` })
+    }
+    if (key && !map.getLayer(CONTOUR_LINE)) {
+      // nth_line marks index lines (every 2nd, 5th or 10th); thin lines fade in as you zoom.
+      const nth = ['coalesce', ['get', 'nth_line'], 1]
+      map.addLayer({
+        id: CONTOUR_LINE,
+        type: 'line',
+        source: CONTOUR_SOURCE,
+        'source-layer': 'contour',
+        paint: {
+          'line-color': this.satellite ? '#FFF4DC' : '#6B4F2E',
+          'line-opacity': ['interpolate', ['linear'], ['zoom'],
+            9, ['match', nth, 10, 0.85, 5, 0.6, 0],
+            11, ['match', nth, 10, 0.9, 5, 0.75, 0.35],
+            13, ['match', nth, 10, 0.9, 5, 0.8, 0.55]] as unknown as maplibregl.ExpressionSpecification,
+          'line-width': ['match', nth, 10, 1.3, 5, 0.9, 0.5] as unknown as maplibregl.ExpressionSpecification,
+        },
+      }, below)
+    }
+    const font = this.labelFont()
+    if (key && font && !map.getLayer(CONTOUR_LABEL)) {
+      map.addLayer({
+        id: CONTOUR_LABEL,
+        type: 'symbol',
+        source: CONTOUR_SOURCE,
+        'source-layer': 'contour',
+        filter: ['in', ['get', 'nth_line'], ['literal', [5, 10]]],
+        layout: {
+          'symbol-placement': 'line',
+          'text-field': ['concat', ['to-string', ['get', 'height']], ' m'],
+          'text-font': font,
+          'text-size': 10,
+          'symbol-spacing': 350,
+        },
+        paint: { 'text-color': '#3A2A1A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.4 },
+      })
     }
     const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
     if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) map.addSource(DEM_SOURCE, demSourceSpec())
@@ -600,8 +695,20 @@ class ViewControl implements maplibregl.IControl {
     // setTerrain during an animation can crash MapLibre (maplibre-gl-js#6011,
     // see MapView.tsx): wait for idle, then one more frame.
     map.once('idle', () => requestAnimationFrame(() => {
-      if (this.on3D && this.map) this.map.setTerrain({ source, exaggeration: EXAGGERATION_3D })
+      if (this.on3D && this.map) this.map.setTerrain({ source, exaggeration: this.exaggeration })
     }))
+  }
+
+  /** A font the current style's glyph server has (taken from one of its own
+   *  label layers); null if the style has no glyphs, then no contour labels. */
+  private labelFont(): string[] | null {
+    const style = this.map?.getStyle()
+    if (!style?.glyphs) return null
+    for (const l of style.layers ?? []) {
+      const f = (l as { layout?: Record<string, unknown> }).layout?.['text-font']
+      if (Array.isArray(f) && f.every((x) => typeof x === 'string')) return f as string[]
+    }
+    return null
   }
 
   private leave3D() {
@@ -613,8 +720,8 @@ class ViewControl implements maplibregl.IControl {
       try {
         map.setTerrain(prev && map.getSource(prev.source) ? prev : null)
         if (this.prevSky) map.setSky(this.prevSky)
-        for (const id of [SAT_LAYER, HILLSHADE_LAYER]) if (map.getLayer(id)) map.removeLayer(id)
-        for (const id of [SAT_SOURCE, HILLSHADE_SOURCE]) if (map.getSource(id)) map.removeSource(id)
+        for (const id of [CONTOUR_LABEL, CONTOUR_LINE, SAT_LAYER, HILLSHADE_LAYER]) if (map.getLayer(id)) map.removeLayer(id)
+        for (const id of [CONTOUR_SOURCE, SAT_SOURCE, HILLSHADE_SOURCE]) if (map.getSource(id)) map.removeSource(id)
         if (!map.getTerrain() && map.getSource(DEM_SOURCE)) map.removeSource(DEM_SOURCE)
       } catch {
         // map is being removed
@@ -622,7 +729,7 @@ class ViewControl implements maplibregl.IControl {
     }
     if (map.isMoving()) map.once('idle', () => requestAnimationFrame(done))
     else done()
-    if (this.note3D) this.note3D.style.display = 'none'
+    if (this.panel3D) this.panel3D.style.display = 'none'
   }
 }
 
@@ -659,18 +766,37 @@ export default function CityContextLayers({
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
     const clickable = () =>
       CLICKABLE.filter((id) => map.getLayer(id) && (id !== 'ctx-districts-fill' || map.getZoom() < DISTRICT_CLICK_MAX_ZOOM))
+    const showElevation = (e: maplibregl.MapMouseEvent, extra?: HTMLElement) => {
+      const el = extra ?? document.createElement('div')
+      if (!extra) el.className = 'text-xs leading-snug space-y-1'
+      const p = document.createElement('p')
+      p.className = 'text-slate-500'
+      p.textContent = 'Elevation: reading…'
+      el.appendChild(p)
+      popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map)
+      elevationAt(e.lngLat.lng, e.lngLat.lat).then((h) => {
+        p.textContent = h == null
+          ? 'Elevation not available.'
+          : `Elevation about ${h.toLocaleString('en-IN')} m above sea level (MapTiler terrain model, about 30 m grid).`
+      })
+    }
     const onClick = (e: maplibregl.MapMouseEvent) => {
       const layers = clickable()
-      if (!layers.length) return
-      const hits = map.queryRenderedFeatures(e.point, { layers })
-      if (!hits.length) return
+      const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : []
+      const in3D = controlRef.current?.is3D === true
+      if (!hits.length || (in3D && hits[0].layer.id === 'ctx-districts-fill')) {
+        if (in3D) showElevation(e)
+        return
+      }
       // queryRenderedFeatures returns topmost first.
       const f = hits[0]
       if (f.layer.id === 'ctx-districts-fill' && controlRef.current) {
         controlRef.current.selectDistrict(String(f.properties?.name))
         return
       }
-      popup.setLngLat(e.lngLat).setDOMContent(popupNode(f.properties ?? {}, f.layer.id)).addTo(map)
+      const node = popupNode(f.properties ?? {}, f.layer.id)
+      if (in3D) showElevation(e, node)
+      else popup.setLngLat(e.lngLat).setDOMContent(node).addTo(map)
     }
     let hovering = false
     const onMove = (e: maplibregl.MapMouseEvent) => {
@@ -688,12 +814,14 @@ export default function CityContextLayers({
         else map.once('idle', ensure)
       })
       .catch((err) => console.warn('[CityContextLayers]', err))
-    // Keep the view on Jharkhand (with a margin) while this pack is shown.
-    const prevMaxBounds = map.getMaxBounds()
-    {
-      const [w, so, e, n] = pack.regionBounds
-      map.setMaxBounds([[w - 2, so - 1.5], [e + 2, n + 1.5]])
-    }
+    // Free movement for the 3D views: rotate, tilt up to 80°, keyboard.
+    const prevMaxPitch = map.getMaxPitch()
+    const prevRotate = map.dragRotate.isEnabled()
+    map.setMaxPitch(80)
+    map.dragRotate.enable()
+    map.touchZoomRotate.enableRotation()
+    map.touchPitch.enable()
+    map.keyboard.enable()
     map.on('style.load', ensure)
     map.on('click', onClick)
     map.on('mousemove', onMove)
@@ -704,7 +832,8 @@ export default function CityContextLayers({
       map.off('mousemove', onMove)
       popup.remove()
       try {
-        map.setMaxBounds(prevMaxBounds)
+        map.setMaxPitch(prevMaxPitch)
+        if (!prevRotate) map.dragRotate.disable()
         removeAll(map)
       } catch {
         // the map may already be removed on unmount
@@ -716,6 +845,9 @@ export default function CityContextLayers({
     if (!map || !pack || !showViewControl || !cityCenter) return
     const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom)
     map.addControl(ctrl, 'top-left')
+    // Compass and tilt indicator: drag to tilt/turn, click to reset north.
+    const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
+    map.addControl(nav, 'bottom-right')
     controlRef.current = ctrl
     loadPack(pack.base)
       .then((d) => ctrl.setPackData(d))
@@ -723,6 +855,7 @@ export default function CityContextLayers({
     return () => {
       controlRef.current = null
       try {
+        map.removeControl(nav)
         map.removeControl(ctrl)
       } catch {
         // map already removed

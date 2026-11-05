@@ -269,7 +269,9 @@ export default function OverviewChoroplethMap({
       center: city.center,
       zoom: city.defaultZoom + OVERVIEW_ZOOM_OFFSET,
       attributionControl: false,
-      pitchWithRotate: false,
+      // Rotation stays off for Delhi's overview; a city with a 3D context
+      // pack (Jharkhand) enables dragRotate, which then also tilts.
+      pitchWithRotate: true,
       dragRotate: false,
     })
 
