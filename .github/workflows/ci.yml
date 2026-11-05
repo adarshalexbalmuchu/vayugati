@@ -7,10 +7,13 @@ name: CI
 # — CI intentionally has no path to do that, so there is no "approval gate"
 # to accidentally bypass here.
 
+# Manual only since 5 Nov 2026: GitHub Actions is locked on this account by a
+# billing issue, so automatic runs fail at once without starting. Run the same
+# checks locally before pushing. To restore automatic runs, put back:
+#   push:
+#     branches: [main]
+#   pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
