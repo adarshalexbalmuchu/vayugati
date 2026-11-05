@@ -21,7 +21,6 @@ export type MapLayerKey =
   | 'ctxIndustry'
   | 'ctxRoads'
   | 'ctxFires'
-  | 'ctxBlocks'
   | 'ctxReference'
 
 /** Context-layer toggles, shown only for a city with a context pack
@@ -31,7 +30,6 @@ export const CONTEXT_LAYER_KEYS = {
   ctxIndustry: 'industry',
   ctxRoads: 'roads',
   ctxFires: 'fires',
-  ctxBlocks: 'blocks',
   ctxReference: 'reference',
 } as const
 
@@ -55,7 +53,6 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'ctxIndustry',
   'ctxRoads',
   'ctxFires',
-  'ctxBlocks',
   'ctxReference',
 ]
 
@@ -79,8 +76,8 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
   },
   {
     label: CONTEXT_GROUP,
-    subtitle: 'Mapped features (OpenStreetMap, NASA FIRMS), not measurements',
-    keys: ['ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxBlocks', 'ctxReference'],
+    subtitle: 'Mapped features, not air-quality measurements',
+    keys: ['ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxReference'],
   },
   {
     label: 'Operations',
@@ -179,34 +176,29 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
   },
   ctxMines: {
-    label: 'Mines and quarries',
+    label: 'Mining and quarry areas',
     available: false,
-    note: 'Coal mines and quarries mapped in OpenStreetMap (Geofabrik extract, Nov 2026). Coverage is incomplete.',
+    note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (data as of 3 Nov 2026). Not official lease boundaries, and some areas are missing. Shapes are not a count of mines.',
   },
   ctxIndustry: {
     label: 'Industry and power plants',
     available: false,
-    note: 'Industrial land (purple), power plants and large works (yellow) mapped in OpenStreetMap.',
+    note: 'Industrial land from OpenStreetMap (purple). Yellow dots: 6 power plants and 2 large works whose names and operators were checked against the operators’ own publications. Others may be missing.',
   },
   ctxRoads: {
     label: 'Major roads',
     available: false,
-    note: 'Motorway, trunk, primary and secondary roads from OpenStreetMap. Coal-haul roads are not tagged separately.',
+    note: 'Main roads from OpenStreetMap (trunk, primary and secondary classes; data as of 3 Nov 2026). Coal-haul roads are not shown separately.',
   },
   ctxFires: {
-    label: 'Fire hotspots (5 days)',
+    label: 'Satellite heat detections',
     available: false,
-    note: 'NASA FIRMS VIIRS detections, 5-day snapshot to 5 Nov 2026. In the coalfield these include underground coal fires and industrial heat.',
-  },
-  ctxBlocks: {
-    label: 'Block boundaries',
-    available: false,
-    note: 'Community development blocks (geoBoundaries, ODbL).',
+    note: 'NASA FIRMS VIIRS detections, 1–4 Nov 2026 (not updated yet). Each dot is a 375 m pixel that read unusually hot. It can be a surface coal fire, industrial heat or open burning. Not a measured fire area.',
   },
   ctxReference: {
-    label: 'Reference stations',
+    label: 'West Bengal reference stations',
     available: false,
-    note: 'Continuous stations in Asansol and Durgapur (West Bengal): calibration reference candidates outside the city.',
+    note: 'Government continuous stations in Asansol and Durgapur, run by WBPCB, data via CPCB. Outside Dhanbad district.',
   },
 }
 
@@ -245,7 +237,6 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   ctxIndustry: true,
   ctxRoads: true,
   ctxFires: true,
-  ctxBlocks: true,
   ctxReference: true,
 }
 

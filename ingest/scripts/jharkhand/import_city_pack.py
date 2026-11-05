@@ -26,10 +26,10 @@ DATA = REPO / "data" / "jharkhand" / "processed"
 CITY_CODE = "dhanbad"
 
 
-def _block_label(name: str) -> str:
-    """'Jharia-Cum-Jorapokhar-Cum-Sindri' -> 'Jharia'; 'EGARKUND' -> 'Egarkund'."""
-    first = name.replace("*", "").split("-Cum-")[0].split("-cum-")[0].strip()
-    return first.title() if first.isupper() else first
+# Cells are named by grid id only. They used to carry block names from geoBoundaries ADM3, but those are
+# Census-era blocks (11, e.g. Jharia-Cum-Jorapokhar-Cum-Sindri) and Dhanbad now has 10 (dhanbad.nic.in).
+# Put block names back only from an official boundary source.
+ZONE = "Dhanbad district"
 
 
 def build() -> tuple[dict, list[dict], list[dict]]:
@@ -48,23 +48,19 @@ def build() -> tuple[dict, list[dict], list[dict]]:
         "config": {**(delhi or {}).get("config", {}), "city_pack": {
             "units": "3 km grid over Dhanbad district", "source": "data/jharkhand/processed/dhanbad_grid_3km.geojson"}},
     }
-    blocks = [(shape(f["geometry"]), _block_label(f["properties"]["name"]))
-              for f in json.load(open(DATA / "dhanbad_blocks.geojson"))["features"]]
     cells = json.load(open(DATA / "dhanbad_grid_3km.geojson"))["features"]
     wards = []
     for n, f in enumerate(sorted(cells, key=lambda f: f["properties"]["id"]), start=1):
         p = f["properties"]
-        pt = Point(p["lng"], p["lat"])
-        block = next((b for g, b in blocks if g.contains(pt)), None) or min(blocks, key=lambda gb: gb[0].distance(pt))[1]
         wards.append({
             "ward_number": n,
-            "name": f"{block} {p['id']}",
-            "zone": block,
+            "name": f"Dhanbad grid {p['id']}",
+            "zone": ZONE,
             "is_hotspot": False,
             "lat": p["lat"],
             "lng": p["lng"],
             "boundary": f["geometry"],
-            "metadata": {"cell_id": p["id"], "area_km2": p["area_km2"], "block": block,
+            "metadata": {"cell_id": p["id"], "area_km2": p["area_km2"],
                          "source_document": "data/jharkhand/processed/dhanbad_grid_3km.geojson"},
         })
     stations = []
@@ -87,7 +83,7 @@ def main(apply: bool) -> None:
     for w in wards:
         zones[w["zone"]] = zones.get(w["zone"], 0) + 1
     print(f"city: {city['city_code']} ({city['name']})")
-    print(f"wards: {len(wards)} grid cells; by block: {dict(sorted(zones.items()))}")
+    print(f"wards: {len(wards)} grid cells; zones: {dict(sorted(zones.items()))}")
     for s in stations:
         print(f"station: {s['name']} -> ward_number {s['_ward_number']} (OpenAQ {s['openaq_location_id']})")
     if not apply:

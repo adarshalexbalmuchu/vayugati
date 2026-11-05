@@ -30,14 +30,14 @@ const legend = {
     <div class="row"><span class="sw" style="background:#8ec1ea"></span>District with manual stations only</div>
     <div class="row"><span class="sw" style="background:#f3d9a4"></span>District with planned stations (Dec 2025 tender)</div>
     <div class="row"><span class="sw" style="background:#efe7da"></span>No station</div>
-    <div class="row"><span class="dot" style="background:#e4572e"></span>Fire hotspot, last 5 days (NASA FIRMS)</div>
+    <div class="row"><span class="dot" style="background:#e4572e"></span>Satellite heat detection, 1–4 Nov 2026 (NASA FIRMS)</div>
     <div class="row"><span class="dot" style="background:#111;border:2px solid #fff"></span>Continuous station (CPCB feed)</div>
     <div class="note">Boundaries: geoBoundaries (ODbL). Stations: CPCB data.gov.in, 5 Nov 2026; CPCB NAMP list, Nov 2024; JSPCB tender, Dec 2025.</div>`,
   dhanbad: `<h1>Dhanbad district: working map</h1>
     <div class="row"><span class="sw" style="background:transparent;border:1px solid #6b4a2a"></span>3 km grid cell (265)</div>
     <div class="row"><span class="sw" style="background:#3d3d3d"></span>Mine or quarry (OSM)</div>
     <div class="row"><span class="sw" style="background:#9b6bd1"></span>Industrial land (OSM)</div>
-    <div class="row"><span class="dot" style="background:#ffbf00;border:2px solid #333"></span>Power plant or large works</div>
+    <div class="row"><span class="dot" style="background:#ffbf00;border:2px solid #333"></span>Power plant or large works (checked)</div>
     <div class="row"><span class="sw" style="background:#c0392b;height:3px"></span>Major road</div>
     <div class="row"><span class="dot" style="background:#e4572e"></span>Fire hotspot, last 5 days</div>
     <div class="row"><span class="dot" style="background:#111;border:2px solid #fff"></span>Station in Jharkhand</div>
@@ -56,7 +56,7 @@ const map = new maplibregl.Map({
 const add = (id, url) => map.addSource(id, { type: 'geojson', data: url })
 map.on('load', () => {
   add('districts', 'districts.geojson'); add('state', 'state.geojson'); add('fires', 'fires_firms_5d.geojson')
-  add('stations', 'stations.geojson'); add('grid', 'dhanbad_grid_3km.geojson'); add('blocks', 'dhanbad_blocks.geojson')
+  add('stations', 'stations.geojson'); add('grid', 'dhanbad_grid_3km.geojson');
   add('sources', 'sources_osm.geojson'); add('roads', 'roads_major.geojson')
   if (view === 'state') {
     map.addLayer({ id: 'd-fill', type: 'fill', source: 'districts', paint: { 'fill-opacity': 0.75, 'fill-color': ['case',
@@ -66,12 +66,10 @@ map.on('load', () => {
     map.addLayer({ id: 'd-label', type: 'symbol', source: 'districts', layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#222', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } })
   } else {
     map.addLayer({ id: 'grid', type: 'line', source: 'grid', paint: { 'line-color': '#6b4a2a', 'line-width': 0.5, 'line-opacity': 0.6 } })
-    map.addLayer({ id: 'blocks', type: 'line', source: 'blocks', paint: { 'line-color': '#422b1c', 'line-width': 1.6 } })
     map.addLayer({ id: 'roads', type: 'line', source: 'roads', paint: { 'line-color': '#c0392b', 'line-width': ['match', ['get', 'highway'], 'trunk', 2, 'primary', 1.5, 1], 'line-opacity': 0.8 } })
     map.addLayer({ id: 'mines', type: 'fill', source: 'sources', filter: ['==', ['get', 'kind'], 'mine'], paint: { 'fill-color': '#3d3d3d', 'fill-opacity': 0.8 } })
     map.addLayer({ id: 'industry', type: 'fill', source: 'sources', filter: ['==', ['get', 'kind'], 'industrial'], paint: { 'fill-color': '#9b6bd1', 'fill-opacity': 0.7 } })
     map.addLayer({ id: 'plants', type: 'circle', source: 'sources', filter: ['in', ['get', 'kind'], ['literal', ['power_plant', 'works']]], paint: { 'circle-radius': 6, 'circle-color': '#ffbf00', 'circle-stroke-color': '#333', 'circle-stroke-width': 1.5 } })
-    map.addLayer({ id: 'b-label', type: 'symbol', source: 'blocks', layout: { 'text-field': ['get', 'name'], 'text-size': 10, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#422b1c', 'text-halo-color': '#fff', 'text-halo-width': 1.2 } })
   }
   map.addLayer({ id: 'fires', type: 'circle', source: 'fires', paint: { 'circle-radius': 3, 'circle-color': '#e4572e', 'circle-opacity': 0.85 } })
   map.addLayer({ id: 'stations', type: 'circle', source: 'stations', paint: { 'circle-radius': 6,

@@ -4,8 +4,10 @@ import type { FeatureCollection } from 'geojson'
 
 /**
  * Static context layers for a city pack: mines, industry, power plants, major
- * roads, fire hotspots, block boundaries and reference stations outside the
- * city. The files are built by ingest/scripts/jharkhand/build_layers.py into
+ * roads, fire hotspots and reference stations outside the city. No block
+ * boundaries: no official block boundaries are published for download, and
+ * the open ones are Census-era blocks that no longer match the district.
+ * The files are built by ingest/scripts/jharkhand/build_layers.py into
  * data/jharkhand/processed/ and copied to web/public/city-packs/<code>/.
  * Context only: these are mapped features, not measurements.
  *
@@ -13,7 +15,7 @@ import type { FeatureCollection } from 'geojson'
  * re-adds them after every setStyle() (which wipes custom layers).
  */
 
-export type CityContextLayerKey = 'mines' | 'industry' | 'roads' | 'fires' | 'blocks' | 'reference'
+export type CityContextLayerKey = 'mines' | 'industry' | 'roads' | 'fires' | 'reference'
 export type CityContextVisibility = Record<CityContextLayerKey, boolean>
 
 export const ALL_CONTEXT_VISIBLE: CityContextVisibility = {
@@ -21,7 +23,6 @@ export const ALL_CONTEXT_VISIBLE: CityContextVisibility = {
   industry: true,
   roads: true,
   fires: true,
-  blocks: true,
   reference: true,
 }
 
@@ -38,7 +39,6 @@ const FILES = {
   sources: 'sources_osm.geojson',
   roads: 'roads_major.geojson',
   fires: 'fires_firms_5d.geojson',
-  blocks: 'dhanbad_blocks.geojson',
   stations: 'stations.geojson',
 } as const
 
@@ -66,13 +66,11 @@ const SRC = {
   sources: 'ctx-sources',
   roads: 'ctx-roads',
   fires: 'ctx-fires',
-  blocks: 'ctx-blocks',
   stations: 'ctx-stations',
 } as const
 
 /** Layer ids per toggle, bottom to top. */
 const LAYERS: Record<CityContextLayerKey, string[]> = {
-  blocks: ['ctx-blocks-line'],
   roads: ['ctx-roads-line'],
   industry: ['ctx-industry-fill', 'ctx-plants'],
   mines: ['ctx-mines-fill', 'ctx-mines-line'],
@@ -83,7 +81,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 const CLICKABLE = ['ctx-mines-fill', 'ctx-industry-fill', 'ctx-plants', 'ctx-fires', 'ctx-reference']
 
 const KIND_LABEL: Record<string, string> = {
-  mine: 'Mine or quarry',
+  mine: 'Mining or quarry area',
   industrial: 'Industrial land',
   power_plant: 'Power plant',
   works: 'Large works',
@@ -95,13 +93,6 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     map.addSource(id, { type: 'geojson', data: data[k as keyof PackData] })
   }
   const vis = (key: CityContextLayerKey) => (visible[key] ? 'visible' : 'none') as 'visible' | 'none'
-  map.addLayer({
-    id: 'ctx-blocks-line',
-    type: 'line',
-    source: SRC.blocks,
-    layout: { visibility: vis('blocks') },
-    paint: { 'line-color': '#422B1C', 'line-width': 1.6, 'line-dasharray': [3, 2] },
-  })
   map.addLayer({
     id: 'ctx-roads-line',
     type: 'line',
@@ -177,17 +168,22 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
     el.appendChild(p)
   }
   if (layerId === 'ctx-fires') {
-    line('Fire hotspot (NASA FIRMS)', true)
-    line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · FRP ${props.frp ?? '—'} MW`)
-    line('Satellite thermal detection; in the coalfield this includes underground coal fires and industrial heat.')
+    line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
+    line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
+    line('A 375 m pixel that was unusually hot when the satellite passed. In the coalfield it can be a coal fire at the surface, industrial heat or open burning. It is not a measured fire area.')
   } else if (layerId === 'ctx-reference') {
     line(String(props.name ?? 'Reference station'), true)
-    line('Continuous station outside Dhanbad district: a calibration reference candidate.')
+    line('Government continuous monitoring station run by the West Bengal Pollution Control Board; data published through CPCB.')
+    line('Outside Dhanbad district. Vayu Gati may use it as a reference for checking its own sensors.')
+  } else if (props.checked) {
+    line(String(props.name), true)
+    line(KIND_LABEL[String(props.kind)] ?? '')
+    if (props.operator) line(`Operator: ${props.operator}`)
+    line('Location: OpenStreetMap. Name and operator checked against the operator’s own publications.')
   } else {
     line(String(props.name || KIND_LABEL[String(props.kind)] || 'Mapped feature'), true)
-    line(KIND_LABEL[String(props.kind)] ?? '')
-    if (props.operator) line(String(props.operator))
-    line('Source: OpenStreetMap')
+    if (props.name) line(KIND_LABEL[String(props.kind)] ?? '')
+    line('Source: OpenStreetMap, mapped by volunteers. Not an official lease or land-use boundary, and some areas are missing.')
   }
   return el
 }

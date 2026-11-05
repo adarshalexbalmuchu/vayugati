@@ -5,11 +5,16 @@ Usage (from ingest/, with the venv):
     .venv/bin/python scripts/jharkhand/build_layers.py boundaries|stations|fires|osm
 
 Steps:
-    boundaries  geoBoundaries ADM2/ADM3 (ODbL) -> state, 24 districts, Dhanbad blocks, Dhanbad 3 km grid
+    boundaries  geoBoundaries ADM2 (ODbL) -> state, 24 districts, Dhanbad 3 km grid
     stations    CPCB data.gov.in real-time feed + OpenAQ -> continuous stations; adds manual (NAMP)
                 and planned (JSPCB tender) station counts to the district layer
     fires       NASA FIRMS VIIRS (SNPP + NOAA-20), last 5 days, Jharkhand bounding box
     osm         Geofabrik eastern-zone extract -> mines, industry, power plants, works, major roads
+    curate      keeps only power plants and works on the checked list below (runs at the end of osm)
+
+No block layer: geoBoundaries ADM3 has 11 Census-era blocks for Dhanbad (e.g. Jharia-Cum-Jorapokhar-Cum-
+Sindri) where the district now has 10 (dhanbad.nic.in), and no official block boundaries are published
+for download. Add blocks only from an official source (Survey of India, JSAC).
 
 Keys (DATA_GOV_API_KEY, OPENAQ_API_KEY, FIRMS_MAP_KEY) come from ingest/.env and are never written out.
 Downloads go to ingest/data/ (gitignored); only the processed layers are committed.
@@ -119,11 +124,6 @@ def boundaries() -> None:
                                     for n, g in sorted(dist.items())]))
     _save("state.geojson", _fc([_feat(unary_union(list(dist.values())).simplify(0.003), name="Jharkhand")]))
     dh = dist["Dhanbad"]
-    blocks = [_feat(make_valid(shape(f["geometry"])).simplify(0.001), name=f["properties"]["shapeName"],
-                    area_km2=round(_area_km2(make_valid(shape(f["geometry"])))))
-              for f in _geoboundaries("ADM3")["features"]
-              if dh.contains(make_valid(shape(f["geometry"])).representative_point())]
-    _save("dhanbad_blocks.geojson", _fc(blocks))
     minx, miny, maxx, maxy = dh.bounds
     dlat = CELL_KM / 110.57
     dlng = CELL_KM / (111.32 * math.cos(math.radians((miny + maxy) / 2)))
@@ -141,7 +141,7 @@ def boundaries() -> None:
         y += dlat
         row += 1
     _save(f"dhanbad_grid_{int(CELL_KM)}km.geojson", _fc(cells))
-    print(f"boundaries: 24 districts, {len(blocks)} Dhanbad blocks, {len(cells)} grid cells "
+    print(f"boundaries: 24 districts, {len(cells)} grid cells "
           f"({CELL_KM:g} km), Dhanbad {round(_area_km2(dh))} km2")
 
 
@@ -308,9 +308,48 @@ def osm() -> None:
     _save("roads_major.geojson", _fc(h.roads))
     print("osm:", dict(collections.Counter(f["properties"]["kind"] for f in h.areas + h.points)),
           "roads", len(h.roads))
+    curate()
 
 
-STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm}
+# Power plants and large works kept on the map, keyed by their OpenStreetMap name, with the name and
+# operator as published by the operator. Anything not on this list (unnamed features, small workshops,
+# plants whose identity or status could not be confirmed) is dropped. Checked 5 Nov 2026.
+CHECKED_SITES = {
+    "Chandrapura Thermal Power Station": ("Chandrapura Thermal Power Station", "Damodar Valley Corporation (DVC)"),
+    "Maithon Power Plant": ("Maithon Right Bank Thermal Power Station",
+                            "Maithon Power Ltd, a Tata Power (74%) and DVC (26%) joint venture"),
+    "Santhaldih": ("Santaldih Thermal Power Station", "West Bengal Power Development Corporation (WBPDCL)"),
+    "Raghunathpur Thermal Power Station": ("Raghunathpur Thermal Power Station", "Damodar Valley Corporation (DVC)"),
+    "Panchet hydroelectric power station": ("Panchet hydroelectric station", "Damodar Valley Corporation (DVC)"),
+    "Maithon hydroelectric power station": ("Maithon hydroelectric station", "Damodar Valley Corporation (DVC)"),
+    "HINDUSTAN URVARAK & RASAYAN LIMITED SINDRI (HURL)": ("HURL Sindri fertiliser plant",
+                                                         "Hindustan Urvarak & Rasayan Ltd (HURL)"),
+    "ACC": ("ACC Sindri cement grinding unit", "ACC Ltd (Adani Group)"),
+}
+
+
+def curate() -> None:
+    path = OUT / "sources_osm.geojson"
+    fc = json.load(open(path))
+    kept, dropped = [], []
+    for f in fc["features"]:
+        p = f["properties"]
+        if p["kind"] in ("power_plant", "works"):
+            checked = CHECKED_SITES.get(p.get("name", "")) or next(  # already curated: re-running is safe
+                (v for v in CHECKED_SITES.values() if p.get("checked") and v[0] == p.get("name")), None)
+            if not checked:
+                dropped.append(p.get("name") or f"unnamed {p['kind']}")
+                continue
+            p["name"], p["operator"] = checked
+            p["checked"] = True
+            if f["geometry"]["type"] != "Point":  # one dot per site, not one per outline vertex
+                f["geometry"] = mapping(make_valid(shape(f["geometry"])).representative_point())
+        kept.append(f)
+    _save("sources_osm.geojson", _fc(kept))
+    print("curate: dropped", len(dropped), dropped)
+
+
+STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "curate": curate}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]

@@ -239,7 +239,6 @@ export default function MapPage() {
         industry: layers.ctxIndustry,
         roads: layers.ctxRoads,
         fires: layers.ctxFires,
-        blocks: layers.ctxBlocks,
         reference: layers.ctxReference,
       }
     : undefined

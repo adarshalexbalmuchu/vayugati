@@ -17,12 +17,11 @@ Jharkhand before those nodes exist, using the official stations and open source 
 |---|---|---|
 | `state.geojson` | Jharkhand outline (union of the districts) | geoBoundaries IND ADM2 (ODbL) |
 | `districts.geojson` | 24 districts, with `continuous_in_feed`, `manual_namp`, `planned_caaqms` station counts | geoBoundaries; CPCB NAMP list 19.11.2024; JSPCB tender JSPCB/CAAQMS/2025-26 |
-| `dhanbad_blocks.geojson` | Dhanbad's 11 blocks | geoBoundaries IND ADM3 (2018 names) |
-| `dhanbad_grid_3km.geojson` | 265 grid cells over Dhanbad district, the working map units; ids `DH-row-col`, with a centre point | built from the district outline |
+| `dhanbad_grid_3km.geojson` | 265 grid cells over Dhanbad district, the working map units; ids `DH-row-col`, with a centre point; named "Dhanbad grid DH-row-col" in the database | built from the geoBoundaries district outline (approximate, not Survey of India) |
 | `stations.geojson` | 10 continuous stations: 2 in Jharkhand (Jorapokhar, Sardar Patel Nagar), 8 reference candidates in Asansol and Durgapur | CPCB data.gov.in feed + OpenAQ, 5 Nov 2026 |
-| `sources_osm.geojson` | Mines and quarries, industrial land, power plants, large works around Dhanbad | OpenStreetMap, Geofabrik eastern-zone extract |
+| `sources_osm.geojson` | Mining and quarry areas, industrial land, and 6 power plants and 2 large works whose names and operators were checked (`CHECKED_SITES` in `build_layers.py`) | OpenStreetMap, Geofabrik eastern-zone extract, data as of 3 Nov 2026 |
 | `roads_major.geojson` | Motorway, trunk, primary and secondary roads around Dhanbad | OpenStreetMap |
-| `fires_firms_5d.geojson` | VIIRS fire detections over Jharkhand, last 5 days (a snapshot, not live) | NASA FIRMS |
+| `fires_firms_5d.geojson` | VIIRS heat detections over Jharkhand, 1–4 Nov 2026 (a snapshot, not live) | NASA FIRMS |
 | `openaq_locations.json` | Every OpenAQ location in the Jharkhand box, for station matching | OpenAQ v3 |
 | `preview.html` | A standalone map of the layers (`#state` and `#dhanbad` views) | — |
 
@@ -57,11 +56,21 @@ gitignored `ingest/data/`.
 
 ## Known limits
 
-- OpenStreetMap coverage is incomplete: 196 mine areas and 17 power plants were found, but some plants are
-  unnamed (possibly solar) and coal-haul roads are not tagged as such.
-- FIRMS detections in the coalfield include underground coal fires and industrial heat sources such as
-  coke ovens; they are not all open burning.
-- geoBoundaries ADM3 uses 2018 block names (EGARKUND, KARIASOL are newer blocks).
+- OpenStreetMap is volunteer-mapped and incomplete. The 196 mining and quarry shapes are mapped areas, not
+  a count of mines, and not BCCL/CMPDI lease boundaries. Never quote these counts as official figures.
+- Power plants and works: only those on `CHECKED_SITES` are kept. Dropped on 5 Nov 2026: 10 unnamed
+  power-plant features, "BCCL Powerhouse" and "Bokaro Works Power Plant" (identity or status not
+  confirmed), PDIL (not confirmed) and a small engineering workshop. Add a site only after checking it
+  against the operator or the Central Electricity Authority.
+- FIRMS points are heat detections (375 m pixels), not fire areas. In the coalfield they can be surface
+  coal fires, industrial heat (coke ovens, steel) or open burning. The official Jharia coal-fire maps are
+  NRSC/ISRO's, made quarterly for BCCL and CMPDI under the October 2025 MoU; quote fire areas only from those.
+- No block layer. geoBoundaries ADM3 has 11 Census-era blocks for Dhanbad (e.g. Jharia-Cum-Jorapokhar-Cum-
+  Sindri); the district now has 10 (Dhanbad, Baghmara, Nirsa, Topchanchi, Tundi, Purbi Tundi, Gobindpur,
+  Baliapur, Egarkund, Kaliasole; dhanbad.nic.in). No official block boundaries are published for
+  download. Add blocks only from Survey of India or JSAC.
+- District and state outlines are geoBoundaries (approximate). Use Survey of India outlines before any
+  official or printed map.
 
 ## Next steps
 
