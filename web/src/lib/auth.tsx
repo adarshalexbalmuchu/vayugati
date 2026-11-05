@@ -8,6 +8,9 @@ export interface Profile {
   role: Role
   wardId: number | null
   wardName: string | null
+  /** city_config.id of the profile ward's city (wards.city_id); null when
+   *  the profile has no ward. Used to pick the default active city. */
+  wardCityId: number | null
 }
 
 /** Where each role lands after login. */
@@ -40,7 +43,7 @@ const AuthContext = createContext<AuthState>({
 async function fetchProfile(userId: string): Promise<Profile> {
   const { data } = await supabase
     .from('profiles')
-    .select('role, ward_id, wards(name)')
+    .select('role, ward_id, wards(name, city_id)')
     .eq('id', userId)
     .maybeSingle()
 
@@ -48,14 +51,17 @@ async function fetchProfile(userId: string): Promise<Profile> {
     // first login: create the profile row (RLS allows self-insert), default citizen.
     // Roles are promoted by an admin in SQL — see README.
     await supabase.from('profiles').insert({ id: userId })
-    return { role: 'citizen', wardId: null, wardName: null }
+    return { role: 'citizen', wardId: null, wardName: null, wardCityId: null }
   }
 
-  const ward = data.wards as { name: string } | { name: string }[] | null
+  type WardRef = { name: string; city_id: number | null }
+  const wardRaw = data.wards as WardRef | WardRef[] | null
+  const ward = Array.isArray(wardRaw) ? (wardRaw[0] ?? null) : wardRaw
   return {
     role: data.role as Role,
     wardId: data.ward_id,
-    wardName: Array.isArray(ward) ? (ward[0]?.name ?? null) : (ward?.name ?? null),
+    wardName: ward?.name ?? null,
+    wardCityId: ward?.city_id ?? null,
   }
 }
 

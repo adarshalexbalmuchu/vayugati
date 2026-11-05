@@ -19,17 +19,19 @@
  */
 import { AlertTriangle, CheckCircle, MapPin, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
+import { useCity } from '../../lib/city'
 import type { WardBoundary } from '../../lib/data'
 import type { Incident } from '../../lib/incidents'
 import { updateIncidentLocation } from '../../lib/incidents'
 import {
-  classifyCoordinateLocation,
+  classifyCityCoordinate,
   coordinateDisplacementMeters,
   coordinateLocationLabel,
   COORDINATE_CONFIDENCE_LABEL,
   COORDINATE_SOURCE_LABEL,
   deriveLocationQuality,
   findContainingWard,
+  hasUsableCoordinates,
   LARGE_DISPLACEMENT_WARNING_METERS,
   LOCATION_QUALITY_HEX,
   LOCATION_QUALITY_LABEL,
@@ -51,10 +53,9 @@ interface Props {
 type Action = 'place' | 'confirm' | 'clear'
 
 export default function LocationReviewWorkspace({ incident, wardBoundaries, onSaved, onCancel }: Props) {
-  const currentQuality = deriveLocationQuality(incident, wardBoundaries)
-  const hasValidExisting =
-    currentQuality.coordinateLocation === 'delhi' ||
-    currentQuality.coordinateLocation === 'ncr_outside_delhi'
+  const { map: area } = useCity()
+  const currentQuality = deriveLocationQuality(incident, wardBoundaries, area)
+  const hasValidExisting = hasUsableCoordinates(currentQuality.coordinateLocation)
 
   const [action, setAction] = useState<Action>(hasValidExisting ? 'confirm' : 'place')
   const [proposedLat, setProposedLat] = useState<number | null>(
@@ -77,7 +78,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
   const [saveError, setSaveError] = useState<string | null>(null)
   const [ncrConfirmed, setNcrConfirmed] = useState(false)
 
-  const proposedValidation = validateCoordinates(proposedLat, proposedLng)
+  const proposedValidation = validateCoordinates(proposedLat, proposedLng, area)
   const requiresNcrConfirmation = proposedValidation.requiresNcrConfirmation && !ncrConfirmed
 
   // Displacement warning
@@ -239,7 +240,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
                 <>
                   <p className="font-mono">{proposedLat.toFixed(5)}, {proposedLng.toFixed(5)}</p>
                   <p className="mt-0.5">
-                    {coordinateLocationLabel(classifyCoordinateLocation(proposedLat, proposedLng))}
+                    {coordinateLocationLabel(classifyCityCoordinate(proposedLat, proposedLng, area), area)}
                   </p>
                   {resolvedWard ? (
                     <p className="mt-0.5">
@@ -267,7 +268,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
             </div>
           )}
 
-          {/* NCR confirmation */}
+          {/* Wider-area (Delhi: NCR) confirmation */}
           {proposedValidation.requiresNcrConfirmation && action !== 'clear' && (
             <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning/5 px-2.5 py-2 text-[11px] text-status-warning">
               <input
@@ -277,7 +278,7 @@ export default function LocationReviewWorkspace({ incident, wardBoundaries, onSa
                 className="mt-0.5 accent-status-warning"
               />
               <span>
-                This point is outside Delhi but inside the NCR operating area. Confirm this location is correct.
+                This point is outside {area.label} but inside the {area.widerArea?.label ?? 'wider'} operating area. Confirm this location is correct.
               </span>
             </label>
           )}

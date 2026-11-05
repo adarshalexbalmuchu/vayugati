@@ -73,12 +73,9 @@ import {
   CHANGE_DIRECTION_HEX,
   changeMarkerBadge,
   classifyChangeDirection,
-  DELHI_BOUNDS,
-  DELHI_CENTER,
-  DELHI_DEFAULT_ZOOM,
   forecastPollutantFor,
   HISTORICAL_TOLERANCE_MS,
-  isValidDelhiCoordinate,
+  isOnOperationalMap,
   MAP_POLLUTANT_LABEL,
   nearestForecastPoint,
   nowcastPoint,
@@ -98,6 +95,8 @@ import { severeWardsWithin } from '../lib/overviewRules'
 import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
 import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
+import { useCity } from '../lib/city'
+import { boundsToLngLatPair } from '../lib/cities'
 
 type Selection =
   | { kind: 'ward'; id: number }
@@ -226,6 +225,10 @@ function popup(title: string, lines: string[]): string {
  * counts/rules reused from overviewRules.ts rather than recomputed.
  */
 export default function MapPage() {
+  // The active city: its map viewport and bounds, and the id that scopes
+  // ward/station queries. A city switch remounts this page (App.tsx).
+  const { cityId, map: city } = useCity()
+  const cityBounds = city.bounds
   const [basemap, setBasemap] = useState<BasemapMode>(DEFAULT_BASEMAP_MODE)
   const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
   // Sept 2026: Layers/Legend triggers moved into the header row (next to
@@ -307,7 +310,7 @@ export default function MapPage() {
   useEffect(() => {
     const t = window.setTimeout(() => {
       void import('../lib/basemapPrefetch').then(({ prefetchOtherBasemaps }) =>
-        prefetchOtherBasemaps(basemap, DELHI_CENTER, DELHI_DEFAULT_ZOOM),
+        prefetchOtherBasemaps(basemap, city.center, city.defaultZoom),
       )
     }, 3000)
     return () => window.clearTimeout(t)
@@ -317,14 +320,14 @@ export default function MapPage() {
   const state = useAsync(
     () =>
       Promise.all([
-        fetchAllWardsAqi(),
-        fetchAllStationsWithReadings(),
+        fetchAllWardsAqi(cityId),
+        fetchAllStationsWithReadings(cityId),
         listIncidents({ excludeClosed: true }),
         fetchAllOpenReports(),
-        fetchStationHealth(),
+        fetchStationHealth(cityId ?? undefined),
         listActiveTaskDispatches({ offset: 0, pageSize: 200 }),
       ]),
-    [],
+    [cityId],
     { cacheKey: 'map:main' },
   )
 
@@ -360,7 +363,7 @@ export default function MapPage() {
   // re-runs whenever the selection changes (unlike the old hardcoded-pm25
   // one-shot fetch).
   const forecastPollutant = forecastPollutantFor(pollutant)
-  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant], {
+  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant, cityId), [forecastPollutant, cityId], {
     cacheKey: `map:forecasts:${forecastPollutant}`,
   })
   const forecasts = (forecastSuppressed ? new Map() : forecastsState.data) ?? EMPTY_FORECASTS
@@ -369,8 +372,8 @@ export default function MapPage() {
   // a ward without one falls back to the labelled PM2.5 stand-in above.
   const aqiHorizonHours = pollutant === 'aqi' && timeMode === '1h' ? 1 : null   // published to AQI_FORECAST_MAX_LEAD_H (12 h) only
   const aqiForecastsState = useAsync(
-    () => (aqiHorizonHours == null ? Promise.resolve(new Map()) : fetchAqiForecastsNear(aqiHorizonHours)),
-    [aqiHorizonHours],
+    () => (aqiHorizonHours == null ? Promise.resolve(new Map()) : fetchAqiForecastsNear(aqiHorizonHours, Date.now(), cityId)),
+    [aqiHorizonHours, cityId],
     { enabled: aqiHorizonHours != null, cacheKey: `map:aqi-forecasts:${aqiHorizonHours}` },
   )
   const aqiForecasts = (forecastSuppressed || aqiHorizonHours == null ? null : aqiForecastsState.data) ?? EMPTY_AQI_FORECASTS
@@ -383,7 +386,7 @@ export default function MapPage() {
   // payload at all; when they do, `wardBoundariesAvailable` below already
   // correctly reflects "not loaded yet" via the same disabled-toggle affordance
   // that previously covered a hard fetch failure - no new UI state needed.
-  const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(), [], { cacheKey: 'map:ward-boundaries' })
+  const wardBoundariesState = useAsync(() => fetchAllWardBoundaries(cityId), [cityId], { cacheKey: 'map:ward-boundaries' })
   const wardBoundaries = wardBoundariesState.data ?? EMPTY_BOUNDARIES
 
   // Delhi OTD transport-activity context layer - independent fetch, same
@@ -411,7 +414,7 @@ export default function MapPage() {
 
   // Wind data — Open-Meteo readings per ward, latest within 2h.
   // Independent fetch so a slow/missing weather table never blocks the map.
-  const windState = useAsync(() => fetchAllWindByWard(), [], { cacheKey: 'map:wind' })
+  const windState = useAsync(() => fetchAllWindByWard(cityId), [cityId], { cacheKey: 'map:wind' })
   const windByWardId = useMemo(
     () => new Map((windState.data ?? []).map((w) => [w.ward_id, w])),
     [windState.data],
@@ -428,7 +431,7 @@ export default function MapPage() {
   // — never a fabricated percentage). Threaded into MapToolbar so selecting
   // 24h/48h forecast shows this honesty signal at the point of selection,
   // not only inside a ward/station detail panel a viewer might never open.
-  const forecastAccuracyState = useAsync(() => fetchForecastAccuracySummary(), [], {
+  const forecastAccuracyState = useAsync(() => fetchForecastAccuracySummary(cityId), [cityId], {
     cacheKey: 'map:forecast-accuracy',
   })
   const forecastAccuracy = forecastAccuracyState.data ?? null
@@ -477,10 +480,10 @@ export default function MapPage() {
   const wardCoverageById = useMemo<Map<number, WardCoverageDetail>>(() => {
     const map = new Map<number, WardCoverageDetail>()
     for (const b of wardBoundaries) {
-      map.set(b.id, classifyWardCoverage(b, stationHealth, stations))
+      map.set(b.id, classifyWardCoverage(b, stationHealth, stations, cityBounds))
     }
     return map
-  }, [wardBoundaries, stationHealth, stations])
+  }, [wardBoundaries, stationHealth, stations, cityBounds])
 
   const wardCoverageSummary = useMemo<Record<WardCoverageClass, number>>(() => {
     const acc: Record<WardCoverageClass, number> = { direct: 0, nearby: 0, insufficient: 0, unavailable: 0 }
@@ -488,7 +491,7 @@ export default function MapPage() {
     return acc
   }, [wardCoverageById])
 
-  const incidentAudit = useMemo(() => auditIncidentCoordinates(incidents), [incidents])
+  const incidentAudit = useMemo(() => auditIncidentCoordinates(incidents, cityBounds), [incidents, cityBounds])
 
   const selectedWardId = selection?.kind === 'ward' ? selection.id : null
   const attributionState = useAsync(
@@ -542,7 +545,7 @@ export default function MapPage() {
     () =>
       layers.wardMarkers
         ? wards
-            .filter((w) => isValidDelhiCoordinate(w.lat, w.lng))
+            .filter((w) => isOnOperationalMap(w.lat, w.lng, cityBounds))
             .map((w) => {
               const forecast = forecasts.get(w.id)
               const reading = resolveWardReading(w, pollutant, timeMode, forecast, aqiForecasts.get(w.id))
@@ -573,7 +576,7 @@ export default function MapPage() {
     () =>
       layers.stations
         ? stations
-            .filter((s) => isValidDelhiCoordinate(s.lat, s.lng))
+            .filter((s) => isOnOperationalMap(s.lat, s.lng, cityBounds))
             .filter((s) => {
               // In quality mode, apply freshness filter
               if (viewMode === 'data_quality' && freshnessFilter != null) {
@@ -687,7 +690,7 @@ export default function MapPage() {
         return true
       })
       const features = filteredIncidents
-        .filter((i) => isValidDelhiCoordinate(i.lat, i.lng))
+        .filter((i) => isOnOperationalMap(i.lat, i.lng, cityBounds))
         .map((i) => {
           const sev = (i.severity ?? null) as Severity | null
           const severityOrder = sev ? (SEVERITY_RANK[sev] ?? 0) : 0
@@ -718,7 +721,7 @@ export default function MapPage() {
     () =>
       layers.citizenReports
         ? reports
-            .filter((r) => isValidDelhiCoordinate(r.lat, r.lng))
+            .filter((r) => isOnOperationalMap(r.lat, r.lng, cityBounds))
             .map((r) => ({
               id: `report-${r.id}`,
               kind: 'report' as const,
@@ -764,7 +767,7 @@ export default function MapPage() {
       layers.transitActivity
         ? wards
             .map((w) => {
-              if (isValidDelhiCoordinate(w.lat, w.lng)) return { ward: w, lat: w.lat as number, lng: w.lng as number }
+              if (isOnOperationalMap(w.lat, w.lng, cityBounds)) return { ward: w, lat: w.lat as number, lng: w.lng as number }
               const geometry = transitWardGeometryById.get(w.id)
               const centroid = geometry ? geometryCentroid(geometry) : null
               return centroid ? { ward: w, lat: centroid.lat, lng: centroid.lng } : null
@@ -798,21 +801,19 @@ export default function MapPage() {
     [wardMarkers, stationMarkers, reportMarkers, transitMarkers],
   )
 
-  // Only ever built from validated Delhi/NCR coordinates - a single bad row
-  // elsewhere in India must never be able to stretch "Reset to Delhi" out to
-  // city/world scale (see mapRules.ts's isValidDelhiCoordinate).
+  // Only ever built from coordinates on the active city's operational map -
+  // a single bad row elsewhere in India must never be able to stretch
+  // "Reset to <city>" out to country/world scale (see mapRules.ts's
+  // isOnOperationalMap).
   const cityBoundsCoords = useMemo<[number, number][]>(() => {
     const coords: [number, number][] = []
-    for (const w of wards) if (isValidDelhiCoordinate(w.lat, w.lng)) coords.push([w.lng as number, w.lat as number])
-    for (const s of stations) if (isValidDelhiCoordinate(s.lat, s.lng)) coords.push([s.lng, s.lat])
+    for (const w of wards) if (isOnOperationalMap(w.lat, w.lng, cityBounds)) coords.push([w.lng as number, w.lat as number])
+    for (const s of stations) if (isOnOperationalMap(s.lat, s.lng, cityBounds)) coords.push([s.lng, s.lat])
     return coords
-  }, [wards, stations])
-  // No valid points at all -> fit to the Delhi bounds box itself, a real
+  }, [wards, stations, cityBounds])
+  // No valid points at all -> fit to the city's bounds box itself, a real
   // geographic constant, rather than an empty/undefined fitBounds call.
-  const delhiBoundsCoords: [number, number][] = [
-    [DELHI_BOUNDS.minLng, DELHI_BOUNDS.minLat],
-    [DELHI_BOUNDS.maxLng, DELHI_BOUNDS.maxLat],
-  ]
+  const cityBoxCoords: [number, number][] = boundsToLngLatPair(cityBounds)
   // Today, selecting a ward/station by click or from a results list does not
   // move the camera - only the "Reset to Delhi" button (resetToken) drives
   // fitBoundsTo. GeoAI needs the map to actually pan when it resolves a
@@ -821,7 +822,7 @@ export default function MapPage() {
   const [geoAiFocusBounds, setGeoAiFocusBounds] = useState<[number, number][] | undefined>(undefined)
   const fitBoundsTo = useMemo(() => {
     if (geoAiFocusBounds) return geoAiFocusBounds
-    return resetToken > 0 ? (cityBoundsCoords.length > 0 ? [...cityBoundsCoords] : delhiBoundsCoords) : undefined
+    return resetToken > 0 ? (cityBoundsCoords.length > 0 ? [...cityBoundsCoords] : cityBoxCoords) : undefined
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetToken, geoAiFocusBounds])
 
@@ -1083,7 +1084,7 @@ export default function MapPage() {
 
   const incidentNearestStation = useMemo(() => {
     if (!selectedIncident) return null
-    const result = nearestStationTo(selectedIncident.lat ?? null, selectedIncident.lng ?? null, stations)
+    const result = nearestStationTo(selectedIncident.lat ?? null, selectedIncident.lng ?? null, stations, cityBounds)
     if (!result) return null
     const health = stationHealthById.get(result.station.id)
     const preferred = latestReadingByStationId.get(result.station.id)
@@ -1175,7 +1176,7 @@ export default function MapPage() {
           }
         : null
 
-    const nearest = nearestStationTo(boundary.lat, boundary.lng, stations)
+    const nearest = nearestStationTo(boundary.lat, boundary.lng, stations, cityBounds)
     const nearestHealth = nearest ? stationHealthById.get(nearest.station.id) : undefined
     const nearestStation =
       nearest != null
@@ -1324,8 +1325,8 @@ export default function MapPage() {
             <div className="relative min-h-0 flex-1">
               <MapView
                 markers={allMarkers}
-                center={DELHI_CENTER}
-                zoom={DELHI_DEFAULT_ZOOM}
+                center={city.center}
+                zoom={city.defaultZoom}
                 styleUrl={resolveStyleUrl(basemap)}
                 showScaleBar
                 onMarkerClick={handleMarkerClick}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Droplets, Thermometer } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { roleHome, useAuth } from '../lib/auth'
+import { useCity } from '../lib/city'
 import { fetchCityWeatherNow } from '../lib/data'
 import { initOfflineSync } from '../lib/offlineSync'
 import { useAsync } from '../lib/useAsync'
@@ -27,6 +28,29 @@ export function LogoMark({ className = 'h-8 w-14' }: { className?: string }) {
 }
 
 /** Full wordmark - for login / brand surfaces only. */
+/** Picks the active city. Renders nothing unless city_config has more than
+ *  one active city, so a Delhi-only deployment looks exactly as before. */
+function CitySwitcher() {
+  const { cityCode, cities, setCity } = useCity()
+  if (cities.length < 2) return null
+  return (
+    <label className="flex items-center rounded-lg bg-white/75 px-1.5 py-1 shadow-sm backdrop-blur-sm">
+      <span className="sr-only">City</span>
+      <select
+        value={cityCode}
+        onChange={(e) => setCity(e.target.value)}
+        className="focus-ring max-w-[10rem] cursor-pointer truncate rounded-md bg-transparent py-0.5 text-xs font-semibold text-slate-700"
+      >
+        {cities.map((c) => (
+          <option key={c.cityCode} value={c.cityCode}>
+            {c.map.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 /** City temperature and humidity now (median across wards of each ward's
  *  latest Open-Meteo reading, see fetchCityWeatherNow), re-fetched every
  *  10 min. Renders nothing when weather ingest has nothing from the last
@@ -37,7 +61,8 @@ function HeaderWeather() {
     const t = setInterval(() => setTick((v) => v + 1), 10 * 60_000)
     return () => clearInterval(t)
   }, [])
-  const { data } = useAsync(fetchCityWeatherNow, [tick], { cacheKey: 'header-weather', staleAfterMs: 15 * 60_000 })
+  const { cityId, map: city } = useCity()
+  const { data } = useAsync(() => fetchCityWeatherNow(cityId), [tick, cityId], { cacheKey: 'header-weather', staleAfterMs: 15 * 60_000 })
   if (!data || (data.tempC == null && data.humidity == null)) return null
   const asOf = new Date(data.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   const label = [
@@ -47,8 +72,8 @@ function HeaderWeather() {
   return (
     <div
       className="hidden items-center gap-2.5 rounded-lg bg-white/75 px-2.5 py-1.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm backdrop-blur-sm md:flex"
-      title={`Delhi now: ${label}. Median of ${data.wards} wards, Open-Meteo, as of ${asOf}.`}
-      aria-label={`Delhi weather now: ${label}`}
+      title={`${city.label} now: ${label}. Median of ${data.wards} wards, Open-Meteo, as of ${asOf}.`}
+      aria-label={`${city.label} weather now: ${label}`}
     >
       {data.tempC != null && (
         <span className="flex items-center gap-1">
@@ -281,6 +306,7 @@ function TopBar({
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <CitySwitcher />
           <HeaderWeather />
           <div className="relative">
             <button

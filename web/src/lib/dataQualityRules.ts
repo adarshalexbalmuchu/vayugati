@@ -12,7 +12,8 @@
 import type { StationMarker } from './data'
 import type { Incident } from './incidents'
 import type { StationHealthRow } from './ops'
-import { isValidDelhiCoordinate, nearestStationTo } from './mapRules'
+import type { MapBounds } from './cities'
+import { DELHI_BOUNDS, isOnOperationalMap, nearestStationTo } from './mapRules'
 import { pointInGeometry } from './incidentLocationRules'
 
 // ── Freshness classification ──────────────────────────────────────────────────
@@ -233,11 +234,13 @@ export function classifyWardCoverage(
   ward: { id: number; lat: number | null; lng: number | null; geometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null },
   stationHealth: StationHealthRow[],
   stations: StationMarker[],
+  /** The active city's operational map; Delhi's when omitted. */
+  bounds: MapBounds = DELHI_BOUNDS,
 ): WardCoverageDetail {
   // Resolve a reference point: stored centroid → derived from geometry → fail
   let refLat = ward.lat
   let refLng = ward.lng
-  if (!isValidDelhiCoordinate(refLat, refLng) && ward.geometry) {
+  if (!isOnOperationalMap(refLat, refLng, bounds) && ward.geometry) {
     const derived = geometryCentroid(ward.geometry)
     if (derived) {
       refLat = derived.lat
@@ -248,7 +251,7 @@ export function classifyWardCoverage(
   // Only active stations with valid Delhi coordinates count toward any coverage class.
   const activeHealth = stationHealth.filter((h) => h.is_active)
   const activeIds = new Set(activeHealth.map((h) => h.id))
-  const activeStations = stations.filter((s) => activeIds.has(s.id) && isValidDelhiCoordinate(s.lat, s.lng))
+  const activeStations = stations.filter((s) => activeIds.has(s.id) && isOnOperationalMap(s.lat, s.lng, bounds))
 
   // Direct coverage: physical containment via point-in-polygon (when geometry
   // is available), ward_id match as a fallback for callers that supply no geometry.
@@ -271,7 +274,7 @@ export function classifyWardCoverage(
   }
 
   // No valid reference point → cannot compute any distance-based class
-  if (!isValidDelhiCoordinate(refLat, refLng)) {
+  if (!isOnOperationalMap(refLat, refLng, bounds)) {
     if (import.meta.env.DEV) {
       console.warn(`[dataQuality] Ward ${ward.id} unavailable: no valid reference point`, {
         storedLat: ward.lat, storedLng: ward.lng,
@@ -283,7 +286,7 @@ export function classifyWardCoverage(
   }
 
   // Nearby / insufficient: straight-line distance from ward reference point
-  const nearest = nearestStationTo(refLat, refLng, activeStations)
+  const nearest = nearestStationTo(refLat, refLng, activeStations, bounds)
   if (nearest && nearest.distanceMeters <= NEARBY_COVERAGE_THRESHOLD_METERS) {
     return { class: 'nearby', directStationName: null, nearestDistanceMeters: nearest.distanceMeters, nearestStationName: nearest.station.name }
   }
@@ -310,6 +313,8 @@ export interface IncidentCoordinateAudit {
 
 export function auditIncidentCoordinates(
   incidents: Pick<Incident, 'lat' | 'lng' | 'ward_id' | 'coordinate_review_status'>[],
+  /** The active city's operational map; Delhi's when omitted. */
+  bounds: MapBounds = DELHI_BOUNDS,
 ): IncidentCoordinateAudit {
   let spatiallyValid = 0
   let missingCoordinates = 0
@@ -321,7 +326,7 @@ export function auditIncidentCoordinates(
   for (const i of incidents) {
     const hasCoords = i.lat != null && i.lng != null
     const hasWard = i.ward_id != null
-    const validDelhi = isValidDelhiCoordinate(i.lat, i.lng)
+    const validDelhi = isOnOperationalMap(i.lat, i.lng, bounds)
 
     if (validDelhi) {
       spatiallyValid++

@@ -1,6 +1,7 @@
 import { ChevronDown, Crosshair, Info, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useCity } from '../../lib/city'
 import { FRESHNESS_LABEL, type FreshnessClass } from '../../lib/dataQualityRules'
 import type { ForecastAccuracySummary } from '../../lib/data'
 import { SOURCE_CATEGORY_LABEL, sourceCategoryLabel, type Severity, type SourceCategory } from '../../lib/incidentRules'
@@ -147,6 +148,7 @@ export default function MapToolbar(props: MapToolbarProps) {
     activeTool = 'none', onActiveToolChange, bufferRadiusKm = 1, onBufferRadiusChange,
     freshnessLabel, isStale = false, onRefresh, refreshing = false,
   } = props
+  const { map: city } = useCity()
 
   const isHistorical = obsSlot !== 'now'
   // Forecast modes are unavailable when viewing historical observations (a
@@ -304,7 +306,7 @@ export default function MapToolbar(props: MapToolbarProps) {
               className="focus-ring flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               <Crosshair className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-              Reset to Delhi
+              Reset to {city.label}
             </button>
             <span
               title={

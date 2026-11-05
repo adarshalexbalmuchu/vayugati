@@ -2,7 +2,7 @@
  * A minimal embedded MapLibre map for placing or moving an incident's location.
  *
  * Responsibilities:
- *  - Show Delhi ward boundaries (read-only)
+ *  - Show the active city's ward boundaries (read-only)
  *  - Show the existing incident point (orange pin) when valid
  *  - Show a draggable placement marker (blue pin) at the proposed location
  *  - On click/drag emit the new [lat, lng] to the parent
@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { WardBoundary } from '../../lib/data'
-import { DELHI_CENTER, DELHI_DEFAULT_ZOOM } from '../../lib/mapRules'
+import { useCity } from '../../lib/city'
 import { findContainingWard } from '../../lib/incidentLocationRules'
 
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
@@ -45,6 +45,8 @@ export default function LocationPickerMap({
   onChange,
   onWardResolved,
 }: Props) {
+  // Read once at map init; a city switch remounts every page (App.tsx).
+  const { map: city } = useCity()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const existingMarkerRef = useRef<maplibregl.Marker | null>(null)
@@ -64,8 +66,8 @@ export default function LocationPickerMap({
       map = new maplibregl.Map({
         container,
         style: BASEMAP_STYLE,
-        center: DELHI_CENTER,
-        zoom: DELHI_DEFAULT_ZOOM,
+        center: city.center,
+        zoom: city.defaultZoom,
         attributionControl: false,
       })
 

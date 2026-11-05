@@ -3,8 +3,10 @@ import type { WardBoundary } from './data'
 import type { Incident } from './incidents'
 import {
   NCR_BOUNDS,
+  classifyCityCoordinate,
   classifyCoordinateLocation,
   coordinateDisplacementMeters,
+  coordinateLocationLabel,
   LARGE_DISPLACEMENT_WARNING_METERS,
   deriveLocationQuality,
   findContainingWard,
@@ -13,6 +15,7 @@ import {
   validateCoordinates,
 } from './incidentLocationRules'
 import { DELHI_BOUNDS } from './mapRules'
+import { CITY_REGISTRY } from './cities'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -369,5 +372,66 @@ describe('centroid placement prohibition', () => {
     // PIP correctly identifies the ward, but the result is not a stored value —
     // it is a suggestion shown to the reviewer; the human must confirm placement.
     expect(result?.id).toBe(10)
+  })
+})
+
+// ── Active-city bounds (Delhi default, Dhanbad, neither) ──────────────────────
+
+describe('city-aware location rules', () => {
+  const DELHI_AREA = CITY_REGISTRY.delhi
+  const DHANBAD_AREA = CITY_REGISTRY.dhanbad
+  const DHANBAD_POINT = { lat: 23.80569, lng: 86.44268 } // Sardar Patel Nagar, Dhanbad
+  const MUMBAI_POINT = { lat: 19.076, lng: 72.8777 }   // outside both cities
+
+  it('classifyCityCoordinate defaults to Delhi and matches the legacy classes', () => {
+    expect(classifyCityCoordinate(DELHI_POINT.lat, DELHI_POINT.lng)).toBe('in_city')
+    expect(classifyCityCoordinate(NOIDA_POINT.lat, NOIDA_POINT.lng)).toBe('in_wider_area')
+    expect(classifyCityCoordinate(OUTSIDE_POINT.lat, OUTSIDE_POINT.lng)).toBe('outside_area')
+    expect(classifyCityCoordinate(0, 0)).toBe('missing')
+    expect(classifyCityCoordinate(NaN, 1)).toBe('invalid')
+  })
+
+  it('a Dhanbad point is in the city on the Dhanbad map', () => {
+    expect(classifyCityCoordinate(DHANBAD_POINT.lat, DHANBAD_POINT.lng, DHANBAD_AREA)).toBe('in_city')
+    const r = validateCoordinates(DHANBAD_POINT.lat, DHANBAD_POINT.lng, DHANBAD_AREA)
+    expect(r.valid).toBe(true)
+    expect(r.requiresNcrConfirmation).toBe(false)
+  })
+
+  it('a Dhanbad point is outside the operating area for Delhi (and vice versa)', () => {
+    expect(classifyCityCoordinate(DHANBAD_POINT.lat, DHANBAD_POINT.lng, DELHI_AREA)).toBe('outside_area')
+    expect(classifyCoordinateLocation(DHANBAD_POINT.lat, DHANBAD_POINT.lng)).toBe('outside_ncr')
+    expect(classifyCityCoordinate(DELHI_POINT.lat, DELHI_POINT.lng, DHANBAD_AREA)).toBe('outside_area')
+    expect(validateCoordinates(DELHI_POINT.lat, DELHI_POINT.lng, DHANBAD_AREA).valid).toBe(false)
+  })
+
+  it('Dhanbad has no wider area: a Noida point is simply outside it', () => {
+    expect(classifyCityCoordinate(NOIDA_POINT.lat, NOIDA_POINT.lng, DHANBAD_AREA)).toBe('outside_area')
+  })
+
+  it('a point outside both cities is outside the operating area for each', () => {
+    for (const area of [DELHI_AREA, DHANBAD_AREA]) {
+      expect(classifyCityCoordinate(MUMBAI_POINT.lat, MUMBAI_POINT.lng, area)).toBe('outside_area')
+      const r = validateCoordinates(MUMBAI_POINT.lat, MUMBAI_POINT.lng, area)
+      expect(r.valid).toBe(false)
+      expect(r.errors[0]).toMatch(/outside the current operating area/)
+      const q = deriveLocationQuality(incident({ lat: MUMBAI_POINT.lat, lng: MUMBAI_POINT.lng }), undefined, area)
+      expect(q.status).toBe('outside_area')
+    }
+  })
+
+  it('deriveLocationQuality uses the given city', () => {
+    const inc = incident({ lat: DHANBAD_POINT.lat, lng: DHANBAD_POINT.lng })
+    expect(deriveLocationQuality(inc, undefined, DHANBAD_AREA).status).toBe('mapped')
+    expect(deriveLocationQuality(inc).status).toBe('outside_area')
+    expect(matchesRemediationFilter(inc, deriveLocationQuality(inc, undefined, DHANBAD_AREA), 'outside_area')).toBe(false)
+    expect(matchesRemediationFilter(inc, deriveLocationQuality(inc), 'outside_area')).toBe(true)
+  })
+
+  it('labels: Delhi wording unchanged, Dhanbad wording from its registry entry', () => {
+    expect(coordinateLocationLabel('in_city')).toBe('Within Delhi/NCR')
+    expect(coordinateLocationLabel('in_wider_area')).toBe('Outside Delhi · inside NCR operating area')
+    expect(coordinateLocationLabel('outside_area')).toBe('Outside the current operating area')
+    expect(coordinateLocationLabel('in_city', DHANBAD_AREA)).toBe('Within Dhanbad–Jharia')
   })
 })
