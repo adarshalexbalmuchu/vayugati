@@ -250,8 +250,9 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
     line(`Continuous stations reporting in the CPCB feed (5 Nov 2026): ${cont}`)
     line(`Manual stations, CPCB NAMP list (19 Nov 2024): ${manual}`)
     line(`Continuous stations planned, JSPCB tender (6 Dec 2025): ${planned}`)
-    if (cont === 0 && manual === 0 && planned === 0) line('No station in CPCB’s public lists and none in the JSPCB tender. Monitors run by industries are not counted.')
+    if (cont === 0 && manual === 0 && planned === 0) line('No station in CPCB’s public lists and none in the JSPCB tender.')
     else if (cont === 0) line('No continuous (hourly) station reporting publicly.')
+    line('Counts only stations in CPCB’s public lists. Monitors run by industries or municipal bodies that are not on the national feed are not counted.')
     line('District outline: geoBoundaries (approximate, not Survey of India).')
   } else if (layerId === 'ctx-fires') {
     line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
