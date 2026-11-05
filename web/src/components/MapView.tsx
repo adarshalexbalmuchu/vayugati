@@ -1675,9 +1675,6 @@ export default function MapView({
           cityCode={cityCode}
           visible={contextLayers}
           showViewControl
-          cityLabel={cityMap.label}
-          cityCenter={cityMap.center}
-          cityZoom={cityMap.defaultZoom}
         />
       )}
     </div>

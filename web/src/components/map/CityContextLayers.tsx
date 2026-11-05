@@ -32,8 +32,6 @@ interface ContextPack {
   regionLabel: string
   /** [W, S, E, N] of the wider view (the state outline's extent). */
   regionBounds: [number, number, number, number]
-  /** Label of the city-scale view (the grid cells and stations). */
-  focusLabel: string
 }
 
 /** City codes with a context pack, and where its files are served from. */
@@ -42,7 +40,6 @@ export const CONTEXT_PACKS: Record<string, ContextPack> = {
     base: '/city-packs/jharkhand',
     regionLabel: 'Jharkhand',
     regionBounds: [83.33, 21.97, 87.98, 25.34],
-    focusLabel: 'Dhanbad–Jharia coalfield',
   },
 }
 
@@ -693,9 +690,6 @@ class ViewControl implements maplibregl.IControl {
 
   constructor(
     private pack: ContextPack,
-    private cityLabel: string,
-    private cityCenter: [number, number],
-    private cityZoom: number,
     /** The layer toggles, so leaving 3D keeps satellite/relief the viewer switched on. */
     private wanted: () => CityContextVisibility,
   ) {}
@@ -708,16 +702,6 @@ class ViewControl implements maplibregl.IControl {
     b.addEventListener('click', onClick)
     parent.appendChild(b)
     return b
-  }
-
-  private segButtons: HTMLButtonElement[] = []
-
-  private setView(active: 0 | 1) {
-    this.segButtons.forEach((b, k) => {
-      b.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${
-        k === active ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
-      }`
-    })
   }
 
   onAdd(map: maplibregl.Map) {
@@ -751,32 +735,12 @@ class ViewControl implements maplibregl.IControl {
     el.append(head, body)
     setOpen(typeof window === 'undefined' || window.innerWidth >= 640)
 
-    // View switch
-    const seg = document.createElement('div')
-    seg.className = 'flex gap-1 rounded-xl bg-slate-100 p-1'
-    const segBtn = (label: string, onClick: () => void) => {
-      const b = document.createElement('button')
-      b.type = 'button'
-      b.textContent = label
-      b.addEventListener('click', onClick)
-      seg.appendChild(b)
-      this.segButtons.push(b)
-    }
-    segBtn(this.pack.regionLabel, () => this.selectDistrict(null))
-    segBtn(this.pack.focusLabel || this.cityLabel, () => {
-      this.selectDistrict(null, false)
-      this.setView(1)
-      map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, pitch: 0, bearing: 0, duration: 900 })
-    })
-    this.setView(0)
-    body.appendChild(seg)
-
     // District picker
     const pick = document.createElement('label')
     pick.className = 'block'
     const pickText = document.createElement('span')
     pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-400'
-    pickText.textContent = 'District (opens in 3D)'
+    pickText.textContent = 'Go to district (opens in 3D)'
     const select = document.createElement('select')
     select.className = 'focus-ring w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-800'
     select.addEventListener('change', () => this.selectDistrict(select.value || null))
@@ -970,7 +934,6 @@ class ViewControl implements maplibregl.IControl {
     if (this.select) this.select.value = this.selected ?? ''
     this.applySelection()
     this.renderProfile()
-    this.setView(0)
     if (f) {
       if (!this.on3D) this.enter3D()
       const [w, s, e, n] = bboxOf(f.geometry)
@@ -1250,18 +1213,12 @@ export default function CityContextLayers({
   cityCode,
   visible,
   showViewControl = false,
-  cityLabel = '',
-  cityCenter,
-  cityZoom = 10,
 }: {
   map: maplibregl.Map | null
   cityCode: string | null
   visible: CityContextVisibility
   /** Add the Jharkhand / city buttons, the district 3D picker and the heat-detection player. */
   showViewControl?: boolean
-  cityLabel?: string
-  cityCenter?: [number, number]
-  cityZoom?: number
 }) {
   const visibleRef = useRef(visible)
   visibleRef.current = visible
@@ -1368,8 +1325,8 @@ export default function CityContextLayers({
   }, [map, pack])
 
   useEffect(() => {
-    if (!alive(map) || !pack || !showViewControl || !cityCenter) return
-    const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom, () => visibleRef.current)
+    if (!alive(map) || !pack || !showViewControl) return
+    const ctrl = new ViewControl(pack, () => visibleRef.current)
     map.addControl(ctrl, 'top-left')
     // Compass and tilt indicator: drag to tilt/turn, click to reset north.
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
@@ -1388,9 +1345,8 @@ export default function CityContextLayers({
         // map already removed
       }
     }
-    // cityCenter is an array; key on its values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, pack, showViewControl, cityLabel, cityCenter?.[0], cityCenter?.[1], cityZoom])
+  }, [map, pack, showViewControl])
 
   useEffect(() => {
     if (!alive(map) || !pack) return

@@ -556,9 +556,6 @@ export default function OverviewChoroplethMap({
         cityCode={cityCode}
         visible={DEFAULT_CONTEXT_VISIBLE}
         showViewControl={showViewControl}
-        cityLabel={city.label}
-        cityCenter={city.center}
-        cityZoom={city.defaultZoom}
       />
 
       {/* Hovered ward name badge */}
