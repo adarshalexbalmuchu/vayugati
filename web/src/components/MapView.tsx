@@ -3,6 +3,7 @@ import maplibregl, { type StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FALLBACK_STYLE, maptilerKey } from '../lib/basemaps'
+import { useCity } from '../lib/city'
 import WindParticles from './WindParticles'
 import {
   areIdenticalCoords,
@@ -14,8 +15,6 @@ import {
 import { createMarkerElement, ensurePulseStyle, ensureSelectedMarkerStyle, type MapMarker } from '../lib/mapMarkers'
 
 export type { MapMarker, MapMarkerKind } from '../lib/mapMarkers'
-
-const DELHI_CENTER: [number, number] = [77.209, 28.6139]
 
 export interface WardBoundaryFeatureProps {
   id: number
@@ -348,6 +347,8 @@ export default function MapView({
   onToolClick,
   toolGeoJSON,
 }: Props) {
+  // Used when no `center` is passed (the bare embeds); read at map creation.
+  const cityCenter = useCity().map.center
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   // Exposed via state so child components (WindParticles) can access the map
@@ -467,7 +468,7 @@ export default function MapView({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleUrl ?? FALLBACK_STYLE,
-      center: center ?? DELHI_CENTER,
+      center: center ?? cityCenter,
       zoom,
       // Default attribution control renders its text inline, always
       // expanded, at full size — reads as a stray label next to the info

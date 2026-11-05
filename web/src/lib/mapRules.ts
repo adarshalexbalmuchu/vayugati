@@ -3,6 +3,7 @@
  * here - mirrors overviewRules.ts's/incidentRules.ts's own convention. Every
  * input comes from data already fetched by existing lib/*.ts functions.
  */
+import { DELHI_MAP_SETTINGS, isWithinBounds, type MapBounds } from './cities'
 import { haversineMeters, POLLUTANT_LABEL } from './incidentRules'
 import { hotspotStatus, type HotspotStatus, type TimeWindowHours } from './overviewRules'
 import type { AqiForecastPoint, ForecastPoint, ForecastPollutant, StationMarker, WardForecastSummary, WardSummary } from './data'
@@ -156,26 +157,30 @@ export function pollutantHasForecast(pollutant: MapPollutant): boolean {
   return pollutant !== 'aqi'
 }
 
-/** Delhi MVP viewport - the only city this pilot serves today (see
- *  docs/IMPLEMENTATION_STATUS.md), so a real, fixed default rather than a
- *  computed one is honest, not a shortcut. */
-export const DELHI_CENTER: [number, number] = [77.209, 28.6139]
-export const DELHI_DEFAULT_ZOOM = 10
+/** @deprecated The map viewport and bounds now come from the active city
+ *  (useCity().map, lib/city.tsx; registry in lib/cities.ts). Kept as an
+ *  alias of Delhi's registry entry for tests and as the Delhi default of the
+ *  pure functions below. A generous Delhi box (Delhi proper plus the
+ *  Gurugram/Noida/Faridabad/Ghaziabad edges). */
+export const DELHI_BOUNDS: MapBounds = DELHI_MAP_SETTINGS.bounds
 
-/** A generous Delhi/NCR bounding box (covers Delhi proper plus the
- *  Gurugram/Noida/Faridabad/Ghaziabad edges) - a real geographic constant,
- *  not fabricated data. Used to both validate incoming coordinates and as
- *  the "Reset to Delhi" fallback view when no valid points exist. */
-export const DELHI_BOUNDS = { minLng: 76.7, maxLng: 77.7, minLat: 28.2, maxLat: 29.0 }
+/** True only for a finite lat/lng pair inside the active city's operational
+ *  map (`bounds`; Delhi's when omitted). A wrong-but-non-null coordinate
+ *  elsewhere in India (or a stray 0,0) must never be plotted or allowed to
+ *  stretch a fit-bounds call out to country/world scale - this is the single
+ *  gate every marker source runs through before rendering. */
+export function isOnOperationalMap(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  bounds: MapBounds = DELHI_BOUNDS,
+): boolean {
+  return isWithinBounds(lat, lng, bounds)
+}
 
-/** True only for a finite lat/lng pair that actually falls within the Delhi/
- *  NCR box. A wrong-but-non-null coordinate elsewhere in India (or a stray
- *  0,0) must never be plotted or allowed to stretch a fit-bounds call out to
- *  city/world scale - this is the single gate every marker source runs
- *  through before rendering. */
+/** @deprecated Delhi-only alias of isOnOperationalMap; pass the active
+ *  city's bounds to isOnOperationalMap instead. */
 export function isValidDelhiCoordinate(lat: number | null | undefined, lng: number | null | undefined): boolean {
-  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return false
-  return lat >= DELHI_BOUNDS.minLat && lat <= DELHI_BOUNDS.maxLat && lng >= DELHI_BOUNDS.minLng && lng <= DELHI_BOUNDS.maxLng
+  return isOnOperationalMap(lat, lng, DELHI_BOUNDS)
 }
 
 export const MAP_POLLUTANT_LABEL: Record<MapPollutant, string> = {
@@ -385,8 +390,9 @@ export interface NearestStationResult {
   distanceMeters: number
 }
 
-/** Real haversine distance to the closest station with a valid Delhi/NCR
- *  coordinate - null when no such station exists (empty list, or every
+/** Real haversine distance to the closest station with a coordinate on the
+ *  operational map (`bounds`, Delhi's when omitted) - null when no such
+ *  station exists (empty list, or every
  *  candidate has a missing/invalid coordinate), never a fabricated
  *  "nearest" pick. Callers show an honest "no direct station" state instead
  *  when this returns null. */
@@ -394,11 +400,12 @@ export function nearestStationTo(
   lat: number | null,
   lng: number | null,
   stations: StationMarker[],
+  bounds: MapBounds = DELHI_BOUNDS,
 ): NearestStationResult | null {
-  if (lat == null || lng == null || !isValidDelhiCoordinate(lat, lng)) return null
+  if (lat == null || lng == null || !isOnOperationalMap(lat, lng, bounds)) return null
   let best: NearestStationResult | null = null
   for (const s of stations) {
-    if (!isValidDelhiCoordinate(s.lat, s.lng)) continue
+    if (!isOnOperationalMap(s.lat, s.lng, bounds)) continue
     const distanceMeters = haversineMeters({ lat, lng }, { lat: s.lat, lng: s.lng })
     if (!best || distanceMeters < best.distanceMeters) best = { station: s, distanceMeters }
   }

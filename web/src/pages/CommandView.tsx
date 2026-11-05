@@ -19,6 +19,7 @@ import {
   type TimeWindowHours,
 } from '../lib/overviewRules'
 import { useAsync } from '../lib/useAsync'
+import { useCity } from '../lib/city'
 
 /**
  * Overview — the commander's daily City Command Dashboard (launch UI pass).
@@ -35,6 +36,7 @@ import { useAsync } from '../lib/useAsync'
  * is set once when <AppShell> is rendered, not re-derived per branch.
  */
 export default function CommandView() {
+  const { cityId } = useCity()
   const [pollutant, setPollutant] = useState<MapPollutant>('aqi')
   // No longer user-changeable (the 12h/24h/36h/48h picker was removed — dead
   // UI while the forecast pipeline isn't producing results) but still a real
@@ -58,15 +60,15 @@ export default function CommandView() {
   const state = useAsync(
     () =>
       Promise.all([
-        fetchAllWardsAqi(),
+        fetchAllWardsAqi(cityId),
         fetchGatiMetrics(),
-        fetchForecastAccuracySummary(),
+        fetchForecastAccuracySummary(cityId),
       ]),
-    [],
+    [cityId],
     { cacheKey: 'command:main' },
   )
   const forecastPollutant = forecastPollutantFor(pollutant)
-  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant), [forecastPollutant], {
+  const forecastsState = useAsync(() => fetchAllForecasts(forecastPollutant, cityId), [forecastPollutant, cityId], {
     cacheKey: `command:forecasts:${forecastPollutant}`,
   })
   const latestReadingsState = useAsync(() => fetchLatestReadingsPreferred(), [], {

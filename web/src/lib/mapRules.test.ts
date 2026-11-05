@@ -4,6 +4,7 @@ import {
   changeMarkerBadge,
   classifyChangeDirection,
   forecastPollutantFor,
+  isOnOperationalMap,
   isValidDelhiCoordinate,
   markerMeaningLabel,
   nearestForecastPoint,
@@ -16,6 +17,7 @@ import {
   wardPollutantValue,
 } from './mapRules'
 import type { ForecastPoint, StationMarker, WardForecastSummary, WardSummary } from './data'
+import { CITY_REGISTRY } from './cities'
 
 function ward(overrides: Partial<WardSummary> = {}): WardSummary {
   return {
@@ -642,5 +644,41 @@ describe('wardPollutantValue', () => {
   it('returns null, not 0 or undefined, when a ward has no reading for that pollutant', () => {
     const noReadings = ward()
     expect(wardPollutantValue(noReadings, 'co')).toBeNull()
+  })
+})
+
+describe('isOnOperationalMap (per city)', () => {
+  const delhi = CITY_REGISTRY.delhi.bounds
+  const dhanbad = CITY_REGISTRY.dhanbad.bounds
+  const DHANBAD_POINT = { lat: 23.80569, lng: 86.44268 } // Sardar Patel Nagar station
+  const DELHI_POINT = { lat: 28.6139, lng: 77.209 }
+
+  it('defaults to Delhi bounds, same as isValidDelhiCoordinate', () => {
+    expect(isOnOperationalMap(DELHI_POINT.lat, DELHI_POINT.lng)).toBe(true)
+    expect(isOnOperationalMap(DHANBAD_POINT.lat, DHANBAD_POINT.lng)).toBe(false)
+  })
+
+  it('accepts a Dhanbad point only on the Dhanbad map', () => {
+    expect(isOnOperationalMap(DHANBAD_POINT.lat, DHANBAD_POINT.lng, dhanbad)).toBe(true)
+    expect(isOnOperationalMap(DHANBAD_POINT.lat, DHANBAD_POINT.lng, delhi)).toBe(false)
+    expect(isOnOperationalMap(DELHI_POINT.lat, DELHI_POINT.lng, dhanbad)).toBe(false)
+  })
+
+  it('rejects a point outside both cities (Mumbai, and an Asansol reference station)', () => {
+    for (const b of [delhi, dhanbad]) {
+      expect(isOnOperationalMap(19.076, 72.8777, b)).toBe(false)
+      expect(isOnOperationalMap(23.61818, 87.10572, b)).toBe(false)
+    }
+  })
+
+  it('nearestStationTo only considers stations on the given map', () => {
+    const st = (id: number, lat: number, lng: number): StationMarker => ({
+      id, name: `s${id}`, lat, lng, aqi: null, pm25: null, pm10: null, no2: null, so2: null, co: null, o3: null,
+    })
+    const jorapokhar = st(1, 23.70791, 86.41467)
+    const delhiStation = st(2, 28.62, 77.21)
+    expect(nearestStationTo(DHANBAD_POINT.lat, DHANBAD_POINT.lng, [jorapokhar, delhiStation], dhanbad)?.station.id).toBe(1)
+    // With the Delhi default, a Dhanbad origin is off the map: no nearest station.
+    expect(nearestStationTo(DHANBAD_POINT.lat, DHANBAD_POINT.lng, [jorapokhar, delhiStation])).toBeNull()
   })
 })

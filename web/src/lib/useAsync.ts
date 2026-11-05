@@ -7,6 +7,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // render even happens.
 const cache = new Map<string, { data: unknown; fetchedAt: number }>()
 
+/** Drops every cached result. Called when the active city changes (see
+ *  lib/city.tsx), so no page seeds its first render from another city's
+ *  data - cache keys don't carry the city themselves. */
+export function clearAsyncCache(): void {
+  cache.clear()
+}
+
 export interface AsyncState<T> {
   data: T | null
   error: string | null

@@ -1,5 +1,6 @@
 import { ArrowUpRight, MapPin, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useCity } from '../../lib/city'
 import { CONFIDENCE_LABEL, type Severity } from '../../lib/incidentRules'
 import type { Incident } from '../../lib/incidents'
 import {
@@ -35,7 +36,8 @@ export default function SelectedIncidentPanel({
   onClose: () => void
 }) {
   const severity = (incident.severity ?? null) as Severity | null
-  const locationQuality = deriveLocationQuality(incident)
+  const { map: area } = useCity()
+  const locationQuality = deriveLocationQuality(incident, undefined, area)
   const needsLocationReview = locationQuality.status === 'missing' || locationQuality.status === 'needs_review' || locationQuality.status === 'ward_mismatch' || locationQuality.status === 'outside_area'
 
   return (

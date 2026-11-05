@@ -112,6 +112,10 @@ plus `/login`, sharing:
 - `lib/database.types.ts` — **generated**; see the header for provenance and
   `make gen-types` to refresh from the linked project.
 - `lib/auth.tsx` — session + profile (role, ward) context.
+- `lib/cities.ts` — the city registry (map centre, zoom, bounds per
+  `city_code`, overridable by `city_config.config.map`) and the active-city
+  resolution order; `lib/city.tsx` — the active-city context (`useCity()`),
+  read by maps and passed as `cityId` to the ward/station queries in `data.ts`.
 - `lib/data.ts` — reads/writes for wards, readings, forecasts, reports and
   actions.
 - `lib/incidents.ts` — the same for the incident domain (Phase 3). A sibling

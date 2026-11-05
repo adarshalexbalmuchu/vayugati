@@ -17,6 +17,7 @@ import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Clock, ListFilter, MapPin, RefreshCw } from 'lucide-react'
 import AppShell from '../components/AppShell'
 import { useAuth } from '../lib/auth'
+import { useCity } from '../lib/city'
 import { type Incident, listRemediationIncidents } from '../lib/incidents'
 import { fetchAllWardBoundaries, type WardBoundary } from '../lib/data'
 import {
@@ -60,11 +61,12 @@ export default function IncidentRemediationPage() {
   const [selectedId, setSelectedId] = useState<number | null>(focusedIncidentId)
 
   const canEdit = profile?.role === 'commander' || profile?.role === 'admin'
+  const { cityId, map: area } = useCity()
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    Promise.all([listRemediationIncidents(), fetchAllWardBoundaries()])
+    Promise.all([listRemediationIncidents(), fetchAllWardBoundaries(cityId)])
       .then(([incs, wards]) => {
         if (cancelled) return
         setIncidents(incs)
@@ -77,17 +79,17 @@ export default function IncidentRemediationPage() {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [cityId])
 
   // Pre-compute location quality for all incidents (no PIP for the list — too slow for 500 rows)
   // PIP is computed inside LocationReviewWorkspace for the selected incident only.
   const qualityById = useMemo<Map<number, LocationQualityDetail>>(() => {
     const m = new Map<number, LocationQualityDetail>()
     for (const inc of incidents) {
-      m.set(inc.id, deriveLocationQuality(inc))  // no wardBoundaries = no PIP in list
+      m.set(inc.id, deriveLocationQuality(inc, undefined, area))  // no wardBoundaries = no PIP in list
     }
     return m
-  }, [incidents])
+  }, [incidents, area])
 
   // Filtered list
   const filtered = useMemo(() => {

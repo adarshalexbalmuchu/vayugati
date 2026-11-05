@@ -69,6 +69,11 @@ gitignored `ingest/data/`.
    Delhi centre and bounds (`DELHI_CENTER`, `DELHI_BOUNDS`, `DELHI_DEFAULT_ZOOM` in `web/src/lib/mapRules.ts`,
    and their uses in `MapView.tsx`, `OverviewChoroplethMap.tsx`, `LocationPickerMap.tsx`, `MapPage.tsx`)
    and read them from the active city (`city_config`), with Delhi as the default.
+   *Done in the web app:* the registry is `web/src/lib/cities.ts` (a `dhanbad` entry is already there,
+   derived from the grid's extent), the active city comes from `web/src/lib/city.tsx`, and ward/station
+   queries filter by city. Map settings can move to the database later as `city_config.config.map`
+   (`{ label, center: [lng, lat], default_zoom, bounds: { minLng, maxLng, minLat, maxLat }, wider_area }`),
+   which overrides the registry field by field. A city switcher appears once a second active city exists.
 2. **Import the city pack into the database** (on the Mac, with the service key, after review): a
    `city_config` row (`city_code = 'dhanbad'`), the 265 grid cells as `wards` rows, and the stations.
    Write it as a migration or seed script first; apply only once the city-aware app is merged.

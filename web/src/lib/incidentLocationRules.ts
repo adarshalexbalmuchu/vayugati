@@ -2,65 +2,96 @@
  * Pure derivation rules for incident location quality and coordinate remediation.
  * No I/O — all inputs come from data already loaded by callers.
  *
- * Boundary definitions:
- *   DELHI_BOUNDS  — the existing box in mapRules.ts (76.7–77.7 lng, 28.2–29.0 lat),
- *                   used for map rendering gates.
- *   NCR_BOUNDS    — slightly larger box covering Gurugram, Noida, Faridabad, Ghaziabad.
- *                   A point inside NCR but outside Delhi is still an operationally
- *                   relevant location for this pilot; it is not rejected, but the UI
- *                   must state "Outside Delhi · inside NCR operating area" so a
- *                   reviewer makes an explicit, informed decision.
+ * Boundary definitions come from the active city (lib/cities.ts), passed in
+ * as an `OperatingArea`; every function defaults to Delhi's so existing
+ * callers keep their behaviour:
+ *   bounds     — the city's operational map (Delhi: 76.7–77.7 lng, 28.2–29.0 lat),
+ *                also used for map rendering gates.
+ *   widerArea  — optional larger box (Delhi: the NCR — Gurugram, Noida, Faridabad,
+ *                Ghaziabad). A point inside it but outside the city is still an
+ *                operationally relevant location; it is not rejected, but the UI
+ *                must state e.g. "Outside Delhi · inside NCR operating area" so a
+ *                reviewer makes an explicit, informed decision. A city without a
+ *                wider area (Dhanbad today) treats every point off its map as
+ *                outside the operating area.
  *
  * Point-in-polygon algorithm: ray-casting (Jordan curve theorem). Handles both
  * GeoJSON Polygon and MultiPolygon. No external GIS library needed — ward
  * boundaries are already loaded as GeoJSON.Polygon | GeoJSON.MultiPolygon.
  */
 
+import { DELHI_MAP_SETTINGS, isWithinBounds, type CityMapSettings } from './cities'
 import { haversineMeters } from './incidentRules'
-import { isValidDelhiCoordinate } from './mapRules'
 import type { WardBoundary } from './data'
 import type { Incident } from './incidents'
 
 // ── Operational boundary ──────────────────────────────────────────────────────
 
-/** NCR operating area — covers Delhi + Gurugram/Noida/Faridabad/Ghaziabad.
- *  Broader than DELHI_BOUNDS; a point here is operationally relevant but
- *  must still be reviewed before acceptance. */
-export const NCR_BOUNDS = { minLng: 76.5, maxLng: 78.0, minLat: 28.0, maxLat: 29.2 }
+/** What the location rules need from a city's map settings. */
+export type OperatingArea = Pick<CityMapSettings, 'label' | 'bounds' | 'widerArea'>
 
-export function isWithinNcrBounds(lat: number, lng: number): boolean {
-  return (
-    lat >= NCR_BOUNDS.minLat && lat <= NCR_BOUNDS.maxLat &&
-    lng >= NCR_BOUNDS.minLng && lng <= NCR_BOUNDS.maxLng
-  )
-}
+/** Delhi's area — the default for every function below. */
+export const DELHI_OPERATING_AREA: OperatingArea = DELHI_MAP_SETTINGS
+
+/** @deprecated Delhi's wider area from the city registry (lib/cities.ts),
+ *  kept for existing tests; use the active city's `widerArea` instead. NCR
+ *  operating area — covers Delhi + Gurugram/Noida/Faridabad/Ghaziabad. */
+export const NCR_BOUNDS = DELHI_MAP_SETTINGS.widerArea!.bounds
 
 // ── Coordinate location classification ───────────────────────────────────────
 
 export type CoordinateLocation =
-  | 'delhi'           // within DELHI_BOUNDS — plottable on the operational map
-  | 'ncr_outside_delhi' // within NCR_BOUNDS but outside DELHI_BOUNDS
-  | 'outside_ncr'     // completely outside the operating area
+  | 'in_city'         // within the city's bounds — plottable on the operational map
+  | 'in_wider_area'   // outside the city's bounds but inside its wider area (Delhi: NCR)
+  | 'outside_area'    // completely outside the operating area
   | 'missing'         // null, NaN, or (0,0) sentinel
   | 'invalid'         // non-finite number
 
-export function classifyCoordinateLocation(
+/** Where a coordinate falls relative to `area` (the active city; Delhi's
+ *  when omitted). Points on the exact edge count as inside. */
+export function classifyCityCoordinate(
   lat: number | null | undefined,
   lng: number | null | undefined,
+  area: OperatingArea = DELHI_OPERATING_AREA,
 ): CoordinateLocation {
   if (lat == null || lng == null) return 'missing'
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return 'invalid'
   if (lat === 0 && lng === 0) return 'missing'  // (0,0) is a sentinel/default
-  if (isValidDelhiCoordinate(lat, lng)) return 'delhi'
-  if (isWithinNcrBounds(lat, lng)) return 'ncr_outside_delhi'
-  return 'outside_ncr'
+  if (isWithinBounds(lat, lng, area.bounds)) return 'in_city'
+  if (area.widerArea && isWithinBounds(lat, lng, area.widerArea.bounds)) return 'in_wider_area'
+  return 'outside_area'
 }
 
-export function coordinateLocationLabel(loc: CoordinateLocation): string {
+/** True for the two classes that have usable coordinates. */
+export function hasUsableCoordinates(loc: CoordinateLocation): boolean {
+  return loc === 'in_city' || loc === 'in_wider_area'
+}
+
+/** @deprecated The original Delhi-named classes, kept for existing tests. */
+export type DelhiCoordinateLocation = 'delhi' | 'ncr_outside_delhi' | 'outside_ncr' | 'missing' | 'invalid'
+
+const DELHI_LOCATION_NAME: Record<CoordinateLocation, DelhiCoordinateLocation> = {
+  in_city: 'delhi',
+  in_wider_area: 'ncr_outside_delhi',
+  outside_area: 'outside_ncr',
+  missing: 'missing',
+  invalid: 'invalid',
+}
+
+/** @deprecated Delhi-only, Delhi-named classes; use classifyCityCoordinate
+ *  with the active city's area. */
+export function classifyCoordinateLocation(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): DelhiCoordinateLocation {
+  return DELHI_LOCATION_NAME[classifyCityCoordinate(lat, lng, DELHI_OPERATING_AREA)]
+}
+
+export function coordinateLocationLabel(loc: CoordinateLocation, area: OperatingArea = DELHI_OPERATING_AREA): string {
   switch (loc) {
-    case 'delhi': return 'Within Delhi/NCR'
-    case 'ncr_outside_delhi': return 'Outside Delhi · inside NCR operating area'
-    case 'outside_ncr': return 'Outside the current operating area'
+    case 'in_city': return area.widerArea ? `Within ${area.label}/${area.widerArea.label}` : `Within ${area.label}`
+    case 'in_wider_area': return `Outside ${area.label} · inside ${area.widerArea?.label ?? 'wider'} operating area`
+    case 'outside_area': return 'Outside the current operating area'
     case 'missing': return 'Coordinates missing'
     case 'invalid': return 'Invalid coordinate values'
   }
@@ -71,13 +102,16 @@ export function coordinateLocationLabel(loc: CoordinateLocation): string {
 export interface CoordinateValidationResult {
   valid: boolean
   errors: string[]
-  /** Whether the point is outside Delhi but within NCR — valid but needs confirmation. */
+  /** Whether the point is outside the city but within its wider area (Delhi:
+   *  outside Delhi, inside NCR) — valid but needs confirmation. The name
+   *  predates other cities. */
   requiresNcrConfirmation: boolean
 }
 
 export function validateCoordinates(
   lat: number | null | undefined,
   lng: number | null | undefined,
+  area: OperatingArea = DELHI_OPERATING_AREA,
 ): CoordinateValidationResult {
   const errors: string[] = []
 
@@ -97,8 +131,8 @@ export function validateCoordinates(
   if (lng < -180 || lng > 180) errors.push(`Longitude ${lng.toFixed(5)} is outside the valid range −180 to 180.`)
   if (errors.length > 0) return { valid: false, errors, requiresNcrConfirmation: false }
 
-  const loc = classifyCoordinateLocation(lat, lng)
-  if (loc === 'outside_ncr') {
+  const loc = classifyCityCoordinate(lat, lng, area)
+  if (loc === 'outside_area') {
     errors.push(`Point (${lat.toFixed(5)}, ${lng.toFixed(5)}) is outside the current operating area.`)
     return { valid: false, errors, requiresNcrConfirmation: false }
   }
@@ -106,7 +140,7 @@ export function validateCoordinates(
   return {
     valid: true,
     errors: [],
-    requiresNcrConfirmation: loc === 'ncr_outside_delhi',
+    requiresNcrConfirmation: loc === 'in_wider_area',
   }
 }
 
@@ -241,10 +275,10 @@ export const REVIEW_REASON_LABEL: Record<ReviewReason, string> = {
 /** The consolidated location quality status shown in panels and list badges. */
 export type LocationQualityStatus =
   | 'verified'         // coordinate_review_status = 'reviewed' AND confidence = 'verified'
-  | 'mapped'           // valid Delhi coordinates but not formally verified
+  | 'mapped'           // valid coordinates in the operating area but not formally verified
   | 'needs_review'     // awaiting_review or low confidence
   | 'missing'          // no valid coordinates
-  | 'outside_area'     // coordinates outside NCR operating area
+  | 'outside_area'     // coordinates outside the operating area
   | 'ward_mismatch'    // valid coords but contained ward differs from assigned ward_id
 
 export const LOCATION_QUALITY_LABEL: Record<LocationQualityStatus, string> = {
@@ -293,12 +327,13 @@ export function deriveLocationQuality(
     'coordinate_review_status' | 'coordinate_reviewed_at'
   >,
   wardBoundaries?: Pick<WardBoundary, 'id' | 'name' | 'wardNumber' | 'geometry'>[],
+  area: OperatingArea = DELHI_OPERATING_AREA,
 ): LocationQualityDetail {
   const source = (incident.coordinate_source ?? null) as CoordinateSource | null
   const confidence = (incident.coordinate_confidence ?? 'unreviewed') as CoordinateConfidence
   const reviewStatus = (incident.coordinate_review_status ?? 'unreviewed') as CoordinateReviewStatus
 
-  const coordLoc = classifyCoordinateLocation(incident.lat, incident.lng)
+  const coordLoc = classifyCityCoordinate(incident.lat, incident.lng, area)
 
   if (coordLoc === 'missing' || coordLoc === 'invalid') {
     return {
@@ -308,7 +343,7 @@ export function deriveLocationQuality(
     }
   }
 
-  if (coordLoc === 'outside_ncr') {
+  if (coordLoc === 'outside_area') {
     return {
       status: 'outside_area', coordinateLocation: coordLoc,
       wardMismatch: false, containingWardId: null, containingWardName: null,
@@ -316,7 +351,7 @@ export function deriveLocationQuality(
     }
   }
 
-  // delhi or ncr_outside_delhi — run PIP if boundaries available
+  // in_city or in_wider_area — run PIP if boundaries available
   let wardMismatch = false
   let containingWardId: number | null = null
   let containingWardName: string | null = null
@@ -382,14 +417,14 @@ export function matchesRemediationFilter(
   quality: LocationQualityDetail,
   filter: RemediationFilter,
 ): boolean {
-  const hasValidCoords = quality.coordinateLocation === 'delhi' || quality.coordinateLocation === 'ncr_outside_delhi'
+  const hasValidCoords = hasUsableCoordinates(quality.coordinateLocation)
   const hasWard = incident.ward_id != null
 
   switch (filter) {
     case 'missing':
       return quality.coordinateLocation === 'missing' || quality.coordinateLocation === 'invalid'
     case 'outside_area':
-      return quality.coordinateLocation === 'outside_ncr'
+      return quality.coordinateLocation === 'outside_area'
     case 'ward_no_coords':
       return hasWard && !hasValidCoords
     case 'coords_no_ward':

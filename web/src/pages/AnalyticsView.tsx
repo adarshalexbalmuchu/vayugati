@@ -13,6 +13,7 @@ import { fetchAllVayuTraceAttributions, fetchAllWardsAqi, fetchForecastAccuracyS
 import { listIncidents, listTaskDispatchesForAnalytics } from '../lib/incidents'
 import { bucketAgencyPerformance, recurringWardsSummary, tallySourceMix } from '../lib/overviewRules'
 import { useAsync } from '../lib/useAsync'
+import { useCity } from '../lib/city'
 
 /**
  * Analytics — outcomes, forecast trust, and performance console (Phase
@@ -38,13 +39,14 @@ const WINDOW_OPTIONS = [7, 30, 90] as const
 type WindowDays = (typeof WINDOW_OPTIONS)[number]
 
 export default function AnalyticsView() {
+  const { cityId } = useCity()
   const [windowDays, setWindowDays] = useState<WindowDays>(30)
   const windowLabel = `last ${windowDays}d`
 
   const gati = useAsync(fetchGatiMetrics, [], { cacheKey: 'analytics:gati' })
   const outcomes = useAsync(fetchImpactOutcomeSummary, [], { cacheKey: 'analytics:outcomes' })
-  const forecastAccuracy = useAsync(fetchForecastAccuracySummary, [], { cacheKey: 'analytics:forecast-accuracy' })
-  const wardsState = useAsync(fetchAllWardsAqi, [], { cacheKey: 'analytics:wards' })
+  const forecastAccuracy = useAsync(() => fetchForecastAccuracySummary(cityId), [cityId], { cacheKey: 'analytics:forecast-accuracy' })
+  const wardsState = useAsync(() => fetchAllWardsAqi(cityId), [cityId], { cacheKey: 'analytics:wards' })
   const attributionsState = useAsync(fetchAllVayuTraceAttributions, [], { cacheKey: 'analytics:vayutrace-attributions' })
   const incidentsState = useAsync(() => listIncidents({ limit: 1000 }), [], { cacheKey: 'analytics:incidents' })
   const dispatchState = useAsync(() => listTaskDispatchesForAnalytics(windowDays), [windowDays], {

@@ -99,6 +99,26 @@ export interface Report {
   lng: number | null
 }
 
+// ── city scoping ─────────────────────────────────────────────────────────────
+// wards carry city_id; stations belong to a city through their ward
+// (stations.ward_id -> wards.city_id), so a station query that is scoped
+// selects `wards!inner(city_id)` and filters on it (an inner join: stations
+// with no ward drop out of a scoped query, which is fine where stations are
+// only used through their ward). cityId null = no filter, which
+// is how every query behaved before cities existed.
+
+/** Adds `city_id = cityId` to a wards query; unchanged when cityId is null. */
+function scopeWardsToCity<Q extends { eq: (column: 'city_id', value: number) => Q }>(q: Q, cityId: number | null): Q {
+  return cityId != null ? q.eq('city_id', cityId) : q
+}
+
+/** Filters a stations query that selected `wards!inner(city_id)` to one
+ *  city; unchanged when cityId is null. (fetchAllStationsWithReadings keeps
+ *  ward-less stations instead; see there.) */
+function scopeStationsToCity<Q extends { eq: (column: string, value: number) => Q }>(q: Q, cityId: number | null): Q {
+  return cityId != null ? q.eq('wards.city_id', cityId) : q
+}
+
 async function stationIdsForWard(wardId: number): Promise<number[]> {
   const { data } = await supabase.from('stations').select('id').eq('ward_id', wardId)
   return (data ?? []).map((s) => s.id)
@@ -145,18 +165,19 @@ export async function fetchCurrentWeather(wardId: number): Promise<Weather | nul
 
 /** City-wide temperature and humidity now, for the header: each ward's
  *  latest reading from the last 3 h, then the median across wards (see
- *  summarizeCityWeather). null when weather ingest has nothing that recent. */
-export async function fetchCityWeatherNow(): Promise<CityWeather | null> {
+ *  summarizeCityWeather). null when weather ingest has nothing that recent.
+ *  `cityId` limits it to that city's wards (null = every ward, as before). */
+export async function fetchCityWeatherNow(cityId: number | null = null): Promise<CityWeather | null> {
   const since = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
-  const { data, error } = await supabase
+  let q = supabase
     .from('weather')
-    .select('ward_id, ts, temp_c, humidity')
+    .select(cityId != null ? 'ward_id, ts, temp_c, humidity, wards!inner(city_id)' : 'ward_id, ts, temp_c, humidity')
     .gte('ts', since)
     .lte('ts', new Date().toISOString())
-    .order('ts', { ascending: false })
-    .limit(2000)
+  if (cityId != null) q = q.eq('wards.city_id', cityId)
+  const { data, error } = await q.order('ts', { ascending: false }).limit(2000)
   if (error) throw new Error(error.message)
-  return summarizeCityWeather((data ?? []) as WeatherRow[])
+  return summarizeCityWeather((data ?? []) as unknown as WeatherRow[])
 }
 
 export interface WindFieldPoint {
@@ -190,10 +211,10 @@ export interface WindFieldPoint {
  *  every ward's position (real point, or geometryCentroid() of its
  *  boundary — same fallback classifyWardCoverage() already uses) instead
  *  of a second per-ward fetchCurrentWeather() call per point. */
-export async function fetchWindField(): Promise<WindFieldPoint[]> {
+export async function fetchWindField(cityId: number | null = null): Promise<WindFieldPoint[]> {
   const [{ data: wards }, windByWard] = await Promise.all([
-    supabase.from('wards').select('id, name, lat, lng, boundary'),
-    fetchAllWindByWard(),
+    scopeWardsToCity(supabase.from('wards').select('id, name, lat, lng, boundary'), cityId),
+    fetchAllWindByWard(cityId),
   ])
   if (!wards) return []
 
@@ -232,7 +253,7 @@ export const LAST_KNOWN_READING_HOURS = 72
  *  service fills readings_hourly once an hour with a 6h look-back. */
 export const HOURLY_FRESH_HOURS = 6
 
-export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
+export async function fetchAllWardsAqi(cityId: number | null = null): Promise<WardSummary[]> {
   // Bug fix (Sept 2026): this used to return ONLY "monitored" wards (has
   // at least one active station) — 39 of 265. That was fine while nothing
   // else needed an unmonitored ward's row, but VayuTrace source
@@ -249,14 +270,20 @@ export async function fetchAllWardsAqi(): Promise<WardSummary[]> {
   // `isMonitored` (see WardSummary's own doc comment) is the explicit
   // replacement for "is this id present in the array" as the monitored
   // signal, now that presence alone no longer means monitored.
-  const { data: allStations } = await supabase.from('stations').select('id, name, agency, ward_id, is_primary').eq('is_active', true)
+  //
+  // `cityId` scopes wards (wards.city_id) and stations (through their ward's
+  // city); null = every row, as before cities existed.
+  const { data: allStations } = await scopeStationsToCity(
+    supabase.from('stations').select(cityId != null ? 'id, name, agency, ward_id, is_primary, wards!inner(city_id)' : 'id, name, agency, ward_id, is_primary').eq('is_active', true),
+    cityId,
+  ) as { data: { id: number; name: string; agency: string | null; ward_id: number | null; is_primary: boolean }[] | null }
   const monitoredWardIds = new Set((allStations ?? []).map((s) => s.ward_id).filter((id): id is number => id != null))
 
   const allStationIds = (allStations ?? []).map((s) => s.id)
   const since = new Date(Date.now() - 3 * 3600 * 1000).toISOString()
 
   const [{ data: wards }, { data: recentReadings }] = await Promise.all([
-    supabase.from('wards').select('id, name, dominant_source, lat, lng').order('name'),
+    scopeWardsToCity(supabase.from('wards').select('id, name, dominant_source, lat, lng'), cityId).order('name'),
     // Latest reading per station: fetch recent window, keep first row per station.
     // Empty allStationIds (no active stations at all) still resolves fine —
     // .in('station_id', []) returns zero rows, not an error.
@@ -389,12 +416,11 @@ export interface WardBoundary {
  *  set fetchAllWardsAqi() is scoped to. Never a hardcoded polygon - if
  *  Supabase has no boundary data yet, this returns an empty array and the
  *  layer stays disabled (see MapPage.tsx). */
-export async function fetchAllWardBoundaries(): Promise<WardBoundary[]> {
-  const { data } = await supabase
-    .from('wards')
-    .select('id, name, ward_number, boundary, metadata, lat, lng')
-    .not('boundary', 'is', null)
-    .order('ward_number', { ascending: true, nullsFirst: false })
+export async function fetchAllWardBoundaries(cityId: number | null = null): Promise<WardBoundary[]> {
+  const { data } = await scopeWardsToCity(
+    supabase.from('wards').select('id, name, ward_number, boundary, metadata, lat, lng').not('boundary', 'is', null),
+    cityId,
+  ).order('ward_number', { ascending: true, nullsFirst: false })
   if (!data) return []
   return data
     .filter((w): w is typeof w & { boundary: NonNullable<typeof w.boundary> } => w.boundary != null)
@@ -450,9 +476,18 @@ export interface StationMarker {
 // 3h matches the ingest service's own STALE_MINUTES=180 convention.
 const STATION_AQI_STALE_MS = 3 * 60 * 60 * 1000
 
-export async function fetchAllStationsWithReadings(): Promise<StationMarker[]> {
-  const { data: stations } = await supabase.from('stations').select('id, name, lat, lng').order('name')
-  if (!stations) return []
+export async function fetchAllStationsWithReadings(cityId: number | null = null): Promise<StationMarker[]> {
+  // City scoping here is a left join filtered in JS, not `!inner`: a station
+  // with no ward belongs to no city, and used to be plotted, so it stays in
+  // (the map's own bounds check still decides whether it shows).
+  const { data: rows } = await supabase
+    .from('stations')
+    .select(cityId != null ? 'id, name, lat, lng, ward_id, wards(city_id)' : 'id, name, lat, lng')
+    .order('name') as unknown as {
+      data: { id: number; name: string; lat: number | null; lng: number | null; ward_id?: number | null; wards?: { city_id: number | null } | null }[] | null
+    }
+  if (!rows) return []
+  const stations = cityId == null ? rows : rows.filter((s) => s.ward_id == null || s.wards?.city_id === cityId)
 
   // Only look at readings from the last 3 hours. Readings older than that
   // are stale — showing their AQI as current would mislead (e.g. Wazirpur
@@ -912,14 +947,16 @@ export interface WindReading {
   ts: string | null
 }
 
-/** Latest wind reading per ward (last 2h window). One query, deduped in JS. */
-export async function fetchAllWindByWard(): Promise<WindReading[]> {
+/** Latest wind reading per ward (last 2h window). One query, deduped in JS.
+ *  `cityId` limits it to that city's wards (null = every ward). */
+export async function fetchAllWindByWard(cityId: number | null = null): Promise<WindReading[]> {
   const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-  const { data } = await supabase
+  let q = supabase
     .from('weather')
-    .select('ward_id, ts, wind_speed, wind_dir')
+    .select(cityId != null ? 'ward_id, ts, wind_speed, wind_dir, wards!inner(city_id)' : 'ward_id, ts, wind_speed, wind_dir')
     .gte('ts', since)
-    .order('ts', { ascending: false })
+  if (cityId != null) q = q.eq('wards.city_id', cityId)
+  const { data } = await q.order('ts', { ascending: false }) as { data: { ward_id: number | null; ts: string | null; wind_speed: number | null; wind_dir: number | null }[] | null }
   const latest = new Map<number, WindReading>()
   for (const row of (data ?? [])) {
     if (row.ward_id != null && !latest.has(row.ward_id)) {
@@ -1001,12 +1038,16 @@ export const WHO_AQG_PM25_24H = 15
  *  "AQI view" use this with pollutant='pm25' as an explicitly-labelled
  *  proxy, never a fabricated AQI number). Defaults to 'pm25' to match every
  *  existing caller's prior behaviour before this became parameterized. */
-export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25'): Promise<Map<number, WardForecastSummary>> {
-  const { data } = await supabase
+export async function fetchAllForecasts(pollutant: ForecastPollutant = 'pm25', cityId: number | null = null): Promise<Map<number, WardForecastSummary>> {
+  // `cityId` keeps the row limit below meaningful once a second city's
+  // wards exist (it is sized for one city's ~265 wards × 48 h).
+  let q = supabase
     .from('forecasts')
-    .select(`ward_id, predicted_value, ${FORECAST_ROW_SELECT}`)
+    .select(`ward_id, predicted_value, ${FORECAST_ROW_SELECT}${cityId != null ? ', wards!inner(city_id)' : ''}`)
     .eq('pollutant', pollutant)
     .gte('horizon_ts', new Date().toISOString())
+  if (cityId != null) q = q.eq('wards.city_id', cityId)
+  const { data } = await q
     .order('horizon_ts')
     .limit(48 * 300)
   const byWard = new Map<number, WardForecastSummary>()
@@ -1340,12 +1381,17 @@ export interface ForecastAccuracySummary {
  *  and `validation_metrics` are read alongside them (same row, no extra
  *  query) purely to derive the plain-language framing in
  *  forecastTrustRules.ts — never a second source of truth. */
-export async function fetchForecastAccuracySummary(): Promise<ForecastAccuracySummary> {
-  const { data } = await supabase
+export async function fetchForecastAccuracySummary(cityId: number | null = null): Promise<ForecastAccuracySummary> {
+  // Scoped through the run's ward (forecast_runs.ward_id is not null) so the
+  // pair counts are per city and the 2000-row limit stays one city's worth.
+  const columns = 'ward_id, pollutant, method, beats_persistence, max_validated_horizon_hours, generated_at, validation_metrics'
+  let q = supabase
     .from('forecast_runs')
-    .select('ward_id, pollutant, method, beats_persistence, max_validated_horizon_hours, generated_at, validation_metrics')
+    .select(cityId != null ? `${columns}, wards!inner(city_id)` : columns)
+  if (cityId != null) q = q.eq('wards.city_id', cityId)
+  const { data } = await q
     .order('generated_at', { ascending: false })
-    .limit(2000)
+    .limit(2000) as unknown as { data: ForecastRunLike[] | null }
 
   const latestByPair = new Map<string, ForecastRunLike>()
   for (const row of data ?? []) {
@@ -1385,9 +1431,12 @@ export interface DataFootprint {
  *  on every Sensors page load, unlike fetchAllWardBoundaries' full ~8MB
  *  geometry payload. Backs the Data Readiness card's real numbers - never a
  *  hardcoded "250 wards" / "44k readings" string, always the live count. */
-export async function fetchDataFootprint(): Promise<DataFootprint> {
+export async function fetchDataFootprint(cityId: number | null = null): Promise<DataFootprint> {
+  // Only the ward count is per city; the readings counts/range are still
+  // the whole table (readings has no city column; scoping it needs a join
+  // through stations -> wards on a large table).
   const [wardBoundaries, readingsCount, earliest, latest] = await Promise.all([
-    supabase.from('wards').select('id', { count: 'exact', head: true }).not('boundary', 'is', null),
+    scopeWardsToCity(supabase.from('wards').select('id', { count: 'exact', head: true }).not('boundary', 'is', null), cityId),
     supabase.from('readings').select('id', { count: 'exact', head: true }),
     supabase.from('readings').select('ts').order('ts', { ascending: true }).limit(1).maybeSingle(),
     supabase.from('readings').select('ts').order('ts', { ascending: false }).limit(1).maybeSingle(),
@@ -1742,15 +1791,21 @@ function toAqiForecastPoint(r: AqiForecastRow): AqiForecastPoint {
 
 /** Each ward's forecast AQI for the hour nearest `hoursFromNow` (within
  *  ±3 h), for the map. Wards without one are simply absent. */
-export async function fetchAqiForecastsNear(hoursFromNow: number, nowMs: number = Date.now()): Promise<Map<number, AqiForecastPoint>> {
+export async function fetchAqiForecastsNear(
+  hoursFromNow: number,
+  nowMs: number = Date.now(),
+  cityId: number | null = null,
+): Promise<Map<number, AqiForecastPoint>> {
   const target = nowMs + hoursFromNow * 3_600_000
-  const { data } = await supabase
+  let q = supabase
     .from('aqi_forecasts')
-    .select(AQI_FORECAST_SELECT)
+    .select(cityId != null ? `${AQI_FORECAST_SELECT}, wards!inner(city_id)` : AQI_FORECAST_SELECT)
     .gte('target_ts', new Date(target - 3 * 3_600_000).toISOString())
     .lte('target_ts', new Date(target + 3 * 3_600_000).toISOString())
+  if (cityId != null) q = q.eq('wards.city_id', cityId)
+  const { data } = await q
   const best = new Map<number, AqiForecastPoint>()
-  for (const r of (data ?? []) as AqiForecastRow[]) {
+  for (const r of (data ?? []) as unknown as AqiForecastRow[]) {
     const p = toAqiForecastPoint(r)
     const cur = best.get(p.wardId)
     if (!cur || Math.abs(Date.parse(p.targetTs) - target) < Math.abs(Date.parse(cur.targetTs) - target)) best.set(p.wardId, p)

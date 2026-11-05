@@ -15,6 +15,7 @@ import { tallyDataSourceConfidence, timestampMismatchMinutes, TIMESTAMP_MISMATCH
 import { fetchStationHealth, setStationActive, type StationHealthRow } from '../lib/ops'
 import type { DataReadinessInput } from '../lib/readinessRules'
 import { useAsync } from '../lib/useAsync'
+import { useCity } from '../lib/city'
 
 /**
  * Sensors — station health and data-reliability console (Phase redesign,
@@ -30,12 +31,13 @@ import { useAsync } from '../lib/useAsync'
 const DEFAULT_FILTERS: SensorFilters = { status: ALL, ward: ALL, sensorType: ALL }
 
 export default function SensorsView() {
+  const { cityId } = useCity()
   const { session } = useAuth()
   const [filters, setFilters] = useState<SensorFilters>(DEFAULT_FILTERS)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
 
-  const state = useAsync(() => Promise.all([fetchStationHealth(), fetchAllStationsWithReadings()]), [], {
+  const state = useAsync(() => Promise.all([fetchStationHealth(cityId ?? undefined), fetchAllStationsWithReadings(cityId)]), [cityId], {
     cacheKey: 'sensors:main',
   })
   const incidentsState = useAsync(() => listIncidents({ excludeClosed: true, limit: 1000 }), [], {
@@ -45,8 +47,8 @@ export default function SensorsView() {
 
   // Readiness card's own inputs - independent fetches (not blocking the
   // station table above), same pattern as Analytics' forecastAccuracy hook.
-  const footprintState = useAsync(fetchDataFootprint, [], { cacheKey: 'sensors:footprint' })
-  const forecastAccuracyState = useAsync(fetchForecastAccuracySummary, [], {
+  const footprintState = useAsync(() => fetchDataFootprint(cityId), [cityId], { cacheKey: 'sensors:footprint' })
+  const forecastAccuracyState = useAsync(() => fetchForecastAccuracySummary(cityId), [cityId], {
     cacheKey: 'sensors:forecast-accuracy',
   })
   // Same independent-fetch contract - a failure here just leaves every

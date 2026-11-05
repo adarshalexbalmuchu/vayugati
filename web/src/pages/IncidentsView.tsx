@@ -16,6 +16,7 @@ import {
   type IncidentsPage,
 } from '../lib/incidents'
 import { useAsync } from '../lib/useAsync'
+import { useCity } from '../lib/city'
 
 /**
  * Command incident workspace - a calm, single-pane case view, not a
@@ -55,6 +56,7 @@ interface PaginatedQueueState {
 const EMPTY_PAGE: PaginatedQueueState = { rows: [], totalCount: 0, hasMore: false, loading: false, error: null }
 
 export default function IncidentsView() {
+  const { cityId } = useCity()
   const [queue, setQueue] = useState<QueueKey>('active')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState('summary')
@@ -73,7 +75,7 @@ export default function IncidentsView() {
   // Ward-level live AQI, for the "current reading" column/fact - fetched once
   // per page load, independent of queue, reused from the Overview page's own
   // data.ts function. Real data, not a new backend endpoint.
-  const wardAqi = useAsync(fetchAllWardsAqi, [], { cacheKey: 'incidents:ward-aqi' })
+  const wardAqi = useAsync(() => fetchAllWardsAqi(cityId), [cityId], { cacheKey: 'incidents:ward-aqi' })
   const wardAqiById = useMemo(() => new Map(wardAqi.data?.map((w) => [w.id, w.aqi]) ?? []), [wardAqi.data])
 
   // `closed` and `recurrence` are paginated independently of each other and

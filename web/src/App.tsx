@@ -1,7 +1,9 @@
+import { Fragment } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import RequireRole from './components/RequireRole'
 import { AuthProvider, roleHome, useAuth } from './lib/auth'
+import { CityProvider, useCity } from './lib/city'
 import { IngestHealthProvider } from './contexts/IngestHealthContext'
 import CitizenView from './pages/CitizenView'
 import CommandView from './pages/CommandView'
@@ -33,12 +35,21 @@ function Home() {
   return <Navigate to={roleHome(profile.role)} replace />
 }
 
+// Keyed by the active city, so switching city remounts every page: maps
+// re-open on the new city's centre and no page keeps the old city's state.
+function CityScopedRoutes({ children }: { children: React.ReactNode }) {
+  const { cityCode } = useCity()
+  return <Fragment key={cityCode}>{children}</Fragment>
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
         <IngestHealthProvider>
         <BrowserRouter>
+          <CityProvider>
+          <CityScopedRoutes>
           <Routes>
             <Route element={<SiteLayout />}>
               <Route path="/" element={<SiteHome />} />
@@ -150,6 +161,8 @@ export default function App() {
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </CityScopedRoutes>
+          </CityProvider>
         </BrowserRouter>
         </IngestHealthProvider>
       </AuthProvider>

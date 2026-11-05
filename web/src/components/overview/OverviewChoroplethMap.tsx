@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import CityKpiRow from './CityKpiRow'
 import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
+import { useCity } from '../../lib/city'
 import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
 import { HOTSPOT_READING_STALE_MINUTES } from '../../lib/overviewRules'
@@ -27,8 +28,10 @@ function readingAge(ts: string | null | undefined): { stale: boolean; ageLabel: 
   return { stale: true, ageLabel: h >= 48 ? `last reading ${Math.round(h / 24)}d ago` : `last reading ${h}h ago` }
 }
 
-const DELHI_CENTER: [number, number] = [77.209, 28.6139]
-const DELHI_ZOOM = 9.6
+/** The Overview opens a little wider than the Map page's default zoom, to
+ *  show the surrounding region (for Delhi: 10 - 0.4 = 9.6, the zoom this map
+ *  always used, which takes in Bahadurgarh–Ghaziabad–Noida–Gurugram–Faridabad). */
+const OVERVIEW_ZOOM_OFFSET = -0.4
 
 // Boundary polygon layer (~265 wards). Monitored wards (those with an
 // active station) with a linked boundary render as a solid AQI-colored
@@ -125,6 +128,7 @@ export default function OverviewChoroplethMap({
   onWardsFlaggedClick?: () => void
 }) {
   const navigate = useNavigate()
+  const { cityId, map: city } = useCity()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -144,11 +148,11 @@ export default function OverviewChoroplethMap({
   const [boundaries, setBoundaries] = useState<Awaited<ReturnType<typeof fetchAllWardBoundaries>>>([])
   const [boundariesLoaded, setBoundariesLoaded] = useState(false)
   useEffect(() => {
-    fetchAllWardBoundaries().then((b) => {
+    fetchAllWardBoundaries(cityId).then((b) => {
       setBoundaries(b)
       setBoundariesLoaded(true)
     })
-  }, [])
+  }, [cityId])
 
 
   const [hoveredName, setHoveredName] = useState<string | null>(null)
@@ -254,8 +258,8 @@ export default function OverviewChoroplethMap({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: isBasemapAvailable('terrain') ? resolveStyleUrl('terrain') : FALLBACK_STYLE,
-      center: DELHI_CENTER,
-      zoom: DELHI_ZOOM,
+      center: city.center,
+      zoom: city.defaultZoom + OVERVIEW_ZOOM_OFFSET,
       attributionControl: false,
       pitchWithRotate: false,
       dragRotate: false,
@@ -453,11 +457,11 @@ export default function OverviewChoroplethMap({
 
   // Previously: fit map to monitored wards' bounding box once on first
   // load. Removed (Sept 2026, direct request) — that fit zoomed in tighter
-  // (up to zoom 11) than DELHI_ZOOM's own 9.6, so the page always opened
+  // (up to zoom 11) than the overview zoom (Delhi: 9.6), so the page always opened
   // cropped to just the monitored-ward cluster instead of showing the full
   // NCR context (Bahadurgarh–Ghaziabad–Noida–Gurugram–Faridabad) the fixed
   // center/zoom below is tuned for. The map now simply opens at
-  // DELHI_CENTER/DELHI_ZOOM and stays there — a viewer can always zoom in
+  // the active city's centre/overview zoom and stays there — a viewer can always zoom in
   // themselves if they want a tighter view.
 
   // Fly to selected ward on selection change. Prefers the ward's own
