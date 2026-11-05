@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FALLBACK_STYLE, maptilerKey } from '../lib/basemaps'
 import { useCity } from '../lib/city'
 import WindParticles from './WindParticles'
+import CityContextLayers, { type CityContextVisibility } from './map/CityContextLayers'
 import {
   areIdenticalCoords,
   clusterTooltipHtml,
@@ -286,6 +287,10 @@ interface Props {
   showVegetation3D?: boolean
   /** Colour-code land use polygons (industrial/commercial/residential). */
   showLandUse?: boolean
+  /** Which of the active city's context layers (mines, industry, roads,
+   *  fires, blocks, reference stations; see CityContextLayers) to show.
+   *  Omitted = none, so the small embeds stay as they are. */
+  contextLayers?: CityContextVisibility
   /** Stable string key derived from the current selection in MapPage.  When
    *  it changes to a value that does not match the spiderfy stack's owner,
    *  the expansion is collapsed.  Defaults to 'none' (no selection). */
@@ -346,9 +351,11 @@ export default function MapView({
   activeToolKind = 'none',
   onToolClick,
   toolGeoJSON,
+  contextLayers,
 }: Props) {
   // Used when no `center` is passed (the bare embeds); read at map creation.
-  const cityCenter = useCity().map.center
+  const { map: cityMap, cityCode } = useCity()
+  const cityCenter = cityMap.center
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   // Exposed via state so child components (WindParticles) can access the map
@@ -1661,6 +1668,7 @@ export default function MapView({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} className="h-full w-full" />
       <WindParticles map={mapInstance} points={windPoints} visible={showWind} />
+      {contextLayers && <CityContextLayers map={mapInstance} cityCode={cityCode} visible={contextLayers} />}
     </div>
   )
 }

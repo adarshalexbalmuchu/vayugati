@@ -1,0 +1,290 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     86.44268,
+     23.80569
+    ]
+   },
+   "properties": {
+    "name": "Sardar Patel Nagar, Dhanbad - JSPCB",
+    "city": "Dhanbad",
+    "state": "Jharkhand",
+    "type": "continuous",
+    "role": "jharkhand",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409415,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     86.41467,
+     23.70791
+    ]
+   },
+   "properties": {
+    "name": "Tata Stadium, Jorapokhar - JSPCB",
+    "city": "Jorapokhar",
+    "state": "Jharkhand",
+    "type": "continuous",
+    "role": "jharkhand",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 5546,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.10572,
+     23.61818
+    ]
+   },
+   "properties": {
+    "name": "Mahabir Colliery, Asansol - WBPCB",
+    "city": "Asansol",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409522,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.11913,
+     23.61651
+    ]
+   },
+   "properties": {
+    "name": "Trivenidevi Bhalotia College, Asansol - WBPCB",
+    "city": "Asansol",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409525,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     86.9444,
+     23.69794
+    ]
+   },
+   "properties": {
+    "name": "Evelyn Lodge, Asansol - WBPCB",
+    "city": "Asansol",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409521,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     86.94597,
+     23.6853
+    ]
+   },
+   "properties": {
+    "name": "Asansol Court Area, Asansol - WBPCB",
+    "city": "Asansol",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 5602,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.35444,
+     23.50876
+    ]
+   },
+   "properties": {
+    "name": "PCBL Residential Complex, Durgapur - WBPCB",
+    "city": "Durgapur",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409520,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.3005,
+     23.5494
+    ]
+   },
+   "properties": {
+    "name": "Womens College_City Center, Durgapur - WBPCB",
+    "city": "Durgapur",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": null,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.30684,
+     23.56792
+    ]
+   },
+   "properties": {
+    "name": "Mahishkapur Road_B-Zone, Durgapur - WBPCB",
+    "city": "Durgapur",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "CO",
+     "NH3",
+     "NO2",
+     "OZONE",
+     "PM10",
+     "PM2.5",
+     "SO2"
+    ],
+    "openaq_id": 3409529,
+    "source": "CPCB data.gov.in real-time feed"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     87.28922,
+     23.54044
+    ]
+   },
+   "properties": {
+    "name": "Sidhu Kanhu Indoor Stadium, Durgapur - WBPCB",
+    "city": "Durgapur",
+    "state": "West Bengal",
+    "type": "continuous",
+    "role": "reference_candidate",
+    "pollutants": [
+     "co",
+     "no",
+     "no2",
+     "nox",
+     "o3",
+     "pm10",
+     "pm25",
+     "relativehumidity",
+     "so2",
+     "temperature",
+     "wind_direction",
+     "wind_speed"
+    ],
+    "openaq_id": 5615,
+    "source": "OpenAQ"
+   }
+  }
+ ]
+}

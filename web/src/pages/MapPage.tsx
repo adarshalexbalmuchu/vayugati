@@ -96,6 +96,7 @@ import { fetchStationHealth, type StationHealthRow } from '../lib/ops'
 import { findWithinRadius, type RadiusMatches } from '../lib/spatialQuery'
 import { useAsync } from '../lib/useAsync'
 import { useCity } from '../lib/city'
+import { hasContextPack, type CityContextVisibility } from '../components/map/CityContextLayers'
 import { boundsToLngLatPair } from '../lib/cities'
 
 type Selection =
@@ -227,10 +228,21 @@ function popup(title: string, lines: string[]): string {
 export default function MapPage() {
   // The active city: its map viewport and bounds, and the id that scopes
   // ward/station queries. A city switch remounts this page (App.tsx).
-  const { cityId, map: city } = useCity()
+  const { cityId, cityCode, map: city } = useCity()
   const cityBounds = city.bounds
   const [basemap, setBasemap] = useState<BasemapMode>(DEFAULT_BASEMAP_MODE)
   const [layers, setLayers] = useState(DEFAULT_LAYER_STATE)
+  const showContext = hasContextPack(cityCode)
+  const contextLayers: CityContextVisibility | undefined = showContext
+    ? {
+        mines: layers.ctxMines,
+        industry: layers.ctxIndustry,
+        roads: layers.ctxRoads,
+        fires: layers.ctxFires,
+        blocks: layers.ctxBlocks,
+        reference: layers.ctxReference,
+      }
+    : undefined
   // Sept 2026: Layers/Legend triggers moved into the header row (next to
   // the pollutant/time toolbar) — their expanded panels still float over
   // the map as before, just opened/closed from here instead of their own
@@ -1349,6 +1361,7 @@ export default function MapPage() {
                 stationHeatmapGeoJSON={stationHeatmapGeoJSON}
                 showVegetation3D={layers.vegetation3D && maptilerKey() != null}
                 showLandUse={layers.landUse && maptilerKey() != null}
+                contextLayers={contextLayers}
                 selectionKey={selectionKey}
                 selectedIncidentCoords={selectedIncidentCoords}
                 activeToolKind={activeTool.kind}
@@ -1380,6 +1393,7 @@ export default function MapPage() {
                   aqiHeatmapAvailable={stationHeatmapGeoJSON.features.length > 0}
                   vegetation3DAvailable={maptilerKey() != null}
                   landUseAvailable={maptilerKey() != null}
+                  cityContextAvailable={showContext}
                   forecastSuppressed={forecastSuppressed}
                   open={layersOpen}
                   onOpenChange={setLayersOpen}

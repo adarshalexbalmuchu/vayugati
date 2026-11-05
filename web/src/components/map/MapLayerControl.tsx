@@ -17,6 +17,23 @@ export type MapLayerKey =
   | 'aqiHeatmap'
   | 'vegetation3D'
   | 'landUse'
+  | 'ctxMines'
+  | 'ctxIndustry'
+  | 'ctxRoads'
+  | 'ctxFires'
+  | 'ctxBlocks'
+  | 'ctxReference'
+
+/** Context-layer toggles, shown only for a city with a context pack
+ *  (CityContextLayers.tsx), mapped to that component's keys. */
+export const CONTEXT_LAYER_KEYS = {
+  ctxMines: 'mines',
+  ctxIndustry: 'industry',
+  ctxRoads: 'roads',
+  ctxFires: 'fires',
+  ctxBlocks: 'blocks',
+  ctxReference: 'reference',
+} as const
 
 export const LAYER_ORDER: MapLayerKey[] = [
   'wardBoundaries',
@@ -34,6 +51,12 @@ export const LAYER_ORDER: MapLayerKey[] = [
   'aqiExtrusion',
   'buildings3D',
   'vegetation3D',
+  'ctxMines',
+  'ctxIndustry',
+  'ctxRoads',
+  'ctxFires',
+  'ctxBlocks',
+  'ctxReference',
 ]
 
 /** Groups define the UI structure. Order within each group matches LAYER_ORDER.
@@ -47,10 +70,17 @@ export const LAYER_ORDER: MapLayerKey[] = [
  *  review of this page from a researcher/policy-maker's perspective flagged
  *  these three as visual flourish that competes for attention with real
  *  data layers, not that they're broken or should be removed). */
+const CONTEXT_GROUP = 'Coalfield context'
+
 const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] = [
   {
     label: 'Air quality',
     keys: ['wardBoundaries', 'aqiHeatmap', 'landUse', 'windFlow', 'wardMarkers', 'stations'],
+  },
+  {
+    label: CONTEXT_GROUP,
+    subtitle: 'Mapped features (OpenStreetMap, NASA FIRMS), not measurements',
+    keys: ['ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxBlocks', 'ctxReference'],
   },
   {
     label: 'Operations',
@@ -148,6 +178,36 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     available: false,
     note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
   },
+  ctxMines: {
+    label: 'Mines and quarries',
+    available: false,
+    note: 'Coal mines and quarries mapped in OpenStreetMap (Geofabrik extract, Nov 2026). Coverage is incomplete.',
+  },
+  ctxIndustry: {
+    label: 'Industry and power plants',
+    available: false,
+    note: 'Industrial land (purple), power plants and large works (yellow) mapped in OpenStreetMap.',
+  },
+  ctxRoads: {
+    label: 'Major roads',
+    available: false,
+    note: 'Motorway, trunk, primary and secondary roads from OpenStreetMap. Coal-haul roads are not tagged separately.',
+  },
+  ctxFires: {
+    label: 'Fire hotspots (5 days)',
+    available: false,
+    note: 'NASA FIRMS VIIRS detections, 5-day snapshot to 5 Nov 2026. In the coalfield these include underground coal fires and industrial heat.',
+  },
+  ctxBlocks: {
+    label: 'Block boundaries',
+    available: false,
+    note: 'Community development blocks (geoBoundaries, ODbL).',
+  },
+  ctxReference: {
+    label: 'Reference stations',
+    available: false,
+    note: 'Continuous stations in Asansol and Durgapur (West Bengal): calibration reference candidates outside the city.',
+  },
 }
 
 export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
@@ -181,6 +241,12 @@ export const DEFAULT_LAYER_STATE: Record<MapLayerKey, boolean> = {
   aqiHeatmap: true,
   vegetation3D: false,
   landUse: false,
+  ctxMines: true,
+  ctxIndustry: true,
+  ctxRoads: true,
+  ctxFires: true,
+  ctxBlocks: true,
+  ctxReference: true,
 }
 
 function Toggle({ on, disabled }: { on: boolean; disabled: boolean }) {
@@ -221,6 +287,7 @@ export default function MapLayerControl({
   aqiHeatmapAvailable = false,
   vegetation3DAvailable = false,
   landUseAvailable = false,
+  cityContextAvailable = false,
   forecastSuppressed = false,
   open,
   onOpenChange,
@@ -245,6 +312,9 @@ export default function MapLayerControl({
   vegetation3DAvailable?: boolean
   /** True when a vector basemap is loaded — same gate as buildings. */
   landUseAvailable?: boolean
+  /** True when the active city has a context pack (CityContextLayers);
+   *  the "Coalfield context" group is hidden otherwise. */
+  cityContextAvailable?: boolean
   forecastSuppressed?: boolean
   /** Controlled open state (Sept 2026 addition) — lets a caller (MapPage's
    *  header-embedded trigger button) drive whether the panel shows,
@@ -265,7 +335,7 @@ export default function MapLayerControl({
   onActiveCountChange?: (count: number) => void
 }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(LAYER_GROUPS.map((g) => [g.label, g.label !== 'Air quality'])),
+    Object.fromEntries(LAYER_GROUPS.map((g) => [g.label, g.label !== 'Air quality' && g.label !== CONTEXT_GROUP])),
   )
 
   // Whole-panel open/closed (Sept 2026 fix) — this used to always render
@@ -307,6 +377,8 @@ export default function MapLayerControl({
     } else if (key === 'vegetation3D' && vegetation3DAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'landUse' && landUseAvailable) {
+      meta = { ...meta, available: true }
+    } else if (key in CONTEXT_LAYER_KEYS && cityContextAvailable) {
       meta = { ...meta, available: true }
     } else if (key === 'predictedHotspots' && forecastSuppressed) {
       meta = { ...meta, available: false, note: 'Unavailable — latest forecast run failed.' }
@@ -367,7 +439,7 @@ export default function MapLayerControl({
         <ChevronDown className="h-2.5 w-2.5 flex-shrink-0 text-slate-400" aria-hidden />
       </button>
 
-      {LAYER_GROUPS.map((group) => {
+      {LAYER_GROUPS.filter((group) => group.label !== CONTEXT_GROUP || cityContextAvailable).map((group) => {
         const collapsed = collapsedGroups[group.label]
         return (
           <div key={group.label}>

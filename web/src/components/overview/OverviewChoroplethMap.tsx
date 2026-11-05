@@ -8,6 +8,7 @@ import CityKpiRow from './CityKpiRow'
 import { GlassSurface } from '../GlassSurface'
 import { FALLBACK_STYLE, isBasemapAvailable, resolveStyleUrl } from '../../lib/basemaps'
 import { useCity } from '../../lib/city'
+import CityContextLayers, { ALL_CONTEXT_VISIBLE } from '../map/CityContextLayers'
 import { fetchAllWardBoundaries, type LatestReadingReconciliation, type WardSummary } from '../../lib/data'
 import { formatWardName } from '../../lib/format'
 import { HOTSPOT_READING_STALE_MINUTES } from '../../lib/overviewRules'
@@ -128,7 +129,8 @@ export default function OverviewChoroplethMap({
   onWardsFlaggedClick?: () => void
 }) {
   const navigate = useNavigate()
-  const { cityId, map: city } = useCity()
+  const { cityId, cityCode, map: city } = useCity()
+  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -446,8 +448,10 @@ export default function OverviewChoroplethMap({
 
     map.once('load', () => { mapReadyRef.current = true })
     mapRef.current = map
+    setMapInstance(map)
 
     return () => {
+      setMapInstance(null)
       map.remove()
       mapRef.current = null
       mapReadyRef.current = false
@@ -537,6 +541,7 @@ export default function OverviewChoroplethMap({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      <CityContextLayers map={mapInstance} cityCode={cityCode} visible={ALL_CONTEXT_VISIBLE} />
 
       {/* Hovered ward name badge */}
       {hoveredName && (
