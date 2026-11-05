@@ -49,16 +49,23 @@ const label = (key: string, layers: { key: string; label: string }[]) => layers.
 
 export default function MapAssistant({
   container,
+  slot,
+  open,
+  onOpenChange,
   layers,
   profiles,
   handlers,
 }: {
+  /** The map container: the launcher button lives here. */
   container: HTMLElement
+  /** The dock's chat slot: the chat panel renders here while open. */
+  slot: HTMLElement | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
   layers: { key: string; label: string }[]
   profiles: ProfilesDoc | null
   handlers: AssistantHandlers
 }) {
-  const [open, setOpen] = useState(false)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -122,13 +129,13 @@ export default function MapAssistant({
   }
 
   const panel = (
-    <div className="absolute bottom-16 left-3 right-3 z-20 flex max-h-[min(70%,34rem)] md:bottom-3 md:left-auto md:right-16 flex-col overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card-lg ring-1 ring-ink-900/10 backdrop-blur-sm sm:right-auto sm:w-[360px]">
+    <div className="flex h-[min(34rem,calc(100svh-15rem))] flex-col md:h-[min(34rem,calc(100svh-14rem))]">
       <div className="flex items-center justify-between gap-2 border-b border-ink-900/10 px-3 py-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-500">Ask the map</p>
           <p className="font-display text-xl leading-none text-ink-900">Jharkhand assistant</p>
         </div>
-        <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="focus-ring rounded-md p-1 text-ink-600 hover:bg-white">
+        <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="focus-ring rounded-md p-1 text-ink-600 hover:bg-white">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -184,16 +191,17 @@ export default function MapAssistant({
     </div>
   )
 
-  return createPortal(
+  return (
     <>
-      {open ? panel : (
-        <button type="button" onClick={() => setOpen(true)}
-          className="focus-ring absolute bottom-16 left-3 z-20 flex items-center md:bottom-3 md:left-auto md:right-16 gap-2 rounded-full bg-ink-900 px-4 py-2.5 font-site text-sm font-medium text-cream shadow-card-lg hover:bg-ink-700">
+      {open && slot && createPortal(panel, slot)}
+      {!open && createPortal(
+        <button type="button" onClick={() => onOpenChange(true)}
+          className="focus-ring absolute bottom-16 left-3 z-20 flex items-center gap-2 rounded-full bg-ink-900 px-4 py-2.5 font-site text-sm font-medium text-cream shadow-card-lg hover:bg-ink-700 md:bottom-3 md:left-auto md:right-16">
           <MessageCircle className="h-4 w-4" aria-hidden /> Ask the map
-        </button>
+        </button>,
+        container,
       )}
-    </>,
-    container,
+    </>
   )
 }
 

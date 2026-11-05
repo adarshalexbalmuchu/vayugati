@@ -704,6 +704,13 @@ class ViewControl implements maplibregl.IControl {
   private prevSky: maplibregl.SkySpecification | undefined = undefined
   private panel3D: HTMLDivElement | null = null
   private profileBox: HTMLDivElement | null = null
+  private dock: HTMLDivElement | null = null
+  private dockTabs: HTMLDivElement | null = null
+  private dockBtns: Partial<Record<'district' | 'ask', HTMLButtonElement>> = {}
+  private dockTab: 'district' | 'ask' = 'district'
+  private chatOpen = false
+  /** Where the chat panel renders (React portal). */
+  chatSlot: HTMLDivElement | null = null
   private toolbar: HTMLDivElement | null = null
   private tab: 'overview' | 'nature' | 'sources' = 'overview'
   private lcLegend: HTMLDivElement | null = null
@@ -857,13 +864,30 @@ class ViewControl implements maplibregl.IControl {
 
     body.appendChild(this.buildLayerControl())
 
-    // District profile
-    // The profile is its own docked panel (a bottom sheet on phones), not part of this card.
+    // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
+    const dock = document.createElement('div')
+    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
+    dock.style.display = 'none'
+    const dockTabs = document.createElement('div')
+    dockTabs.className = 'flex gap-1 border-b border-ink-900/10 bg-ink-100/60 p-1.5'
+    dockTabs.style.display = 'none'
+    for (const k of ['district', 'ask'] as const) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.addEventListener('click', () => { this.dockTab = k; this.syncDock() })
+      dockTabs.appendChild(b)
+      this.dockBtns[k] = b
+    }
     const profile = document.createElement('div')
-    profile.className = 'absolute bottom-24 left-2 right-2 z-10 max-h-[52svh] overflow-y-auto rounded-xl bg-cream/95 p-3 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[340px]'
-    profile.style.display = 'none'
-    map.getContainer().appendChild(profile)
+    profile.className = 'min-h-0 flex-1 overflow-y-auto p-3'
+    const chatSlot = document.createElement('div')
+    chatSlot.className = 'min-h-0 flex-1'
+    dock.append(dockTabs, profile, chatSlot)
+    map.getContainer().appendChild(dock)
+    this.dock = dock
+    this.dockTabs = dockTabs
     this.profileBox = profile
+    this.chatSlot = chatSlot
     // Bottom toolbar: 3D controls and the heat-detection player.
     const toolbar = document.createElement('div')
     toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-xl bg-cream/95 px-3 py-2 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:left-1/2 md:right-auto md:-translate-x-1/2'
@@ -970,6 +994,33 @@ class ViewControl implements maplibregl.IControl {
     map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
   }
 
+  /** Open or close the chat in the dock. */
+  setChatOpen(open: boolean) {
+    this.chatOpen = open
+    if (open && this.selected) this.dockTab = 'ask'
+    this.syncDock()
+  }
+
+  /** The dock shows the district profile and/or the chat; tabs appear only when both exist. */
+  private syncDock() {
+    const dock = this.dock
+    if (!dock) return
+    const hasD = !!this.selected
+    const hasC = this.chatOpen
+    dock.style.display = hasD || hasC ? '' : 'none'
+    const tab: 'district' | 'ask' = !hasD ? 'ask' : !hasC ? 'district' : this.dockTab
+    if (this.profileBox) this.profileBox.style.display = hasD && tab === 'district' ? '' : 'none'
+    if (this.chatSlot) this.chatSlot.style.display = hasC && tab === 'ask' ? '' : 'none'
+    if (this.dockTabs) this.dockTabs.style.display = hasD && hasC ? '' : 'none'
+    const labels = { district: this.selected ?? 'District', ask: 'Ask the map' }
+    for (const k of ['district', 'ask'] as const) {
+      const b = this.dockBtns[k]
+      if (!b) continue
+      b.textContent = labels[k]
+      b.className = `min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-xs font-semibold transition ${tab === k ? 'bg-ink-900 text-cream shadow-sm' : 'text-ink-700 hover:bg-white'}`
+    }
+  }
+
   /** Show the bottom toolbar only while it has something to show. */
   private syncToolbar() {
     const t = this.toolbar
@@ -979,7 +1030,7 @@ class ViewControl implements maplibregl.IControl {
   }
 
   onRemove() {
-    this.profileBox?.remove()
+    this.dock?.remove()
     this.toolbar?.remove()
     this.stopPlay()
     this.map?.off('styledata', this.reapply)
@@ -1051,14 +1102,17 @@ class ViewControl implements maplibregl.IControl {
   }
 
   /** Show one district in 3D (null: back to the flat state view). */
-  selectDistrict(name: string | null, fly = true) {
+  selectDistrict(name: string | null, fly = true, fromChat = false) {
     const map = this.map
     if (!alive(map)) return
     const f = name ? this.districts.find((d) => d.properties?.name === name) : undefined
     this.selected = f ? name : null
     if (this.select) this.select.value = this.selected ?? ''
+    // Picking a district shows its profile; the chat keeps its tab when it was the chat that moved the map.
+    if (this.selected && !fromChat) this.dockTab = 'district'
     this.applySelection()
     this.renderProfile()
+    this.syncDock()
     if (f) {
       if (!this.on3D) this.enter3D()
       this.goToBounds(bboxOf(f.geometry))
@@ -1078,11 +1132,7 @@ class ViewControl implements maplibregl.IControl {
     if (!box) return
     const name = this.selected
     box.replaceChildren()
-    if (!name) {
-      box.style.display = 'none'
-      return
-    }
-    box.style.display = ''
+    if (!name) return
     const doc = this.profiles
     const p = doc?.districts[name]
     const el = (tag: string, cls: string, text?: string) => {
@@ -1546,12 +1596,14 @@ export default function CityContextLayers({
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
     map.addControl(nav, 'bottom-right')
     controlRef.current = ctrl
+    setChatSlot(ctrl.chatSlot)
     if (map.getSource(SRC.sources)) ctrl.afterLayersAdded()
     loadPack(pack.base)
       .then((d) => ctrl.setPackData(d))
       .catch(() => {})
     return () => {
       controlRef.current = null
+      setChatSlot(null)
       try {
         map.removeControl(nav)
         map.removeControl(ctrl)
@@ -1581,6 +1633,9 @@ export default function CityContextLayers({
 
   // The "Ask the map" assistant (React, portalled into the map container). Actions run through the same
   // controls the viewer uses: the layer switches and the district picker.
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => { controlRef.current?.setChatOpen(chatOpen) }, [chatOpen])
   const [factsDoc, setFactsDoc] = useState<FactsDoc | null>(null)
   useEffect(() => {
     if (!pack || !showViewControl) return
@@ -1592,11 +1647,14 @@ export default function CityContextLayers({
   return (
     <MapAssistant
       container={map.getContainer()}
+      slot={chatSlot}
+      open={chatOpen}
+      onOpenChange={setChatOpen}
       layers={CONTEXT_LAYER_DEFS.map((d) => ({ key: d.key, label: d.label }))}
       profiles={factsDoc}
       handlers={{
         setLayers: (patch) => changeRef.current(patch as Partial<CityContextVisibility>),
-        goDistrict: (name) => controlRef.current?.selectDistrict(name),
+        goDistrict: (name) => controlRef.current?.selectDistrict(name, true, true),
         goPlace: (lng, lat, _name, zoom = 11.5) => {
           controlRef.current?.selectDistrict(null, false)
           map.flyTo({ center: [lng, lat], zoom, pitch: 0, bearing: 0, duration: 1400 })
