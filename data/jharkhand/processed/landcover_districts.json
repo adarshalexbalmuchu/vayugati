@@ -4,17 +4,17 @@
   "Bokaro": {
    "Tree cover": 37.1,
    "Shrubland": 0.1,
-   "Grassland": 20.0,
+   "Grassland": 19.9,
    "Cropland": 37.4,
    "Built-up": 2.6,
    "Bare / sparse vegetation": 0.5,
    "Permanent water": 2.4
   },
   "Chatra": {
-   "Tree cover": 45.0,
+   "Tree cover": 45.4,
    "Shrubland": 0.8,
    "Grassland": 20.7,
-   "Cropland": 32.2,
+   "Cropland": 31.9,
    "Built-up": 0.5,
    "Bare / sparse vegetation": 0.4,
    "Permanent water": 0.3
@@ -58,8 +58,8 @@
   "Giridih": {
    "Tree cover": 22.5,
    "Shrubland": 0.4,
-   "Grassland": 28.6,
-   "Cropland": 46.6,
+   "Grassland": 28.5,
+   "Cropland": 46.7,
    "Built-up": 1.2,
    "Bare / sparse vegetation": 0.2,
    "Permanent water": 0.5
@@ -83,13 +83,13 @@
    "Permanent water": 0.6
   },
   "Hazaribagh": {
-   "Tree cover": 43.6,
-   "Shrubland": 0.7,
-   "Grassland": 17.9,
-   "Cropland": 34.3,
-   "Built-up": 1.9,
-   "Bare / sparse vegetation": 0.4,
-   "Permanent water": 1.2
+   "Tree cover": 42.6,
+   "Shrubland": 0.9,
+   "Grassland": 18.8,
+   "Cropland": 34.7,
+   "Built-up": 1.8,
+   "Bare / sparse vegetation": 0.3,
+   "Permanent water": 1.0
   },
   "Jamtara": {
    "Tree cover": 13.7,
@@ -110,13 +110,13 @@
    "Permanent water": 0.2
   },
   "Kodarma": {
-   "Tree cover": 46.0,
-   "Shrubland": 0.9,
-   "Grassland": 16.3,
-   "Cropland": 34.1,
-   "Built-up": 1.8,
+   "Tree cover": 50.1,
+   "Shrubland": 0.6,
+   "Grassland": 13.6,
+   "Cropland": 32.3,
+   "Built-up": 2.1,
    "Bare / sparse vegetation": 0.2,
-   "Permanent water": 0.7
+   "Permanent water": 1.1
   },
   "Latehar": {
    "Tree cover": 56.9,
@@ -147,10 +147,10 @@
    "Herbaceous wetland": 0.0
   },
   "Palamu": {
-   "Tree cover": 34.0,
+   "Tree cover": 33.9,
    "Shrubland": 0.2,
-   "Grassland": 15.1,
-   "Cropland": 48.1,
+   "Grassland": 15.0,
+   "Cropland": 48.2,
    "Built-up": 0.9,
    "Bare / sparse vegetation": 0.6,
    "Permanent water": 1.3
@@ -174,13 +174,13 @@
    "Permanent water": 1.0
   },
   "Ramgarh": {
-   "Tree cover": 36.2,
+   "Tree cover": 34.8,
    "Shrubland": 0.0,
-   "Grassland": 14.2,
-   "Cropland": 44.5,
+   "Grassland": 14.1,
+   "Cropland": 46.0,
    "Built-up": 3.0,
    "Bare / sparse vegetation": 0.7,
-   "Permanent water": 1.5
+   "Permanent water": 1.4
   },
   "Ranchi": {
    "Tree cover": 34.3,

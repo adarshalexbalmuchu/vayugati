@@ -1,6 +1,6 @@
 {
  "sources": {
-  "area_km2": "Survey of India calculated area, in FSI India State of Forest Report 2023, Jharkhand Table 10.11.3",
+  "area_km2": "Survey of India calculated area, in FSI India State of Forest Report 2023, Jharkhand Table 10.11.3 (Kodarma and Hazaribagh: the district websites' own figures, see the note on each)",
   "forest": "Forest Survey of India, India State of Forest Report 2023 (published Dec 2024), Jharkhand Table 10.11.3",
   "population_2011": "Census of India 2011, Table A-02 (Office of the Registrar General & Census Commissioner)",
   "elevation": "Copernicus DEM GLO-90 (ESA), 90 m grid; median and highest cell inside the district outline, computed by Vayu Gati. Checked: Giridih 1,361 m (Parasnath, about 1,350-1,365 m), Bokaro 975 m (Lugu, about 980 m)",
@@ -9,7 +9,7 @@
   "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
   "mining_area_km2": "No official district-wise figure found",
   "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at about 180 m over the district outline",
-  "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match Survey of India areas (ISFR 2023): mean difference 0.8%, largest 4.1% (Sahibganj). Not Survey of India's own file"
+  "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file"
  },
  "heat_detection_dates": [
   "2026-11-01",
@@ -21,6 +21,8 @@
  "districts": {
   "Bokaro": {
    "area_km2": 2883,
+   "area_isfr_km2": 2883,
+   "area_note": null,
    "population_2011": 2062330,
    "forest_km2": 572.41,
    "forest_pct": 19.85,
@@ -52,7 +54,7 @@
    "landcover_pct": {
     "Tree cover": 37.1,
     "Shrubland": 0.1,
-    "Grassland": 20.0,
+    "Grassland": 19.9,
     "Cropland": 37.4,
     "Built-up": 2.6,
     "Bare / sparse vegetation": 0.5,
@@ -61,6 +63,8 @@
   },
   "Chatra": {
    "area_km2": 3718,
+   "area_isfr_km2": 3718,
+   "area_note": null,
    "population_2011": 1042886,
    "forest_km2": 1799.39,
    "forest_pct": 48.4,
@@ -82,10 +86,10 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 45.0,
+    "Tree cover": 45.4,
     "Shrubland": 0.8,
     "Grassland": 20.7,
-    "Cropland": 32.2,
+    "Cropland": 31.9,
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.3
@@ -93,6 +97,8 @@
   },
   "Deoghar": {
    "area_km2": 2477,
+   "area_isfr_km2": 2477,
+   "area_note": null,
    "population_2011": 1492073,
    "forest_km2": 205.66,
    "forest_pct": 8.3,
@@ -120,6 +126,8 @@
   },
   "Dhanbad": {
    "area_km2": 2040,
+   "area_isfr_km2": 2040,
+   "area_note": null,
    "population_2011": 2684487,
    "forest_km2": 221.2,
    "forest_pct": 10.84,
@@ -161,6 +169,8 @@
   },
   "Dumka": {
    "area_km2": 3761,
+   "area_isfr_km2": 3761,
+   "area_note": null,
    "population_2011": 1321442,
    "forest_km2": 588.84,
    "forest_pct": 15.66,
@@ -188,6 +198,8 @@
   },
   "Garhwa": {
    "area_km2": 4093,
+   "area_isfr_km2": 4093,
+   "area_note": null,
    "population_2011": 1322784,
    "forest_km2": 1455.6,
    "forest_pct": 35.56,
@@ -215,6 +227,8 @@
   },
   "Giridih": {
    "area_km2": 4962,
+   "area_isfr_km2": 4962,
+   "area_note": null,
    "population_2011": 2445474,
    "forest_km2": 900.2,
    "forest_pct": 18.14,
@@ -233,8 +247,8 @@
    "landcover_pct": {
     "Tree cover": 22.5,
     "Shrubland": 0.4,
-    "Grassland": 28.6,
-    "Cropland": 46.6,
+    "Grassland": 28.5,
+    "Cropland": 46.7,
     "Built-up": 1.2,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.5
@@ -242,6 +256,8 @@
   },
   "Godda": {
    "area_km2": 2266,
+   "area_isfr_km2": 2266,
+   "area_note": null,
    "population_2011": 1313551,
    "forest_km2": 430.48,
    "forest_pct": 19.0,
@@ -274,6 +290,8 @@
   },
   "Gumla": {
    "area_km2": 5360,
+   "area_isfr_km2": 5360,
+   "area_note": null,
    "population_2011": 1025213,
    "forest_km2": 1455.41,
    "forest_pct": 27.15,
@@ -300,14 +318,16 @@
    }
   },
   "Hazaribagh": {
-   "area_km2": 3555,
+   "area_km2": 4302,
+   "area_isfr_km2": 3555,
+   "area_note": "The forest report (ISFR 2023) lists 3,555 km²; the Hazaribagh district website and the Central Ground Water Board (2011) give 4,302 km². Shown: the district website's figure.",
    "population_2011": 1734495,
    "forest_km2": 1641.54,
    "forest_pct": 46.18,
    "forest_very_dense_km2": 233.2,
    "forest_moderately_dense_km2": 467.06,
    "forest_open_km2": 941.28,
-   "elevation_median_m": 476,
+   "elevation_median_m": 442,
    "elevation_max_m": 845,
    "heat_detections": 11,
    "power_plants": [],
@@ -317,17 +337,19 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 43.6,
-    "Shrubland": 0.7,
-    "Grassland": 17.9,
-    "Cropland": 34.3,
-    "Built-up": 1.9,
-    "Bare / sparse vegetation": 0.4,
-    "Permanent water": 1.2
+    "Tree cover": 42.6,
+    "Shrubland": 0.9,
+    "Grassland": 18.8,
+    "Cropland": 34.7,
+    "Built-up": 1.8,
+    "Bare / sparse vegetation": 0.3,
+    "Permanent water": 1.0
    }
   },
   "Jamtara": {
    "area_km2": 1811,
+   "area_isfr_km2": 1811,
+   "area_note": null,
    "population_2011": 791042,
    "forest_km2": 107.49,
    "forest_pct": 5.94,
@@ -355,6 +377,8 @@
   },
   "Khunti": {
    "area_km2": 2535,
+   "area_isfr_km2": 2535,
+   "area_note": null,
    "population_2011": 531885,
    "forest_km2": 951.71,
    "forest_pct": 37.54,
@@ -381,15 +405,17 @@
    }
   },
   "Kodarma": {
-   "area_km2": 2540,
+   "area_km2": 1656,
+   "area_isfr_km2": 2540,
+   "area_note": "The forest report (ISFR 2023) lists 2,540 km²; the Koderma district website gives 1,655.61 km² and the Forest Department about 1,500 km². Shown: the district website's figure.",
    "population_2011": 716259,
    "forest_km2": 695.74,
    "forest_pct": 27.39,
    "forest_very_dense_km2": 76.98,
    "forest_moderately_dense_km2": 359.87,
    "forest_open_km2": 258.89,
-   "elevation_median_m": 360,
-   "elevation_max_m": 692,
+   "elevation_median_m": 353,
+   "elevation_max_m": 670,
    "heat_detections": 0,
    "power_plants": [
     {
@@ -403,17 +429,19 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 46.0,
-    "Shrubland": 0.9,
-    "Grassland": 16.3,
-    "Cropland": 34.1,
-    "Built-up": 1.8,
+    "Tree cover": 50.1,
+    "Shrubland": 0.6,
+    "Grassland": 13.6,
+    "Cropland": 32.3,
+    "Built-up": 2.1,
     "Bare / sparse vegetation": 0.2,
-    "Permanent water": 0.7
+    "Permanent water": 1.1
    }
   },
   "Latehar": {
    "area_km2": 4291,
+   "area_isfr_km2": 4291,
+   "area_note": null,
    "population_2011": 726978,
    "forest_km2": 2383.2,
    "forest_pct": 55.54,
@@ -441,6 +469,8 @@
   },
   "Lohardaga": {
    "area_km2": 1502,
+   "area_isfr_km2": 1502,
+   "area_note": null,
    "population_2011": 461790,
    "forest_km2": 503.17,
    "forest_pct": 33.5,
@@ -468,6 +498,8 @@
   },
   "Pakur": {
    "area_km2": 1811,
+   "area_isfr_km2": 1811,
+   "area_note": null,
    "population_2011": 900422,
    "forest_km2": 286.13,
    "forest_pct": 15.8,
@@ -496,6 +528,8 @@
   },
   "Palamu": {
    "area_km2": 4393,
+   "area_isfr_km2": 4393,
+   "area_note": null,
    "population_2011": 1939869,
    "forest_km2": 1217.92,
    "forest_pct": 27.72,
@@ -512,10 +546,10 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 34.0,
+    "Tree cover": 33.9,
     "Shrubland": 0.2,
-    "Grassland": 15.1,
-    "Cropland": 48.1,
+    "Grassland": 15.0,
+    "Cropland": 48.2,
     "Built-up": 0.9,
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 1.3
@@ -523,6 +557,8 @@
   },
   "Pashchimi Singhbhum": {
    "area_km2": 7224,
+   "area_isfr_km2": 7224,
+   "area_note": null,
    "population_2011": 1502338,
    "forest_km2": 3377.69,
    "forest_pct": 46.76,
@@ -550,6 +586,8 @@
   },
   "Purbi Singhbhum": {
    "area_km2": 3562,
+   "area_isfr_km2": 3562,
+   "area_note": null,
    "population_2011": 2293919,
    "forest_km2": 1068.98,
    "forest_pct": 30.01,
@@ -582,6 +620,8 @@
   },
   "Ramgarh": {
    "area_km2": 1341,
+   "area_isfr_km2": 1341,
+   "area_note": null,
    "population_2011": 949443,
    "forest_km2": 341.56,
    "forest_pct": 25.47,
@@ -598,24 +638,26 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 36.2,
+    "Tree cover": 34.8,
     "Shrubland": 0.0,
-    "Grassland": 14.2,
-    "Cropland": 44.5,
+    "Grassland": 14.1,
+    "Cropland": 46.0,
     "Built-up": 3.0,
     "Bare / sparse vegetation": 0.7,
-    "Permanent water": 1.5
+    "Permanent water": 1.4
    }
   },
   "Ranchi": {
    "area_km2": 5097,
+   "area_isfr_km2": 5097,
+   "area_note": null,
    "population_2011": 2914253,
    "forest_km2": 1140.46,
    "forest_pct": 22.38,
    "forest_very_dense_km2": 63.57,
    "forest_moderately_dense_km2": 349.76,
    "forest_open_km2": 727.13,
-   "elevation_median_m": 593,
+   "elevation_median_m": 594,
    "elevation_max_m": 1043,
    "heat_detections": 7,
    "power_plants": [],
@@ -636,6 +678,8 @@
   },
   "Sahibganj": {
    "area_km2": 2063,
+   "area_isfr_km2": 2063,
+   "area_note": null,
    "population_2011": 1150567,
    "forest_km2": 592.45,
    "forest_pct": 28.72,
@@ -664,6 +708,8 @@
   },
   "Saraikela-Kharsawan": {
    "area_km2": 2657,
+   "area_isfr_km2": 2657,
+   "area_note": null,
    "population_2011": 1065056,
    "forest_km2": 582.04,
    "forest_pct": 21.91,
@@ -691,6 +737,8 @@
   },
   "Simdega": {
    "area_km2": 3774,
+   "area_isfr_km2": 3774,
+   "area_note": null,
    "population_2011": 599578,
    "forest_km2": 1246.51,
    "forest_pct": 33.03,

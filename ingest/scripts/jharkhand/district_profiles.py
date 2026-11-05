@@ -82,6 +82,15 @@ def _elevation_stats(geom) -> tuple[int, int]:
     return round(float(np.median(allv))), round(float(allv.max()))
 
 
+# Where the forest report's area and the district's own official figure disagree (found 6 Nov 2026).
+AREA_NOTES = {
+    "Kodarma": (1656, "The forest report (ISFR 2023) lists 2,540 km²; the Koderma district website gives 1,655.61 km² "
+                      "and the Forest Department about 1,500 km². Shown: the district website's figure."),
+    "Hazaribagh": (4302, "The forest report (ISFR 2023) lists 3,555 km²; the Hazaribagh district website and the Central "
+                         "Ground Water Board (2011) give 4,302 km². Shown: the district website's figure."),
+}
+
+
 def main() -> None:
     districts = json.load(open(OUT / "districts.geojson"))["features"]
     isfr = {r["district"]: r for r in csv.DictReader(open(SRC / "isfr2023_district_forest.csv"))}
@@ -109,8 +118,12 @@ def main() -> None:
         in_plants = [pl["properties"] for pl in plants
                      if g.contains(shape(pl["geometry"]))]
         f = isfr[name]
+        official = AREA_NOTES.get(name)
         profiles[name] = {
-            "area_km2": int(f["area_km2_soi"]),
+            # Area shown: the district's own official figure where ISFR's differs a lot, with a note
+            "area_km2": int(official[0]) if official else int(f["area_km2_soi"]),
+            "area_isfr_km2": int(f["area_km2_soi"]),
+            "area_note": official[1] if official else None,
             "population_2011": census[name],
             "forest_km2": float(f["forest_total_km2"]),
             "forest_pct": float(f["forest_pct"]),
@@ -133,7 +146,8 @@ def main() -> None:
 
     doc = {
         "sources": {
-            "area_km2": "Survey of India calculated area, in FSI India State of Forest Report 2023, Jharkhand Table 10.11.3",
+            "area_km2": "Survey of India calculated area, in FSI India State of Forest Report 2023, Jharkhand Table 10.11.3 "
+                        "(Kodarma and Hazaribagh: the district websites\' own figures, see the note on each)",
             "forest": "Forest Survey of India, India State of Forest Report 2023 (published Dec 2024), Jharkhand Table 10.11.3",
             "population_2011": "Census of India 2011, Table A-02 (Office of the Registrar General & Census Commissioner)",
             "elevation": "Copernicus DEM GLO-90 (ESA), 90 m grid; median and highest cell inside the district "
@@ -148,7 +162,7 @@ def main() -> None:
             "mining_area_km2": "No official district-wise figure found",
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",
-            "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match Survey of India areas (ISFR 2023): mean difference 0.8%, largest 4.1% (Sahibganj). Not Survey of India's own file",
+            "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file",
         },
         "heat_detection_dates": fire_dates,
         "districts": profiles,

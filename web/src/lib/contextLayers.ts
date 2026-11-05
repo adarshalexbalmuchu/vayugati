@@ -17,7 +17,7 @@ export interface ContextLayerDef {
 
 export const CONTEXT_LAYER_DEFS = [
   { key: 'districts', label: 'State and district outlines', on: true,
-    note: 'Jharkhand and its 24 districts. Outlines combine three open datasets (Datameet / Census 2011, OpenStreetMap, geoBoundaries), chosen per district to match Survey of India’s areas (0.8% mean difference, 4.1% at most). Not Survey of India’s own file. Click a district, or pick one, to see it in 3D with its profile.' },
+    note: 'Jharkhand and its 24 districts. Outlines combine three open datasets (Datameet / Census 2011, OpenStreetMap, geoBoundaries), chosen per district to match official areas and 42 towns of known district (0.9% mean difference, 4.1% at most). Not Survey of India’s own file. Click a district, or pick one, to see it in 3D with its profile.' },
   { key: 'landcover', label: 'Land cover (ESA WorldCover 2021)', on: false,
     note: 'Satellite-mapped land cover at 10 m by the European Space Agency (2021), shown at about 150 m: tree cover, cropland, built-up, bare ground and mines, water.' },
   { key: 'nightlights', label: 'Night lights (NASA Black Marble 2016)', on: false,

@@ -636,6 +636,8 @@ function anchorBelow(map: maplibregl.Map, id: string): string | undefined {
 /** district_profiles.json, built by ingest/scripts/jharkhand/district_profiles.py. */
 interface DistrictProfile {
   area_km2: number | null
+  area_isfr_km2?: number | null
+  area_note?: string | null
   population_2011: number | null
   forest_km2: number | null
   forest_pct: number | null
@@ -1135,7 +1137,7 @@ class ViewControl implements maplibregl.IControl {
       if (sub) t.appendChild(el('p', 'text-[10px] text-ink-600', sub))
       grid.appendChild(t)
     }
-    tile('Area', num(p.area_km2, ' km²'))
+    tile('Area', num(p.area_km2, ' km²'), p.area_note ? 'sources differ, see Sources' : undefined)
     tile('Population (2011)', num(p.population_2011))
     tile('Forest cover', p.forest_pct == null ? NA : `${p.forest_pct}%`, p.forest_km2 == null ? undefined : `${nf.format(Math.round(p.forest_km2))} km²`)
     tile('Highest point', num(p.elevation_max_m, ' m'), p.elevation_median_m == null ? undefined : `typical ${nf.format(p.elevation_median_m)} m`)
@@ -1169,8 +1171,8 @@ class ViewControl implements maplibregl.IControl {
     // Forest, by density (share of district area)
     const fsec = el('div', 'mt-3')
     fsec.appendChild(label('Forest by density (ISFR 2023)'))
-    if (p.area_km2 && p.forest_km2 != null) {
-      const a = p.area_km2
+    if ((p.area_isfr_km2 ?? p.area_km2) && p.forest_km2 != null) {
+      const a = (p.area_isfr_km2 ?? p.area_km2) as number  // forest shares are ISFR's own, against ISFR's area
       const share = (v: number | null) => Math.round(((v ?? 0) / a) * 1000) / 10
       const vd = share(p.forest_very_dense_km2), md = share(p.forest_moderately_dense_km2), op = share(p.forest_open_km2)
       fsec.appendChild(bar([
@@ -1249,6 +1251,11 @@ class ViewControl implements maplibregl.IControl {
         li.append(el('span', 'font-semibold text-ink-700', `${lab}: `), document.createTextNode(src[k]))
         ul.appendChild(li)
       }
+    }
+    if (p.area_note) {
+      const li = el('li', '')
+      li.append(el('span', 'font-semibold text-ink-700', 'Area: '), document.createTextNode(p.area_note))
+      ul.insertBefore(li, ul.firstChild)
     }
     ul.appendChild(el('li', '', 'NA: no verified government figure found.'))
     det.appendChild(ul)

@@ -183,9 +183,20 @@ def _osm_districts() -> dict:
     return out
 
 
+# The forest report's areas disagree with the districts' own official figures for these two (found 6 Nov 2026):
+# Kodarma ISFR 2,540 vs 1,655.61 km2 on the Koderma district website (Forest Department: 1,500); Hazaribagh ISFR
+# 3,555 vs 4,302 km2 on the Hazaribagh district website and the Central Ground Water Board profile (2011).
+# OpenStreetMap's borders give 1,661 and 4,387, which match the official figures. The check uses the official ones.
+AREA_CHECK_OVERRIDES = {"Kodarma": 1655.61, "Hazaribagh": 4302.0}
+
+
 def _soi_areas() -> dict:
-    return {r["district"]: float(r["area_km2_soi"])
-            for r in csv.DictReader(open(REPO / "data" / "jharkhand" / "sources" / "isfr2023_district_forest.csv"))}
+    """Area yardstick for the border check: ISFR 2023 (Survey of India calculated areas), except where the
+    district's own official figure differs by a lot (AREA_CHECK_OVERRIDES)."""
+    areas = {r["district"]: float(r["area_km2_soi"])
+             for r in csv.DictReader(open(REPO / "data" / "jharkhand" / "sources" / "isfr2023_district_forest.csv"))}
+    areas.update(AREA_CHECK_OVERRIDES)
+    return areas
 
 
 # Towns whose district is certain (district HQs and well-known block HQs). They are a second check on the
@@ -195,7 +206,7 @@ TEST_TOWNS = {
     "Ranchi": "Ranchi", "Jamshedpur": "Purbi Singhbhum", "Dhanbad": "Dhanbad", "Bokaro": "Bokaro", "Chas": "Bokaro",
     "Deoghar": "Deoghar", "Madhupur": "Deoghar", "Hazaribagh": "Hazaribagh", "Barhi": "Hazaribagh",
     "Barkagaon": "Hazaribagh", "Ichak": "Hazaribagh", "Giridih": "Giridih", "Bagodar": "Giridih",
-    "Dhanwar": "Giridih", "Ramgarh": "Ramgarh", "Patratu": "Ramgarh", "Mandu": "Ramgarh", "Gola": "Ramgarh",
+    "Dhanwar": "Giridih", "Barkatha": "Hazaribagh", "Chalkusa": "Hazaribagh", "Chauparan": "Hazaribagh", "Ramgarh": "Ramgarh", "Patratu": "Ramgarh", "Mandu": "Ramgarh", "Gola": "Ramgarh",
     "Chitarpur": "Ramgarh", "Medininagar": "Palamu", "Daltonganj": "Palamu", "Chaibasa": "Pashchimi Singhbhum",
     "Dumka": "Dumka", "Godda": "Godda", "Sahibganj": "Sahibganj", "Pakur": "Pakur", "Gumla": "Gumla",
     "Lohardaga": "Lohardaga", "Kuru": "Lohardaga", "Khunti": "Khunti", "Torpa": "Khunti", "Latehar": "Latehar",
