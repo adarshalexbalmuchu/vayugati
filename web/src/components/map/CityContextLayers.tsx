@@ -4,8 +4,8 @@ import type { FeatureCollection } from 'geojson'
 
 /**
  * Static context layers for a city pack. For Dhanbad–Jharia the pack covers
- * the whole state: Jharkhand's outline, its 24 districts shaded by the
- * government monitoring each has, mining and quarry areas, industrial land,
+ * the whole state: Jharkhand's outline, its 24 districts, mining and quarry
+ * areas, industrial land,
  * checked power plants and large works, main roads, satellite heat
  * detections, and the West Bengal reference stations.
  *
@@ -111,22 +111,6 @@ const KIND_LABEL: Record<string, string> = {
   works: 'Large works',
 }
 
-/** District monitoring classes, best first. Shared with the legend. */
-export const DISTRICT_CLASSES = [
-  { key: 'continuous', color: '#1F6F8B', label: 'Continuous station in the CPCB feed' },
-  { key: 'manual', color: '#7FB3C8', label: 'Manual stations only' },
-  { key: 'planned', color: '#D5E5EC', label: 'Continuous stations planned only' },
-  { key: 'none', color: '#F3D9CF', label: 'None in CPCB’s lists or the JSPCB tender' },
-] as const
-
-const districtClassExpr: maplibregl.ExpressionSpecification = [
-  'case',
-  ['>', ['get', 'continuous_in_feed'], 0], 'continuous',
-  ['>', ['get', 'manual_namp'], 0], 'manual',
-  ['>', ['get', 'planned_caaqms'], 0], 'planned',
-  'none',
-]
-
 function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibility) {
   if (map.getSource(SRC.sources)) return
   for (const [k, id] of Object.entries(SRC)) {
@@ -138,11 +122,8 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     type: 'fill',
     source: SRC.districts,
     layout: { visibility: vis('districts') },
-    paint: {
-      'fill-color': ['match', districtClassExpr, ...DISTRICT_CLASSES.flatMap((c) => [c.key, c.color]), '#ccc'] as unknown as maplibregl.ExpressionSpecification,
-      // Strong at state zoom, fading out in the city view so ward cells stay readable.
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 9, 0.3, 10.5, 0],
-    },
+    // Near-transparent: the fill is only there so a district can be clicked.
+    paint: { 'fill-color': '#FFFFFF', 'fill-opacity': 0.01 },
   })
   map.addLayer({
     id: 'ctx-districts-line',
@@ -243,17 +224,8 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
     el.appendChild(p)
   }
   if (layerId === 'ctx-districts-fill') {
-    const cont = Number(props.continuous_in_feed ?? 0)
-    const manual = Number(props.manual_namp ?? 0)
-    const planned = Number(props.planned_caaqms ?? 0)
     line(`${props.name} district`, true)
-    line(`Continuous stations reporting in the CPCB feed (5 Nov 2026): ${cont}`)
-    line(`Manual stations, CPCB NAMP list (19 Nov 2024): ${manual}`)
-    line(`Continuous stations planned, JSPCB tender (6 Dec 2025): ${planned}`)
-    if (cont === 0 && manual === 0 && planned === 0) line('No station in CPCB’s public lists and none in the JSPCB tender.')
-    else if (cont === 0) line('No continuous (hourly) station reporting publicly.')
-    line('Counts only stations in CPCB’s public lists. Monitors run by industries or municipal bodies that are not on the national feed are not counted.')
-    line('District outline: geoBoundaries (approximate, not Survey of India).')
+    line('Outline: geoBoundaries (approximate, not Survey of India).')
   } else if (layerId === 'ctx-fires') {
     line('Satellite heat detection (NASA FIRMS, VIIRS)', true)
     line(`${props.date ?? ''} · ${props.daynight === 'N' ? 'night' : 'day'} · fire radiative power ${props.frp ?? '—'} MW`)
@@ -275,11 +247,10 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   return el
 }
 
-/** Jharkhand / city zoom buttons plus the district legend. Plain DOM so it
- *  can live inside MapLibre's control corners. */
+/** Jharkhand / city zoom buttons. Plain DOM so it can live inside
+ *  MapLibre's control corners. */
 class ViewControl implements maplibregl.IControl {
   private el: HTMLDivElement | null = null
-  private legend: HTMLDivElement | null = null
   constructor(
     private pack: ContextPack,
     private cityLabel: string,
@@ -307,35 +278,8 @@ class ViewControl implements maplibregl.IControl {
     btn(this.cityLabel, () => map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, duration: 800 }))
     el.appendChild(row)
 
-    const legend = document.createElement('div')
-    legend.className = 'mt-1.5 space-y-0.5 border-t border-slate-200 pt-1.5'
-    const title = document.createElement('p')
-    title.className = 'font-semibold'
-    title.textContent = 'Districts: public air monitoring'
-    legend.appendChild(title)
-    for (const c of DISTRICT_CLASSES) {
-      const r = document.createElement('div')
-      r.className = 'flex items-center gap-1.5'
-      const sw = document.createElement('span')
-      sw.className = 'inline-block h-2.5 w-3.5 rounded-sm border border-slate-400/60'
-      sw.style.background = c.color
-      const t = document.createElement('span')
-      t.textContent = c.label
-      r.append(sw, t)
-      legend.appendChild(r)
-    }
-    const note = document.createElement('p')
-    note.className = 'text-[10px] text-slate-500'
-    note.textContent = 'Click a district for its counts.'
-    legend.appendChild(note)
-    el.appendChild(legend)
-    this.legend = legend
     this.el = el
     return el
-  }
-
-  setLegendVisible(v: boolean) {
-    if (this.legend) this.legend.style.display = v ? '' : 'none'
   }
 
   onRemove() {
@@ -356,7 +300,7 @@ export default function CityContextLayers({
   map: maplibregl.Map | null
   cityCode: string | null
   visible: CityContextVisibility
-  /** Add the Jharkhand / city zoom buttons and the district legend. */
+  /** Add the Jharkhand / city zoom buttons. */
   showViewControl?: boolean
   cityLabel?: string
   cityCenter?: [number, number]
@@ -365,7 +309,6 @@ export default function CityContextLayers({
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const pack = cityCode ? CONTEXT_PACKS[cityCode] : undefined
-  const controlRef = useRef<ViewControl | null>(null)
 
   useEffect(() => {
     if (!map || !pack) return
@@ -423,10 +366,7 @@ export default function CityContextLayers({
     if (!map || !pack || !showViewControl || !cityCenter) return
     const ctrl = new ViewControl(pack, cityLabel, cityCenter, cityZoom)
     map.addControl(ctrl, 'top-left')
-    controlRef.current = ctrl
-    ctrl.setLegendVisible(visibleRef.current.districts)
     return () => {
-      controlRef.current = null
       try {
         map.removeControl(ctrl)
       } catch {
@@ -444,7 +384,6 @@ export default function CityContextLayers({
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible[key as CityContextLayerKey] ? 'visible' : 'none')
       }
     }
-    controlRef.current?.setLegendVisible(visible.districts)
   }, [map, pack, visible])
 
   return null

@@ -79,7 +79,7 @@ const LAYER_GROUPS: { label: string; subtitle?: string; keys: MapLayerKey[] }[] 
   },
   {
     label: CONTEXT_GROUP,
-    subtitle: 'Mapped features, not air-quality measurements',
+    subtitle: 'Geospatial features, not air-quality measurements',
     keys: ['ctxDistricts', 'ctxMines', 'ctxIndustry', 'ctxRoads', 'ctxFires', 'ctxReference'],
   },
   {
@@ -179,9 +179,9 @@ export const LAYER_META: Record<MapLayerKey, { label: string; available: boolean
     note: 'Colour-codes land use: industrial (orange), commercial (amber), residential (blue). Shows the physical context behind AQI readings.',
   },
   ctxDistricts: {
-    label: 'Districts and monitoring',
+    label: 'State and district outlines',
     available: false,
-    note: 'Jharkhand’s 24 districts, shaded by government monitoring: continuous stations reporting in the CPCB feed (5 Nov 2026), manual stations (CPCB NAMP list, 19 Nov 2024), continuous stations planned (JSPCB tender, 6 Dec 2025). Outlines from geoBoundaries, approximate.',
+    note: 'Jharkhand and its 24 districts. Outlines from geoBoundaries (approximate, not Survey of India). Click a district for its name.',
   },
   ctxMines: {
     label: 'Mining and quarry areas',

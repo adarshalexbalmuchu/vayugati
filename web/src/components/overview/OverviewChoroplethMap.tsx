@@ -129,7 +129,7 @@ export default function OverviewChoroplethMap({
   coverage: { fresh: number; total: number } | null
   latestReadingAgeMinutes?: number | null
   onWardsFlaggedClick?: () => void
-  /** Add the Jharkhand / city zoom buttons and the district legend (map-only overview). */
+  /** Add the Jharkhand / city zoom buttons (map-only overview). */
   showViewControl?: boolean
   /** Hide the glass KPI bar (map-first cities: its figures are Delhi's jobs). */
   hideKpiBar?: boolean
