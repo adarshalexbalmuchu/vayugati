@@ -27,6 +27,9 @@ Jharkhand before those nodes exist, using the official stations and open source 
 | `state_{railways,rivers,water,forest,protected,places,builtup,facilities,transport,power,kilns,landmarks}.geojson` | Statewide base layers for every district (`osm_base` step): railways and sidings, stations and airports, rivers and canals, lakes and reservoirs, forest areas, the 12 protected areas (Betla NP + 11 WLS, matching the official list), towns and villages, built-up areas, schools and hospitals, power lines and substations, brick kilns, peaks, waterfalls and dams | OpenStreetMap, 3 Nov 2026 |
 | `landcover_districts.json` + web `landcover_2021.png` | ESA WorldCover 2021 land cover, cut to the state (`landcover` step), and each district's class shares | ESA WorldCover 10 m v200 (CC BY 4.0) |
 | `town_grids_3km.geojson` (web `town_grids.geojson`) | 3 km grids over 29 main towns (district HQs plus Jamshedpur, Adityapur, Bokaro, Chas, Phusro, Ramgarh and others; Dhanbad's own grid is separate), 291 cells chosen where at least 4% is built-up land; ids `JH-row-col`. A working grid, NOT wards. Dumka's centre point is manual (missing from OSM places). `towngrids` step | ESA WorldCover 2021 |
+| `district_exposure.json` | Share and number of people within 2 and 5 km of the mapped mining and quarry areas, brick kilns and checked power plants/works, per district (`district_exposure.py`). Population is WorldPop 2020 (1 km grid, CC BY 4.0), a model estimate (state total 40.0 million vs Census 2011 33.0 million; Sahibganj 1.57x its Census figure), so shares are of the WorldPop population. Mapped sites are incomplete, so these are minimums; proximity is not exposure. State: 14.2% within 2 km of a mapped mining area, 34.0% within 5 km | WorldPop (Univ. of Southampton); sites from the map's layers |
+| `district_climate.json` | Rain (annual, monthly, monsoon share) and wind (mean speed and prevailing direction by season, 8-sector rose) per district, ERA5 hourly 2015-2024 via the Open-Meteo archive API (`district_climate.py`). About a 30 km grid: area climate, not a town's weather | ECMWF / Copernicus ERA5 (CC BY 4.0); Open-Meteo |
+| `sources/wri_gppd_jharkhand_area_plants.csv` | Power plants in the Jharkhand area from the WRI Global Power Plant Database v1.3 (built from the Central Electricity Authority list; capacity data about 2019-20). Used only for capacity (MW) of checked plants matched by exact name (`WRI_NAME`); Bokaro (split entries), Godda and North Karanpura (newer than the release) and Raghunathpur (not listed) get none | WRI, CC BY 4.0 |
 | `openaq_locations.json` | Every OpenAQ location in the Jharkhand box, for station matching | OpenAQ v3 |
 | `preview.html` | A standalone map of the layers (`#state` and `#dhanbad` views) | — |
 
@@ -145,3 +148,15 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
   23,766 km2 of forest). Cost control: the default model is Haiku 5.5 (the cheapest); Sonnet 5.5 was tried and
   rejected on cost. Switch with `JH_ASSISTANT_MODEL`.
 - Limits: it cannot chain on an arbitrary result beyond `open_top`; it holds no air-quality readings.
+
+## Data still to request (checked 6 Nov 2026)
+
+- **Coal mines with names and owners.** Global Energy Monitor's Global Coal Mine Tracker (CC BY 4.0, May 2026 release)
+  is the best structured source but its sheet is private: the data is released on request through GEM's form
+  (contact in their catalog metadata). Coal India subsidiaries (BCCL, CCL, ECL) and CMPDI hold the official lease and
+  project lists.
+- **Industries.** CPCB / JSPCB lists of highly polluting industry categories (consent records).
+- **Coal-fire map of Jharia.** NRSC/ISRO, quarterly under the October 2025 MoU with BCCL and CMPDI.
+- **District poverty / clean cooking fuel.** NITI's district MPI was not found as a download; NFHS-5 district fact sheets
+  (IIPS) report clean cooking fuel by district.
+- **Municipal wards, blocks, villages** (see above).

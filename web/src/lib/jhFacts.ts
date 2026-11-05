@@ -20,10 +20,22 @@ export interface DistrictProfile {
   monitors_planned_jspcb: number | null
   landcover_pct?: Record<string, number> | null
   osm_counts?: Record<string, number> | null
+  exposure?: Record<string, number> | null
+  climate?: {
+    rain_annual_mm: number
+    rain_monsoon_pct: number | null
+    rain_monthly_mm: number[]
+    wind_mean_ms: Record<string, number | null>
+    wind_from: Record<string, string | null>
+    rose_all_pct: number[]
+    rose_winter_pct: number[]
+  } | null
 }
 
 export interface ProfilesDoc {
   sources: Record<string, string>
+  /** State-level exposure totals (district_profiles.json: "state_exposure"). */
+  exposure?: Record<string, number>
   heat_detection_dates: string[]
   districts: Record<string, DistrictProfile>
 }
@@ -34,8 +46,12 @@ export type FactField =
   | 'monitors_continuous' | 'monitors_manual' | 'monitors_planned'
   | 'n_mining_areas' | 'n_industrial_areas' | 'n_brick_kilns' | 'n_schools' | 'n_hospitals' | 'n_rail_stations'
   | 'n_peaks' | 'n_substations' | 'n_towns' | 'n_villages'
+  | 'annual_rainfall' | 'monsoon_rain_pct' | 'winter_wind_speed' | 'winter_wind_from' | 'monsoon_wind_from'
+  | 'near_mines_2km_pct' | 'near_mines_5km_pct' | 'near_kilns_2km_pct' | 'near_plants_5km_pct'
 
 interface FieldDef {
+  /** A text value (e.g. a compass direction); such fields cannot be ranked. */
+  text?: (p: DistrictProfile) => string | null | undefined
   label: string
   unit: string
   get: (p: DistrictProfile) => number | null | undefined
@@ -46,6 +62,10 @@ interface FieldDef {
 const ISFR = 'Forest Survey of India, ISFR 2023'
 const ESA = 'ESA WorldCover 2021 (satellite, 10 m); shares computed by Vayu Gati'
 const DEM = 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati'
+
+const ERA5 = 'ERA5 reanalysis (ECMWF / Copernicus), 2015-2024, about a 30 km grid: the area\'s climate, not a town\'s'
+const WORLDPOP = 'WorldPop 2020 (1 km model estimate; share of the estimated population) with the map\'s mapped sites (OpenStreetMap, incomplete). Living near a site is not a measure of exposure'
+const expo = (key: string, label: string): FieldDef => ({ label, unit: '%', get: (p) => p.exposure?.[key], decimals: 1, source: WORLDPOP })
 
 const OSM = 'OpenStreetMap, mapped by volunteers (3 Nov 2026): what is mapped, not a complete count'
 const osmCount = (key: string, label: string): FieldDef => ({
@@ -67,6 +87,15 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   monitors_continuous: { label: 'Continuous air monitors in the CPCB feed', unit: '', get: (p) => p.monitors_continuous_in_feed, source: 'CPCB real-time feed, 5 Nov 2026' },
   monitors_manual: { label: 'Manual air monitors', unit: '', get: (p) => p.monitors_manual_namp, source: 'CPCB NAMP station list, 19 Nov 2024' },
   monitors_planned: { label: 'Continuous monitors planned', unit: '', get: (p) => p.monitors_planned_jspcb, source: 'JSPCB tender, 6 Dec 2025' },
+  winter_wind_from: { label: 'Winter wind mostly from (Dec-Feb)', unit: '', get: () => null, text: (p) => p.climate?.wind_from?.winter, source: ERA5 },
+  monsoon_wind_from: { label: 'Monsoon wind mostly from (Jun-Sep)', unit: '', get: () => null, text: (p) => p.climate?.wind_from?.monsoon, source: ERA5 },
+  near_mines_2km_pct: expo('mines_2km_pct', 'People within 2 km of a mapped mining area'),
+  near_mines_5km_pct: expo('mines_5km_pct', 'People within 5 km of a mapped mining area'),
+  near_kilns_2km_pct: expo('kilns_2km_pct', 'People within 2 km of a mapped brick kiln'),
+  near_plants_5km_pct: expo('plants_5km_pct', 'People within 5 km of a checked power plant or large works'),
+  annual_rainfall: { label: 'Average yearly rainfall', unit: ' mm', get: (p) => p.climate?.rain_annual_mm, source: ERA5 },
+  monsoon_rain_pct: { label: 'Share of rain in the monsoon (Jun-Sep)', unit: '%', get: (p) => p.climate?.rain_monsoon_pct, decimals: 1, source: ERA5 },
+  winter_wind_speed: { label: 'Average winter wind speed (Dec-Feb)', unit: ' m/s', get: (p) => p.climate?.wind_mean_ms?.winter, decimals: 1, source: ERA5 },
   n_mining_areas: osmCount('mining_areas', 'Mapped mining and quarry areas'),
   n_industrial_areas: osmCount('industrial_areas', 'Mapped industrial areas'),
   n_brick_kilns: osmCount('brick_kilns', 'Mapped brick kilns'),
@@ -95,7 +124,7 @@ export function factsFor(doc: ProfilesDoc, district: string, fields: FactField[]
   return fields.map((field) => {
     const d = FIELD_DEFS[field]
     return {
-      field, label: d.label, value: formatValue(field, d.get(p)), source: d.source,
+      field, label: d.label, value: d.text ? (d.text(p) ?? 'NA') : formatValue(field, d.get(p)), source: d.source,
       note: field === 'area' ? p.area_note ?? undefined : undefined,
     }
   })
@@ -142,6 +171,10 @@ export function stateOverview(doc: ProfilesDoc): OverviewRow[] {
     { label: 'Highest point', value: `${fmt(top[1].elevation_max_m ?? 0)} m, in ${top[0]}`, source: DEM },
     { label: 'Most populous district', value: most((p) => p.population_2011), source: FIELD_DEFS.population.source },
     { label: 'Most forest', value: most((p) => p.forest_km2), source: ISFR },
+    ...(doc.exposure ? [
+      { label: 'People within 2 km of a mapped mining area', value: `${fmt(doc.exposure.mines_2km_pct, 1)}% (${fmt(doc.exposure.mines_2km_people / 1e6, 1)} million)`, source: WORLDPOP },
+      { label: 'People within 2 km of a mapped brick kiln', value: `${fmt(doc.exposure.kilns_2km_pct, 1)}% (${fmt(doc.exposure.kilns_2km_people / 1e6, 1)} million)`, source: WORLDPOP },
+    ] : []),
     { label: 'Satellite heat detections', value: `${fmt(sum((p) => p.heat_detections))}, most in ${most((p) => p.heat_detections)}`, source: FIELD_DEFS.heat_detections.source },
     { label: 'Continuous air monitors in the CPCB feed', value: fmt(sum((p) => p.monitors_continuous_in_feed)), source: FIELD_DEFS.monitors_continuous.source },
   ]

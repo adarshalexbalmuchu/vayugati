@@ -55,3 +55,34 @@ describe('state overview', () => {
     expect(rows['Forest cover']).toMatch(/^23,766 km² \(29\.8%/) // ISFR 2023: 23,765.78 km2, 29.81%
   })
 })
+
+describe('exposure and climate fields', () => {
+  it('ranks districts by people near mapped mines (Dhanbad is among the highest)', () => {
+    const top = rankDistricts(doc, 'near_mines_2km_pct', 'desc', 5).map((r) => r.district)
+    expect(top).toContain('Dhanbad')
+  })
+
+  it('formats rainfall and wind', () => {
+    const rows = factsFor(doc, 'Ranchi', ['annual_rainfall', 'monsoon_rain_pct', 'winter_wind_speed'])!
+    expect(rows[0].value).toMatch(/^1,\d{3} mm$/)
+    expect(rows[1].value).toMatch(/^[78]\d\.\d%$/) // most Jharkhand rain falls in the monsoon
+    expect(rows[2].value).toMatch(/ m\/s$/)
+    expect(rows.every((r) => r.source.length > 10)).toBe(true)
+  })
+
+  it('the state overview includes the population near mapped mines', async () => {
+    const { stateOverview } = await import('./jhFacts')
+    const rows = Object.fromEntries(stateOverview(doc).map((r) => [r.label, r.value]))
+    expect(rows['People within 2 km of a mapped mining area']).toMatch(/^\d+\.\d% \(\d+\.\d million\)$/)
+  })
+})
+
+describe('wind direction (text field)', () => {
+  it('shows the prevailing winter wind as a compass direction', () => {
+    const rows = factsFor(doc, 'Ranchi', ['winter_wind_from'])!
+    expect(rows[0].value).toMatch(/^(N|NE|E|SE|S|SW|W|NW)$/)
+  })
+  it('text fields are not rankable (no numeric value)', () => {
+    expect(rankDistricts(doc, 'winter_wind_from', 'desc', 5)).toHaveLength(0)
+  })
+})

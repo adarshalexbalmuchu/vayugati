@@ -8,9 +8,26 @@
   "power_plants": "Power plants and large works whose names and operators were checked by Vayu Gati, Nov 2026; locations from OpenStreetMap",
   "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
   "mining_area_km2": "No official district-wise figure found",
+  "climate": "ERA5 reanalysis (ECMWF / Copernicus Climate Change Service), hourly 10 m wind and precipitation, 2015-2024, via Open-Meteo archive API. About a 30 km grid: the climate of the area, not a measurement at a town. Wind direction is where the wind blows FROM.",
+  "exposure": "Population: WorldPop 2020, 1 km grid, University of Southampton (CC BY 4.0), a model estimate (state total 40.0 million vs Census 2011 33.0 million). Sites: the map's own layers (OpenStreetMap, 3 Nov 2026, volunteer-mapped and incomplete; checked power plants and works). A 1 km cell counts if its centre is within the distance of a site: an indication, not an exact count.",
   "osm_counts": "Counts of features mapped in OpenStreetMap by volunteers (3 Nov 2026), by the feature's position. Incomplete: a count is what is mapped, not what exists",
   "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at about 180 m over the district outline",
   "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file"
+ },
+ "exposure": {
+  "population_worldpop_2020": 40005424,
+  "mines_2km_people": 5693418,
+  "mines_2km_pct": 14.2,
+  "mines_5km_people": 13603914,
+  "mines_5km_pct": 34.0,
+  "kilns_2km_people": 2010056,
+  "kilns_2km_pct": 5.0,
+  "kilns_5km_people": 7597648,
+  "kilns_5km_pct": 19.0,
+  "plants_2km_people": 330947,
+  "plants_2km_pct": 0.8,
+  "plants_5km_people": 1236848,
+  "plants_5km_pct": 3.1
  },
  "heat_detection_dates": [
   "2026-11-01",
@@ -72,6 +89,71 @@
     "substations": 23,
     "towns": 8,
     "villages": 14
+   },
+   "exposure": {
+    "population_worldpop_2020": 2424423,
+    "mines_2km_people": 579601,
+    "mines_2km_pct": 23.9,
+    "mines_5km_people": 1063542,
+    "mines_5km_pct": 43.9,
+    "kilns_2km_people": 51416,
+    "kilns_2km_pct": 2.1,
+    "kilns_5km_people": 183816,
+    "kilns_5km_pct": 7.6,
+    "plants_2km_people": 111897,
+    "plants_2km_pct": 4.6,
+    "plants_5km_people": 340452,
+    "plants_5km_pct": 14.0
+   },
+   "climate": {
+    "rain_annual_mm": 1456,
+    "rain_monsoon_pct": 79.6,
+    "rain_monthly_mm": [
+     15.8,
+     15.2,
+     21.3,
+     31.9,
+     80.4,
+     177.4,
+     341.9,
+     338.9,
+     300.7,
+     111.4,
+     3.6,
+     17.4
+    ],
+    "wind_mean_ms": {
+     "winter": 1.95,
+     "pre_monsoon": 2.34,
+     "monsoon": 2.38,
+     "post_monsoon": 1.79
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SE",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     9.0,
+     4.8,
+     13.1,
+     11.9,
+     6.3,
+     8.4,
+     25.2,
+     21.3
+    ],
+    "rose_winter_pct": [
+     14.4,
+     3.8,
+     4.3,
+     3.2,
+     2.1,
+     2.7,
+     32.9,
+     36.7
+    ]
    }
   },
   "Chatra": {
@@ -118,6 +200,71 @@
     "substations": 2,
     "towns": 1,
     "villages": 31
+   },
+   "exposure": {
+    "population_worldpop_2020": 1315103,
+    "mines_2km_people": 67911,
+    "mines_2km_pct": 5.2,
+    "mines_5km_people": 104930,
+    "mines_5km_pct": 8.0,
+    "kilns_2km_people": 0,
+    "kilns_2km_pct": 0.0,
+    "kilns_5km_people": 10023,
+    "kilns_5km_pct": 0.8,
+    "plants_2km_people": 11454,
+    "plants_2km_pct": 0.9,
+    "plants_5km_people": 30694,
+    "plants_5km_pct": 2.3
+   },
+   "climate": {
+    "rain_annual_mm": 1225,
+    "rain_monsoon_pct": 84.1,
+    "rain_monthly_mm": [
+     15.8,
+     14.2,
+     20.6,
+     15.9,
+     38.6,
+     161.5,
+     323.4,
+     331.7,
+     213.2,
+     76.1,
+     1.5,
+     12.6
+    ],
+    "wind_mean_ms": {
+     "winter": 2.15,
+     "pre_monsoon": 2.89,
+     "monsoon": 2.88,
+     "post_monsoon": 1.92
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "S",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     8.9,
+     6.4,
+     9.3,
+     17.0,
+     11.9,
+     12.8,
+     18.2,
+     15.5
+    ],
+    "rose_winter_pct": [
+     13.1,
+     7.6,
+     8.9,
+     12.9,
+     6.4,
+     10.9,
+     19.4,
+     20.8
+    ]
    }
   },
   "Deoghar": {
@@ -159,6 +306,71 @@
     "substations": 6,
     "towns": 6,
     "villages": 11
+   },
+   "exposure": {
+    "population_worldpop_2020": 1873734,
+    "mines_2km_people": 144152,
+    "mines_2km_pct": 7.7,
+    "mines_5km_people": 565031,
+    "mines_5km_pct": 30.2,
+    "kilns_2km_people": 46349,
+    "kilns_2km_pct": 2.5,
+    "kilns_5km_people": 256064,
+    "kilns_5km_pct": 13.7,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1274,
+    "rain_monsoon_pct": 77.5,
+    "rain_monthly_mm": [
+     12.7,
+     21.1,
+     25.9,
+     27.8,
+     93.5,
+     167.6,
+     312.7,
+     253.3,
+     254.2,
+     91.6,
+     2.7,
+     10.7
+    ],
+    "wind_mean_ms": {
+     "winter": 2.09,
+     "pre_monsoon": 2.48,
+     "monsoon": 2.59,
+     "post_monsoon": 1.84
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SE",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     13.0,
+     6.2,
+     12.5,
+     16.3,
+     11.0,
+     6.0,
+     10.4,
+     24.6
+    ],
+    "rose_winter_pct": [
+     23.5,
+     5.8,
+     3.4,
+     3.2,
+     2.9,
+     2.6,
+     9.9,
+     48.6
+    ]
    }
   },
   "Dhanbad": {
@@ -214,6 +426,71 @@
     "substations": 24,
     "towns": 12,
     "villages": 17
+   },
+   "exposure": {
+    "population_worldpop_2020": 3009513,
+    "mines_2km_people": 1586637,
+    "mines_2km_pct": 52.7,
+    "mines_5km_people": 2210838,
+    "mines_5km_pct": 73.5,
+    "kilns_2km_people": 263856,
+    "kilns_2km_pct": 8.8,
+    "kilns_5km_people": 1115798,
+    "kilns_5km_pct": 37.1,
+    "plants_2km_people": 53366,
+    "plants_2km_pct": 1.8,
+    "plants_5km_people": 171869,
+    "plants_5km_pct": 5.7
+   },
+   "climate": {
+    "rain_annual_mm": 1505,
+    "rain_monsoon_pct": 79.2,
+    "rain_monthly_mm": [
+     13.2,
+     16.3,
+     23.6,
+     29.4,
+     100.3,
+     176.7,
+     350.4,
+     334.1,
+     331.0,
+     112.1,
+     3.1,
+     14.4
+    ],
+    "wind_mean_ms": {
+     "winter": 2.3,
+     "pre_monsoon": 2.6,
+     "monsoon": 2.73,
+     "post_monsoon": 2.06
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "NW",
+     "monsoon": "SE",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     16.5,
+     6.7,
+     12.4,
+     14.1,
+     8.6,
+     8.5,
+     8.8,
+     24.5
+    ],
+    "rose_winter_pct": [
+     30.0,
+     5.5,
+     4.0,
+     2.9,
+     2.2,
+     2.6,
+     7.2,
+     45.6
+    ]
    }
   },
   "Dumka": {
@@ -255,6 +532,71 @@
     "substations": 5,
     "towns": 1,
     "villages": 25
+   },
+   "exposure": {
+    "population_worldpop_2020": 1525775,
+    "mines_2km_people": 59144,
+    "mines_2km_pct": 3.9,
+    "mines_5km_people": 258997,
+    "mines_5km_pct": 17.0,
+    "kilns_2km_people": 7115,
+    "kilns_2km_pct": 0.5,
+    "kilns_5km_people": 38042,
+    "kilns_5km_pct": 2.5,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1385,
+    "rain_monsoon_pct": 76.2,
+    "rain_monthly_mm": [
+     11.0,
+     24.0,
+     27.2,
+     41.1,
+     105.9,
+     188.5,
+     328.4,
+     281.7,
+     256.2,
+     107.4,
+     1.5,
+     12.0
+    ],
+    "wind_mean_ms": {
+     "winter": 2.22,
+     "pre_monsoon": 2.64,
+     "monsoon": 2.73,
+     "post_monsoon": 1.95
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "S",
+     "monsoon": "SE",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     12.6,
+     7.0,
+     15.8,
+     14.7,
+     10.5,
+     6.7,
+     8.9,
+     23.8
+    ],
+    "rose_winter_pct": [
+     24.1,
+     6.4,
+     4.7,
+     2.4,
+     1.9,
+     2.0,
+     8.5,
+     50.1
+    ]
    }
   },
   "Garhwa": {
@@ -296,6 +638,71 @@
     "substations": 3,
     "towns": 3,
     "villages": 22
+   },
+   "exposure": {
+    "population_worldpop_2020": 1692409,
+    "mines_2km_people": 104067,
+    "mines_2km_pct": 6.1,
+    "mines_5km_people": 307213,
+    "mines_5km_pct": 18.2,
+    "kilns_2km_people": 73948,
+    "kilns_2km_pct": 4.4,
+    "kilns_5km_people": 236363,
+    "kilns_5km_pct": 14.0,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1353,
+    "rain_monsoon_pct": 86.6,
+    "rain_monthly_mm": [
+     16.3,
+     10.4,
+     27.2,
+     9.7,
+     30.8,
+     155.0,
+     373.8,
+     397.6,
+     245.0,
+     73.6,
+     2.7,
+     10.7
+    ],
+    "wind_mean_ms": {
+     "winter": 1.97,
+     "pre_monsoon": 2.61,
+     "monsoon": 2.6,
+     "post_monsoon": 1.75
+    },
+    "wind_from": {
+     "winter": "W",
+     "pre_monsoon": "W",
+     "monsoon": "SW",
+     "post_monsoon": "W"
+    },
+    "rose_all_pct": [
+     7.6,
+     9.5,
+     9.6,
+     6.5,
+     8.4,
+     24.5,
+     19.2,
+     14.7
+    ],
+    "rose_winter_pct": [
+     8.8,
+     10.2,
+     7.2,
+     7.5,
+     7.6,
+     20.8,
+     20.6,
+     17.3
+    ]
    }
   },
   "Giridih": {
@@ -337,6 +744,71 @@
     "substations": 11,
     "towns": 6,
     "villages": 20
+   },
+   "exposure": {
+    "population_worldpop_2020": 3010243,
+    "mines_2km_people": 180161,
+    "mines_2km_pct": 6.0,
+    "mines_5km_people": 663603,
+    "mines_5km_pct": 22.0,
+    "kilns_2km_people": 11307,
+    "kilns_2km_pct": 0.4,
+    "kilns_5km_people": 33114,
+    "kilns_5km_pct": 1.1,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1192,
+    "rain_monsoon_pct": 79.2,
+    "rain_monthly_mm": [
+     14.2,
+     18.1,
+     22.4,
+     26.5,
+     69.4,
+     152.6,
+     271.6,
+     257.8,
+     262.8,
+     82.1,
+     1.1,
+     13.6
+    ],
+    "wind_mean_ms": {
+     "winter": 2.31,
+     "pre_monsoon": 2.74,
+     "monsoon": 2.8,
+     "post_monsoon": 2.01
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SE",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     10.9,
+     6.3,
+     10.6,
+     17.2,
+     8.3,
+     7.0,
+     14.1,
+     25.6
+    ],
+    "rose_winter_pct": [
+     18.1,
+     6.1,
+     3.2,
+     3.9,
+     2.7,
+     3.8,
+     14.4,
+     47.8
+    ]
    }
   },
   "Godda": {
@@ -383,6 +855,71 @@
     "substations": 9,
     "towns": 3,
     "villages": 24
+   },
+   "exposure": {
+    "population_worldpop_2020": 1552776,
+    "mines_2km_people": 94284,
+    "mines_2km_pct": 6.1,
+    "mines_5km_people": 296610,
+    "mines_5km_pct": 19.1,
+    "kilns_2km_people": 12846,
+    "kilns_2km_pct": 0.8,
+    "kilns_5km_people": 87317,
+    "kilns_5km_pct": 5.6,
+    "plants_2km_people": 11226,
+    "plants_2km_pct": 0.7,
+    "plants_5km_people": 84087,
+    "plants_5km_pct": 5.4
+   },
+   "climate": {
+    "rain_annual_mm": 1244,
+    "rain_monsoon_pct": 76.4,
+    "rain_monthly_mm": [
+     12.5,
+     22.2,
+     25.6,
+     27.6,
+     112.5,
+     177.9,
+     287.9,
+     244.2,
+     240.9,
+     84.0,
+     1.2,
+     7.6
+    ],
+    "wind_mean_ms": {
+     "winter": 1.89,
+     "pre_monsoon": 2.58,
+     "monsoon": 2.65,
+     "post_monsoon": 1.68
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "SE",
+     "monsoon": "SE",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     6.3,
+     5.8,
+     19.0,
+     18.6,
+     12.9,
+     9.0,
+     13.3,
+     15.0
+    ],
+    "rose_winter_pct": [
+     9.4,
+     5.7,
+     6.4,
+     5.8,
+     8.9,
+     11.4,
+     21.1,
+     31.3
+    ]
    }
   },
   "Gumla": {
@@ -424,6 +961,71 @@
     "substations": 3,
     "towns": 1,
     "villages": 15
+   },
+   "exposure": {
+    "population_worldpop_2020": 1271830,
+    "mines_2km_people": 35077,
+    "mines_2km_pct": 2.8,
+    "mines_5km_people": 158189,
+    "mines_5km_pct": 12.4,
+    "kilns_2km_people": 7498,
+    "kilns_2km_pct": 0.6,
+    "kilns_5km_people": 39408,
+    "kilns_5km_pct": 3.1,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1474,
+    "rain_monsoon_pct": 84.3,
+    "rain_monthly_mm": [
+     15.2,
+     21.6,
+     33.3,
+     21.1,
+     47.1,
+     215.8,
+     360.1,
+     407.4,
+     260.0,
+     73.2,
+     4.2,
+     15.4
+    ],
+    "wind_mean_ms": {
+     "winter": 1.86,
+     "pre_monsoon": 2.4,
+     "monsoon": 2.51,
+     "post_monsoon": 1.81
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SW",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     17.1,
+     7.6,
+     6.5,
+     4.8,
+     6.5,
+     14.7,
+     18.8,
+     24.0
+    ],
+    "rose_winter_pct": [
+     25.7,
+     6.6,
+     3.8,
+     2.4,
+     3.3,
+     5.4,
+     16.2,
+     36.5
+    ]
    }
   },
   "Hazaribagh": {
@@ -465,6 +1067,71 @@
     "substations": 12,
     "towns": 6,
     "villages": 19
+   },
+   "exposure": {
+    "population_worldpop_2020": 2151539,
+    "mines_2km_people": 293012,
+    "mines_2km_pct": 13.6,
+    "mines_5km_people": 619050,
+    "mines_5km_pct": 28.8,
+    "kilns_2km_people": 145651,
+    "kilns_2km_pct": 6.8,
+    "kilns_5km_people": 353314,
+    "kilns_5km_pct": 16.4,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 5032,
+    "plants_5km_pct": 0.2
+   },
+   "climate": {
+    "rain_annual_mm": 1275,
+    "rain_monsoon_pct": 80.9,
+    "rain_monthly_mm": [
+     19.5,
+     15.3,
+     22.8,
+     23.2,
+     67.1,
+     163.6,
+     330.6,
+     280.2,
+     257.0,
+     78.9,
+     1.4,
+     15.5
+    ],
+    "wind_mean_ms": {
+     "winter": 2.43,
+     "pre_monsoon": 3.01,
+     "monsoon": 3.04,
+     "post_monsoon": 2.1
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "S",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     8.8,
+     4.6,
+     7.6,
+     12.7,
+     10.6,
+     9.5,
+     18.6,
+     27.6
+    ],
+    "rose_winter_pct": [
+     11.9,
+     3.8,
+     3.4,
+     4.3,
+     5.1,
+     4.1,
+     21.9,
+     45.6
+    ]
    }
   },
   "Jamtara": {
@@ -506,6 +1173,71 @@
     "substations": 4,
     "towns": 4,
     "villages": 10
+   },
+   "exposure": {
+    "population_worldpop_2020": 923736,
+    "mines_2km_people": 2033,
+    "mines_2km_pct": 0.2,
+    "mines_5km_people": 19510,
+    "mines_5km_pct": 2.1,
+    "kilns_2km_people": 1518,
+    "kilns_2km_pct": 0.2,
+    "kilns_5km_people": 18825,
+    "kilns_5km_pct": 2.0,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 205,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1413,
+    "rain_monsoon_pct": 77.7,
+    "rain_monthly_mm": [
+     11.8,
+     15.2,
+     23.8,
+     33.3,
+     101.1,
+     196.4,
+     341.5,
+     280.3,
+     280.3,
+     113.6,
+     2.3,
+     13.2
+    ],
+    "wind_mean_ms": {
+     "winter": 2.13,
+     "pre_monsoon": 2.47,
+     "monsoon": 2.6,
+     "post_monsoon": 1.93
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "S",
+     "monsoon": "SE",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     14.1,
+     7.0,
+     14.3,
+     15.3,
+     10.2,
+     7.2,
+     9.5,
+     22.6
+    ],
+    "rose_winter_pct": [
+     27.0,
+     6.9,
+     4.3,
+     3.1,
+     2.2,
+     2.3,
+     8.7,
+     45.5
+    ]
    }
   },
   "Khunti": {
@@ -547,6 +1279,71 @@
     "substations": 4,
     "towns": 3,
     "villages": 106
+   },
+   "exposure": {
+    "population_worldpop_2020": 635215,
+    "mines_2km_people": 0,
+    "mines_2km_pct": 0.0,
+    "mines_5km_people": 2546,
+    "mines_5km_pct": 0.4,
+    "kilns_2km_people": 2876,
+    "kilns_2km_pct": 0.5,
+    "kilns_5km_people": 23109,
+    "kilns_5km_pct": 3.6,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1472,
+    "rain_monsoon_pct": 81.2,
+    "rain_monthly_mm": [
+     12.2,
+     14.6,
+     28.4,
+     26.4,
+     75.0,
+     204.5,
+     376.4,
+     371.6,
+     242.8,
+     87.9,
+     6.7,
+     25.9
+    ],
+    "wind_mean_ms": {
+     "winter": 2.14,
+     "pre_monsoon": 2.68,
+     "monsoon": 2.85,
+     "post_monsoon": 2.09
+    },
+    "wind_from": {
+     "winter": "N",
+     "pre_monsoon": "W",
+     "monsoon": "SW",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     16.7,
+     16.0,
+     11.3,
+     5.2,
+     5.2,
+     20.5,
+     13.0,
+     12.2
+    ],
+    "rose_winter_pct": [
+     29.0,
+     22.7,
+     10.0,
+     3.0,
+     2.2,
+     5.5,
+     10.5,
+     17.1
+    ]
    }
   },
   "Kodarma": {
@@ -593,6 +1390,71 @@
     "substations": 6,
     "towns": 4,
     "villages": 10
+   },
+   "exposure": {
+    "population_worldpop_2020": 891030,
+    "mines_2km_people": 99014,
+    "mines_2km_pct": 11.1,
+    "mines_5km_people": 329085,
+    "mines_5km_pct": 36.9,
+    "kilns_2km_people": 16846,
+    "kilns_2km_pct": 1.9,
+    "kilns_5km_people": 45689,
+    "kilns_5km_pct": 5.1,
+    "plants_2km_people": 21578,
+    "plants_2km_pct": 2.4,
+    "plants_5km_people": 53273,
+    "plants_5km_pct": 6.0
+   },
+   "climate": {
+    "rain_annual_mm": 1173,
+    "rain_monsoon_pct": 80.7,
+    "rain_monthly_mm": [
+     17.6,
+     16.4,
+     26.8,
+     20.5,
+     49.4,
+     147.0,
+     282.4,
+     266.5,
+     251.2,
+     85.6,
+     1.4,
+     8.4
+    ],
+    "wind_mean_ms": {
+     "winter": 2.35,
+     "pre_monsoon": 2.99,
+     "monsoon": 2.97,
+     "post_monsoon": 2.02
+    },
+    "wind_from": {
+     "winter": "W",
+     "pre_monsoon": "W",
+     "monsoon": "SE",
+     "post_monsoon": "W"
+    },
+    "rose_all_pct": [
+     5.5,
+     4.2,
+     10.5,
+     16.6,
+     11.1,
+     10.4,
+     23.2,
+     18.5
+    ],
+    "rose_winter_pct": [
+     7.1,
+     3.4,
+     4.3,
+     6.3,
+     7.2,
+     8.8,
+     33.0,
+     29.8
+    ]
    }
   },
   "Latehar": {
@@ -634,6 +1496,71 @@
     "substations": 6,
     "towns": 3,
     "villages": 46
+   },
+   "exposure": {
+    "population_worldpop_2020": 975694,
+    "mines_2km_people": 74173,
+    "mines_2km_pct": 7.6,
+    "mines_5km_people": 255422,
+    "mines_5km_pct": 26.2,
+    "kilns_2km_people": 49905,
+    "kilns_2km_pct": 5.1,
+    "kilns_5km_people": 225960,
+    "kilns_5km_pct": 23.2,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1312,
+    "rain_monsoon_pct": 84.9,
+    "rain_monthly_mm": [
+     14.3,
+     13.6,
+     23.1,
+     11.1,
+     32.8,
+     159.0,
+     366.2,
+     365.7,
+     223.0,
+     88.0,
+     1.5,
+     13.8
+    ],
+    "wind_mean_ms": {
+     "winter": 1.78,
+     "pre_monsoon": 2.38,
+     "monsoon": 2.08,
+     "post_monsoon": 1.56
+    },
+    "wind_from": {
+     "winter": "W",
+     "pre_monsoon": "W",
+     "monsoon": "S",
+     "post_monsoon": "W"
+    },
+    "rose_all_pct": [
+     7.7,
+     4.2,
+     7.4,
+     11.9,
+     24.6,
+     12.2,
+     11.6,
+     20.6
+    ],
+    "rose_winter_pct": [
+     10.4,
+     3.4,
+     3.1,
+     9.0,
+     26.8,
+     11.7,
+     9.7,
+     26.0
+    ]
    }
   },
   "Lohardaga": {
@@ -675,6 +1602,71 @@
     "substations": 3,
     "towns": 1,
     "villages": 8
+   },
+   "exposure": {
+    "population_worldpop_2020": 575695,
+    "mines_2km_people": 95228,
+    "mines_2km_pct": 16.5,
+    "mines_5km_people": 249384,
+    "mines_5km_pct": 43.3,
+    "kilns_2km_people": 91792,
+    "kilns_2km_pct": 15.9,
+    "kilns_5km_people": 225726,
+    "kilns_5km_pct": 39.2,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1399,
+    "rain_monsoon_pct": 83.4,
+    "rain_monthly_mm": [
+     16.8,
+     16.0,
+     32.3,
+     18.7,
+     48.7,
+     196.8,
+     370.3,
+     369.8,
+     230.3,
+     79.1,
+     3.1,
+     17.2
+    ],
+    "wind_mean_ms": {
+     "winter": 2.17,
+     "pre_monsoon": 2.61,
+     "monsoon": 2.61,
+     "post_monsoon": 1.96
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "S",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     19.0,
+     6.3,
+     4.7,
+     5.5,
+     11.6,
+     14.4,
+     10.1,
+     28.3
+    ],
+    "rose_winter_pct": [
+     29.0,
+     4.6,
+     1.9,
+     2.4,
+     5.7,
+     5.7,
+     7.9,
+     42.9
+    ]
    }
   },
   "Pakur": {
@@ -717,6 +1709,71 @@
     "substations": 3,
     "towns": 3,
     "villages": 6
+   },
+   "exposure": {
+    "population_worldpop_2020": 1089636,
+    "mines_2km_people": 207441,
+    "mines_2km_pct": 19.0,
+    "mines_5km_people": 480130,
+    "mines_5km_pct": 44.1,
+    "kilns_2km_people": 9795,
+    "kilns_2km_pct": 0.9,
+    "kilns_5km_people": 37987,
+    "kilns_5km_pct": 3.5,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1598,
+    "rain_monsoon_pct": 76.5,
+    "rain_monthly_mm": [
+     12.4,
+     21.8,
+     25.8,
+     45.1,
+     141.0,
+     228.1,
+     362.7,
+     316.7,
+     314.5,
+     119.7,
+     2.5,
+     7.9
+    ],
+    "wind_mean_ms": {
+     "winter": 1.94,
+     "pre_monsoon": 2.32,
+     "monsoon": 2.38,
+     "post_monsoon": 1.72
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SE",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     8.3,
+     10.3,
+     15.0,
+     12.5,
+     9.1,
+     7.5,
+     15.4,
+     21.9
+    ],
+    "rose_winter_pct": [
+     12.6,
+     6.7,
+     4.5,
+     2.1,
+     1.6,
+     2.4,
+     21.7,
+     48.5
+    ]
    }
   },
   "Palamu": {
@@ -758,6 +1815,71 @@
     "substations": 10,
     "towns": 4,
     "villages": 25
+   },
+   "exposure": {
+    "population_worldpop_2020": 2297476,
+    "mines_2km_people": 159204,
+    "mines_2km_pct": 6.9,
+    "mines_5km_people": 530610,
+    "mines_5km_pct": 23.1,
+    "kilns_2km_people": 110605,
+    "kilns_2km_pct": 4.8,
+    "kilns_5km_people": 425062,
+    "kilns_5km_pct": 18.5,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1265,
+    "rain_monsoon_pct": 87.5,
+    "rain_monthly_mm": [
+     14.2,
+     9.2,
+     16.4,
+     10.3,
+     29.9,
+     146.9,
+     367.6,
+     343.7,
+     248.3,
+     70.8,
+     1.0,
+     6.4
+    ],
+    "wind_mean_ms": {
+     "winter": 1.91,
+     "pre_monsoon": 2.5,
+     "monsoon": 2.44,
+     "post_monsoon": 1.7
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "NW",
+     "monsoon": "S",
+     "post_monsoon": "NE"
+    },
+    "rose_all_pct": [
+     8.8,
+     12.6,
+     13.3,
+     14.1,
+     9.3,
+     12.7,
+     17.5,
+     11.6
+    ],
+    "rose_winter_pct": [
+     11.2,
+     16.2,
+     12.7,
+     12.5,
+     7.4,
+     8.1,
+     18.1,
+     13.9
+    ]
    }
   },
   "Pashchimi Singhbhum": {
@@ -799,6 +1921,71 @@
     "substations": 19,
     "towns": 6,
     "villages": 47
+   },
+   "exposure": {
+    "population_worldpop_2020": 1742846,
+    "mines_2km_people": 117574,
+    "mines_2km_pct": 6.7,
+    "mines_5km_people": 331854,
+    "mines_5km_pct": 19.0,
+    "kilns_2km_people": 14706,
+    "kilns_2km_pct": 0.8,
+    "kilns_5km_people": 122582,
+    "kilns_5km_pct": 7.0,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1583,
+    "rain_monsoon_pct": 79.6,
+    "rain_monthly_mm": [
+     13.7,
+     15.2,
+     25.9,
+     30.9,
+     100.1,
+     192.9,
+     379.6,
+     408.7,
+     278.0,
+     103.3,
+     6.3,
+     28.0
+    ],
+    "wind_mean_ms": {
+     "winter": 1.74,
+     "pre_monsoon": 2.37,
+     "monsoon": 2.56,
+     "post_monsoon": 1.74
+    },
+    "wind_from": {
+     "winter": "NE",
+     "pre_monsoon": "SW",
+     "monsoon": "SW",
+     "post_monsoon": "NE"
+    },
+    "rose_all_pct": [
+     7.2,
+     15.5,
+     14.1,
+     8.1,
+     10.5,
+     16.4,
+     21.0,
+     7.1
+    ],
+    "rose_winter_pct": [
+     11.2,
+     24.7,
+     20.9,
+     8.3,
+     5.4,
+     7.0,
+     13.0,
+     9.6
+    ]
    }
   },
   "Purbi Singhbhum": {
@@ -845,6 +2032,71 @@
     "substations": 26,
     "towns": 4,
     "villages": 33
+   },
+   "exposure": {
+    "population_worldpop_2020": 2788569,
+    "mines_2km_people": 350410,
+    "mines_2km_pct": 12.6,
+    "mines_5km_people": 1668485,
+    "mines_5km_pct": 59.8,
+    "kilns_2km_people": 313797,
+    "kilns_2km_pct": 11.3,
+    "kilns_5km_people": 1623272,
+    "kilns_5km_pct": 58.2,
+    "plants_2km_people": 121426,
+    "plants_2km_pct": 4.4,
+    "plants_5km_people": 551236,
+    "plants_5km_pct": 19.8
+   },
+   "climate": {
+    "rain_annual_mm": 1553,
+    "rain_monsoon_pct": 76.0,
+    "rain_monthly_mm": [
+     18.8,
+     18.9,
+     21.2,
+     37.7,
+     111.1,
+     185.4,
+     364.5,
+     351.1,
+     278.6,
+     125.0,
+     10.8,
+     30.0
+    ],
+    "wind_mean_ms": {
+     "winter": 1.62,
+     "pre_monsoon": 2.13,
+     "monsoon": 2.33,
+     "post_monsoon": 1.65
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "SW",
+     "monsoon": "S",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     10.6,
+     6.7,
+     9.8,
+     16.5,
+     7.6,
+     10.8,
+     21.2,
+     16.8
+    ],
+    "rose_winter_pct": [
+     19.8,
+     9.1,
+     7.3,
+     8.2,
+     3.8,
+     3.4,
+     19.3,
+     29.1
+    ]
    }
   },
   "Ramgarh": {
@@ -886,6 +2138,71 @@
     "substations": 8,
     "towns": 6,
     "villages": 8
+   },
+   "exposure": {
+    "population_worldpop_2020": 1037478,
+    "mines_2km_people": 460550,
+    "mines_2km_pct": 44.4,
+    "mines_5km_people": 806747,
+    "mines_5km_pct": 77.8,
+    "kilns_2km_people": 193123,
+    "kilns_2km_pct": 18.6,
+    "kilns_5km_people": 487828,
+    "kilns_5km_pct": 47.0,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1351,
+    "rain_monsoon_pct": 81.5,
+    "rain_monthly_mm": [
+     12.2,
+     16.4,
+     19.6,
+     19.2,
+     66.7,
+     170.8,
+     339.0,
+     333.1,
+     257.6,
+     96.6,
+     1.8,
+     18.1
+    ],
+    "wind_mean_ms": {
+     "winter": 2.02,
+     "pre_monsoon": 2.47,
+     "monsoon": 2.44,
+     "post_monsoon": 1.77
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "NW",
+     "monsoon": "SE",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     7.7,
+     4.8,
+     14.5,
+     10.2,
+     4.3,
+     5.5,
+     24.8,
+     28.3
+    ],
+    "rose_winter_pct": [
+     9.7,
+     3.1,
+     4.3,
+     4.6,
+     2.3,
+     3.0,
+     28.5,
+     44.6
+    ]
    }
   },
   "Ranchi": {
@@ -927,6 +2244,71 @@
     "substations": 21,
     "towns": 7,
     "villages": 39
+   },
+   "exposure": {
+    "population_worldpop_2020": 3566195,
+    "mines_2km_people": 185841,
+    "mines_2km_pct": 5.2,
+    "mines_5km_people": 615903,
+    "mines_5km_pct": 17.3,
+    "kilns_2km_people": 148596,
+    "kilns_2km_pct": 4.2,
+    "kilns_5km_people": 472930,
+    "kilns_5km_pct": 13.3,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1457,
+    "rain_monsoon_pct": 81.5,
+    "rain_monthly_mm": [
+     13.6,
+     17.4,
+     31.4,
+     26.3,
+     71.7,
+     192.7,
+     357.0,
+     377.9,
+     259.0,
+     85.2,
+     5.1,
+     19.5
+    ],
+    "wind_mean_ms": {
+     "winter": 2.35,
+     "pre_monsoon": 2.76,
+     "monsoon": 2.88,
+     "post_monsoon": 2.06
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "W",
+     "monsoon": "SW",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     11.9,
+     6.9,
+     9.4,
+     8.0,
+     5.5,
+     12.3,
+     14.8,
+     31.2
+    ],
+    "rose_winter_pct": [
+     17.2,
+     7.1,
+     5.3,
+     4.0,
+     2.9,
+     3.4,
+     8.2,
+     52.0
+    ]
    }
   },
   "Sahibganj": {
@@ -969,6 +2351,71 @@
     "substations": 9,
     "towns": 6,
     "villages": 224
+   },
+   "exposure": {
+    "population_worldpop_2020": 1809286,
+    "mines_2km_people": 570430,
+    "mines_2km_pct": 31.5,
+    "mines_5km_people": 1385468,
+    "mines_5km_pct": 76.6,
+    "kilns_2km_people": 275190,
+    "kilns_2km_pct": 15.2,
+    "kilns_5km_people": 944562,
+    "kilns_5km_pct": 52.2,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1501,
+    "rain_monsoon_pct": 77.4,
+    "rain_monthly_mm": [
+     10.8,
+     20.4,
+     24.8,
+     47.3,
+     126.7,
+     217.1,
+     372.8,
+     296.9,
+     274.4,
+     102.7,
+     1.3,
+     6.0
+    ],
+    "wind_mean_ms": {
+     "winter": 2.14,
+     "pre_monsoon": 2.43,
+     "monsoon": 2.49,
+     "post_monsoon": 1.75
+    },
+    "wind_from": {
+     "winter": "NW",
+     "pre_monsoon": "E",
+     "monsoon": "SE",
+     "post_monsoon": "NW"
+    },
+    "rose_all_pct": [
+     5.7,
+     8.5,
+     19.9,
+     16.3,
+     7.2,
+     4.8,
+     20.6,
+     17.1
+    ],
+    "rose_winter_pct": [
+     7.5,
+     5.9,
+     4.3,
+     2.3,
+     1.5,
+     2.3,
+     37.5,
+     38.7
+    ]
    }
   },
   "Saraikela-Kharsawan": {
@@ -1010,6 +2457,71 @@
     "substations": 16,
     "towns": 4,
     "villages": 15
+   },
+   "exposure": {
+    "population_worldpop_2020": 1164093,
+    "mines_2km_people": 218481,
+    "mines_2km_pct": 18.8,
+    "mines_5km_people": 646028,
+    "mines_5km_pct": 55.5,
+    "kilns_2km_people": 150990,
+    "kilns_2km_pct": 13.0,
+    "kilns_5km_people": 551413,
+    "kilns_5km_pct": 47.4,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1648,
+    "rain_monsoon_pct": 79.1,
+    "rain_monthly_mm": [
+     11.8,
+     13.7,
+     26.0,
+     31.4,
+     103.3,
+     204.2,
+     381.9,
+     414.1,
+     303.5,
+     124.7,
+     10.2,
+     23.0
+    ],
+    "wind_mean_ms": {
+     "winter": 1.54,
+     "pre_monsoon": 2.03,
+     "monsoon": 2.26,
+     "post_monsoon": 1.6
+    },
+    "wind_from": {
+     "winter": "N",
+     "pre_monsoon": "W",
+     "monsoon": "S",
+     "post_monsoon": "N"
+    },
+    "rose_all_pct": [
+     20.5,
+     12.2,
+     11.1,
+     7.5,
+     7.7,
+     16.6,
+     12.6,
+     11.8
+    ],
+    "rose_winter_pct": [
+     37.9,
+     15.3,
+     8.2,
+     5.8,
+     5.5,
+     5.0,
+     6.2,
+     16.0
+    ]
    }
   },
   "Simdega": {
@@ -1050,6 +2562,71 @@
     "substations": 2,
     "towns": 0,
     "villages": 16
+   },
+   "exposure": {
+    "population_worldpop_2020": 681130,
+    "mines_2km_people": 8993,
+    "mines_2km_pct": 1.3,
+    "mines_5km_people": 34739,
+    "mines_5km_pct": 5.1,
+    "kilns_2km_people": 10331,
+    "kilns_2km_pct": 1.5,
+    "kilns_5km_people": 39444,
+    "kilns_5km_pct": 5.8,
+    "plants_2km_people": 0,
+    "plants_2km_pct": 0.0,
+    "plants_5km_people": 0,
+    "plants_5km_pct": 0.0
+   },
+   "climate": {
+    "rain_annual_mm": 1701,
+    "rain_monsoon_pct": 84.0,
+    "rain_monthly_mm": [
+     11.3,
+     20.0,
+     28.2,
+     28.3,
+     56.0,
+     220.4,
+     458.5,
+     462.7,
+     288.0,
+     95.2,
+     10.1,
+     22.6
+    ],
+    "wind_mean_ms": {
+     "winter": 2.34,
+     "pre_monsoon": 2.56,
+     "monsoon": 2.5,
+     "post_monsoon": 2.17
+    },
+    "wind_from": {
+     "winter": "N",
+     "pre_monsoon": "W",
+     "monsoon": "SW",
+     "post_monsoon": "NE"
+    },
+    "rose_all_pct": [
+     13.2,
+     22.7,
+     9.9,
+     8.2,
+     8.7,
+     17.4,
+     13.7,
+     6.2
+    ],
+    "rose_winter_pct": [
+     19.5,
+     35.8,
+     7.9,
+     5.0,
+     6.4,
+     9.3,
+     10.8,
+     5.3
+    ]
    }
   }
  }

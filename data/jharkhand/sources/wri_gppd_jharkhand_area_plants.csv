@@ -1,0 +1,56 @@
+name,gppd_idnr,capacity_mw,latitude,longitude,primary_fuel,commissioning_year,owner,source,url,year_of_capacity_data
+AVANTHA BHANDAR TPP,IND0000017,600.0,21.7438,83.2741,Coal,2017,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BAKRESWAR,IND0000023,1050.0,23.8285,87.4513,Coal,2003,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BARADARHA TPP,IND0000033,1200.0,21.9114,83.1889,Coal,2014,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BARAUNI,IND0000035,720.0,25.3999,86.0218,Coal,2007,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BARH STPP II,IND0000037,1320.0,25.4865,85.7452,Coal,2014,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BINJKOTE,IND0000527,600.0,22.0103,83.2058,Coal,2017,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BOKARO A ''EXP'',IND0000063,500.0,23.6783,86.0888,Coal,2016,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BOKARO B,IND0000064,210.0,23.7850,85.8800,Coal,1993,,Central Electricity Authority,http://www.cea.nic.in/,2019
+BUDGE BUDGE,IND0000069,750.0,22.4673,88.1400,Coal,2001,,Central Electricity Authority,http://www.cea.nic.in/,2019
+CHANDRAPURA,IND0000078,630.0,23.7376,86.1273,Coal,2000,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Chharrah,WKS0070889,10.0,23.3850,86.3850,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+D.P.L.,IND0000087,660.0,23.5211,87.3023,Coal,2005,,Central Electricity Authority,http://www.cea.nic.in/,2019
+DURGAPUR,IND0000108,210.0,23.5310,87.2500,Coal,1981,,Central Electricity Authority,http://www.cea.nic.in/,2019
+DURGAPUR STEEL TPS,IND0000109,1000.0,23.5800,87.2043,Coal,2011,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Daudpur,WKS0068853,25.0,24.5990,84.6860,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+FARAKKA STPS,IND0000117,2100.0,24.7720,87.8940,Coal,1995,,Central Electricity Authority,http://www.cea.nic.in/,2019
+HALDIA,IND0000139,600.0,22.1042,88.1764,Coal,2015,,Central Electricity Authority,http://www.cea.nic.in/,2019
+HIRAKUD I&II,IND0000144,347.5,21.5337,83.8754,Hydro,1963,,Central Electricity Authority,http://www.cea.nic.in/,2019
+I.B.VALLEY,IND0000145,420.0,21.6872,83.8600,Coal,1994,,Central Electricity Authority,http://www.cea.nic.in/,2019
+IND BARATH TPP,IND0000153,350.0,21.6580,83.9200,Coal,2016,,Central Electricity Authority,http://www.cea.nic.in/,2019
+INDIA POWER TPP(HALDIA  HIRANMAYE ),IND0000529,300.0,22.0774,88.0995,Coal,2017,,Central Electricity Authority,http://www.cea.nic.in/,2019
+JOJBERA,IND0000160,427.5,22.7554,86.2491,Coal,2000,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Jamuria Solar Power Plant,WRI1026150,2.0,23.7162,87.0695,Solar,,West Bengal Energy Development Corporation Limited (WBEDCL),West Bengal Energy Development Corporation Limited (WBEDCL),http://wbpdcl.co.in,
+KAHALGAON,IND0000169,2340.0,25.2349,87.2635,Coal,2003,,Central Electricity Authority,http://www.cea.nic.in/,2019
+KODERMA,IND0000201,1000.0,24.3858,85.5517,Coal,2012,,Central Electricity Authority,http://www.cea.nic.in/,2019
+KOLAGHAT,IND0000203,1260.0,22.4157,87.8713,Coal,1989,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Kanksha,WKS0067292,5.0,23.4750,87.4750,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+LARA,IND0000531,800.0,21.7570,83.4573,Coal,2018,,Central Electricity Authority,http://www.cea.nic.in/,2019
+MAHADEV PRASAD STPP,IND0000246,540.0,22.8395,86.0613,Coal,2012,,Central Electricity Authority,http://www.cea.nic.in/,2019
+MAITHON,IND0000250,63.2,23.7872,86.8284,Hydro,1957,,Central Electricity Authority,http://www.cea.nic.in/,2019
+MAITHON RB TPP,IND0000252,1050.0,23.8209,86.7600,Coal,2011,,Central Electricity Authority,http://www.cea.nic.in/,2019
+MEJIA,IND0000262,1340.0,23.4639,87.1311,Coal,2001,,Central Electricity Authority,http://www.cea.nic.in/,2019
+MEJIA TPS EXT,IND0000263,1000.0,23.4639,87.1311,Coal,2010,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Mejia,WKS0070890,10.0,23.5350,87.0650,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+NABI NAGAR TPP,IND0000287,750.0,24.7754,84.1588,Coal,2017,,Central Electricity Authority,http://www.cea.nic.in/,2019
+NAWAPARA,IND0000522,600.0,21.9200,83.2788,Coal,2016,,Central Electricity Authority,http://www.cea.nic.in/,2019
+PANCHET,IND0000320,80.0,23.6815,86.7473,Hydro,1975,,Central Electricity Authority,http://www.cea.nic.in/,2019
+PURULIA PSS,IND0000347,900.0,23.1975,86.0970,Hydro,2007,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Patni,WKS0070812,10.0,22.1250,87.3400,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+RAGHUNATHPUR TPP PH-I,IND0000355,1200.0,23.6220,86.6610,Coal,2015,,Central Electricity Authority,http://www.cea.nic.in/,2019
+RAIGARH TPP,IND0000357,1000.0,21.9846,83.2331,Coal,2007,,Central Electricity Authority,http://www.cea.nic.in/,2019
+RIHAND_Hydro,IND0000376,300.0,24.1778,83.0361,Hydro,1962,,Central Electricity Authority,http://www.cea.nic.in/,2019
+SAGARDIGHI TPP,IND0000385,1600.0,24.3696,88.1046,Coal,2012,,Central Electricity Authority,http://www.cea.nic.in/,2019
+SANTALDIH,IND0000393,500.0,23.6013,86.4666,Coal,2009,,Central Electricity Authority,http://www.cea.nic.in/,2019
+STERLITE TPP,IND0000426,600.0,21.8144,84.0404,Coal,2010,,Central Electricity Authority,http://www.cea.nic.in/,2019
+SUBERNREKHA I&II,IND0000427,130.0,23.4570,85.5550,Hydro,1978,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Salboni OCL,WKS0070868,5.5,22.6050,87.2850,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+Salboni WBSEDCL,WKS0070813,10.0,22.5850,87.2650,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+Santaldih,WKS0070891,10.0,23.5600,86.4750,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+Sherghati,WKS0070814,10.0,24.5740,84.8510,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+TAMNAR TPP,IND0000441,2400.0,22.0987,83.4513,Coal,2014,,Central Electricity Authority,http://www.cea.nic.in/,2019
+TENUGHAT,IND0000452,420.0,23.7573,85.8936,Coal,1995,,Central Electricity Authority,http://www.cea.nic.in/,2019
+TILLAYA,IND0000456,4.0,24.3249,85.5198,Hydro,1953,,Central Electricity Authority,http://www.cea.nic.in/,2019
+Tapovan,WKS0073478,14.0,24.4610,86.7570,Solar,,,Wiki-Solar,https://www.wiki-solar.org,
+UCHPINDA TPP,IND0000471,1440.0,21.8858,83.1215,Coal,2016,,Central Electricity Authority,http://www.cea.nic.in/,2019

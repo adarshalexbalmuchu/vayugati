@@ -528,8 +528,10 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     eyebrow = kind || 'Checked site'
     title = String(props.name)
     if (props.operator) rows.push(['Operator', String(props.operator)])
+    if (props.capacity_mw) rows.push(['Capacity', `${Number(props.capacity_mw).toLocaleString('en-IN')} MW`])
     if (district) rows.push(['District', district])
     source = 'Location: OpenStreetMap. Name and operator checked by Vayu Gati, Nov 2026.'
+    if (props.capacity_mw) source += ' Capacity: Central Electricity Authority list, via the WRI Global Power Plant Database (2021 release; data about 2019-20), so it can lag units added or retired since.'
   } else {
     eyebrow = kind || 'Mapped feature'
     title = String(props.name || kind || 'Mapped feature')
@@ -715,6 +717,16 @@ interface DistrictProfile {
   monitors_planned_jspcb: number | null
   mining_area_km2: number | null
   landcover_pct?: Record<string, number> | null
+  exposure?: Record<string, number> | null
+  climate?: {
+    rain_annual_mm: number
+    rain_monsoon_pct: number | null
+    rain_monthly_mm: number[]
+    wind_mean_ms: Record<string, number | null>
+    wind_from: Record<string, string | null>
+    rose_all_pct: number[]
+    rose_winter_pct: number[]
+  } | null
 }
 interface ProfilesDoc {
   sources: Record<string, string>
@@ -1333,6 +1345,83 @@ class ViewControl implements maplibregl.IControl {
     } else rsec.appendChild(el('p', 'text-ink-300', NA))
     panes.nature.appendChild(rsec)
 
+    // Rain and wind (ERA5)
+    const c = p.climate
+    const csec = el('div', '')
+    csec.appendChild(label('Rain and wind (ERA5, 2015–2024)'))
+    if (c) {
+      const stats = el('div', 'grid grid-cols-2 gap-1.5')
+      const stat = (k: string, v: string) => {
+        const t = el('div', 'rounded-xl border border-ink-900/10 bg-white px-2.5 py-2')
+        t.append(el('p', 'text-[10px] text-ink-600', k), el('p', 'font-display text-2xl leading-none text-ink-900', v))
+        stats.appendChild(t)
+      }
+      stat('Rain per year', `${nf.format(c.rain_annual_mm)} mm`)
+      stat('Falls in the monsoon', c.rain_monsoon_pct == null ? NA : `${nf1.format(c.rain_monsoon_pct)}%`)
+      csec.appendChild(stats)
+      // monthly rain bars
+      const months = 'JFMAMJJASOND'
+      const maxm = Math.max(...c.rain_monthly_mm, 1)
+      const bars = el('div', 'mt-2 flex h-14 items-end gap-1')
+      c.rain_monthly_mm.forEach((v, i) => {
+        const col = el('div', 'flex h-full flex-1 flex-col items-center justify-end')
+        const bar = el('div', 'w-full rounded-sm bg-sky-400')
+        bar.style.height = `${Math.max(2, (v / maxm) * 100)}%`
+        bar.title = `${months[i]}: ${nf.format(Math.round(v))} mm`
+        col.append(bar, el('span', 'mt-0.5 text-[9px] text-ink-500', months[i]))
+        bars.appendChild(col)
+      })
+      csec.appendChild(bars)
+      csec.appendChild(el('p', 'text-[10px] text-ink-500', 'Average rain by month'))
+      // wind rose (winter), 8 sectors, bar length = share of hours
+      const rose = c.rose_winter_pct
+      const mx = Math.max(...rose, 1)
+      const NS = 'http://www.w3.org/2000/svg'
+      const svg = document.createElementNS(NS, 'svg')
+      svg.setAttribute('viewBox', '-60 -60 120 120')
+      svg.setAttribute('class', 'mx-auto h-32 w-32')
+      const ring = document.createElementNS(NS, 'circle')
+      ring.setAttribute('r', '46')
+      ring.setAttribute('fill', 'none')
+      ring.setAttribute('stroke', '#E6D9C3')
+      svg.appendChild(ring)
+      const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+      rose.forEach((v, i) => {
+        const a0 = ((i * 45 - 18) * Math.PI) / 180
+        const a1 = ((i * 45 + 18) * Math.PI) / 180
+        const r = 6 + (v / mx) * 40
+        const pt = (a: number, rr: number) => `${(rr * Math.sin(a)).toFixed(1)},${(-rr * Math.cos(a)).toFixed(1)}`
+        const path = document.createElementNS(NS, 'path')
+        path.setAttribute('d', `M0,0 L${pt(a0, r)} L${pt(a1, r)} Z`)
+        path.setAttribute('fill', '#422B1C')
+        path.setAttribute('fill-opacity', '0.85')
+        const t = document.createElementNS(NS, 'title')
+        t.textContent = `Wind from ${dirs[i]}: ${v}% of winter hours`
+        path.appendChild(t)
+        svg.appendChild(path)
+        const lab = document.createElementNS(NS, 'text')
+        const la = (i * 45 * Math.PI) / 180
+        lab.setAttribute('x', (54 * Math.sin(la)).toFixed(1))
+        lab.setAttribute('y', (-54 * Math.cos(la) + 2.5).toFixed(1))
+        lab.setAttribute('text-anchor', 'middle')
+        lab.setAttribute('font-size', '7')
+        lab.setAttribute('fill', '#6B4A2A')
+        lab.textContent = dirs[i]
+        svg.appendChild(lab)
+      })
+      const roseBox = el('div', 'mt-2 flex items-center gap-3 rounded-xl border border-ink-900/10 bg-white p-2')
+      roseBox.appendChild(svg as unknown as HTMLElement)
+      const rt = el('div', 'min-w-0 text-ink-700')
+      rt.append(
+        el('p', 'font-semibold text-ink-900', `Winter wind mostly from the ${c.wind_from.winter ?? '—'}`),
+        el('p', '', `Average ${c.wind_mean_ms.winter == null ? NA : nf1.format(c.wind_mean_ms.winter)} m/s (December to February). The bars show how often the wind blows from each direction.`),
+      )
+      roseBox.appendChild(rt)
+      csec.appendChild(roseBox)
+      csec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-ink-500', 'ERA5 is a weather-model reanalysis on a grid of about 30 km: the climate of the area, not a measurement in one town.'))
+    } else csec.appendChild(el('p', 'text-ink-300', NA))
+    panes.nature.appendChild(csec)
+
     // In the district
     const rows = el('div', 'mt-3 divide-y divide-ink-900/10 rounded-xl border border-ink-900/10 bg-white')
     const dates = doc?.heat_detection_dates ?? []
@@ -1353,6 +1442,36 @@ class ViewControl implements maplibregl.IControl {
     row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), p.mining_area_km2 == null ? 'No official district figure' : undefined)
     panes.overview.appendChild(rows)
 
+    // People living near mapped sources (WorldPop 2020 x the map's own layers)
+    const ex = p.exposure
+    if (ex) {
+      const esec = el('div', 'mt-3')
+      esec.appendChild(label('People living near mapped sources'))
+      const exRows = el('div', 'divide-y divide-ink-900/10 rounded-xl border border-ink-900/10 bg-white')
+      const exRow = (k: string, key: string) => {
+        const r = el('div', 'px-2.5 py-1.5')
+        const line = el('div', 'flex items-baseline justify-between gap-2')
+        const pct = ex[`${key}_pct`]
+        const ppl = ex[`${key}_people`]
+        line.append(el('span', 'text-ink-600', k), el('span', 'text-right font-semibold tabular-nums text-ink-900', `${nf1.format(pct)}%`))
+        r.appendChild(line)
+        const bar = el('div', 'mt-1 h-1.5 rounded-full bg-ink-100')
+        const fill = el('div', 'h-1.5 rounded-full bg-ink-700')
+        fill.style.width = `${Math.min(100, Math.max(1, pct))}%`
+        bar.appendChild(fill)
+        r.appendChild(bar)
+        r.appendChild(el('p', 'mt-0.5 text-right text-[10px] text-ink-500', `about ${nf.format(Math.round(ppl / 1000) * 1000)} people`))
+        exRows.appendChild(r)
+      }
+      exRow('Within 2 km of a mapped mine or quarry', 'mines_2km')
+      exRow('Within 5 km of a mapped mine or quarry', 'mines_5km')
+      exRow('Within 2 km of a mapped brick kiln', 'kilns_2km')
+      exRow('Within 5 km of a power plant or large works', 'plants_5km')
+      esec.appendChild(exRows)
+      esec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-ink-500', 'Shares of the district’s population as estimated by WorldPop 2020 (1 km grid). Only mapped sites count, and the map is incomplete, so these are minimums. Living near a site is not a measure of exposure or harm.'))
+      panes.overview.appendChild(esec)
+    }
+
     // Sources, folded away
     const src = doc?.sources ?? {}
     const det = el('div', '')
@@ -1360,7 +1479,7 @@ class ViewControl implements maplibregl.IControl {
     const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-ink-600')
     for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
       ['landcover', 'Land cover'], ['heat_detections', 'Heat detections'], ['power_plants', 'Plants and works'],
-      ['monitors', 'Monitors'], ['outline', 'Outline']] as const) {
+      ['monitors', 'Monitors'], ['exposure', 'People near sources'], ['climate', 'Rain and wind'], ['outline', 'Outline']] as const) {
       if (src[k]) {
         const li = el('li', '')
         li.append(el('span', 'font-semibold text-ink-700', `${lab}: `), document.createTextNode(src[k]))

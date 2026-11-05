@@ -578,7 +578,7 @@ def _osm(bbox, sources_name: str, roads_name: str, clip=None, simplify: float = 
 # operator as published by the operator. Anything not on this list (unnamed features, small workshops,
 # plants whose identity or status could not be confirmed) is dropped. Checked 5 Nov 2026.
 CHECKED_SITES = {
-    "Chandrapura Thermal Power Station": ("Chandrapura Thermal Power Station", "Damodar Valley Corporation (DVC)"),
+    "Chandrapura Thermal Power Station": ("Chandrapura Thermal Power Station", "Damodar Valley Corporation (DVC)"),  # Coal
     "Maithon Power Plant": ("Maithon Right Bank Thermal Power Station",
                             "Maithon Power Ltd, a Tata Power (74%) and DVC (26%) joint venture"),
     "Santhaldih": ("Santaldih Thermal Power Station", "West Bengal Power Development Corporation (WBPDCL)"),
@@ -600,6 +600,36 @@ CHECKED_SITES = {
 }
 
 
+# Checked plant (our name) -> its exact entry name in the WRI Global Power Plant Database (built from the Central
+# Electricity Authority list; this release's capacity data is from about 2019-20). Only unambiguous matches: a plant
+# is left out when the database has no entry or splits it (Bokaro), or is newer than the release (Godda, North
+# Karanpura). Capacity is as listed there, which can lag units added or retired since.
+WRI_NAME = {
+    "Chandrapura Thermal Power Station": "CHANDRAPURA",
+    "Maithon Right Bank Thermal Power Station": "MAITHON RB TPP",
+    "Koderma Thermal Power Station": "KODERMA",
+    "Jojobera Power Plant": "JOJBERA",
+    "Tenughat Thermal Power Station": "TENUGHAT",
+    "Santaldih Thermal Power Station": "SANTALDIH",
+    "Panchet hydroelectric station": "PANCHET",
+    "Maithon hydroelectric station": "MAITHON",
+}
+
+
+def _plant_capacity(our_name: str, lng: float, lat: float) -> tuple[float, str, str] | None:
+    wri = WRI_NAME.get(our_name)
+    path = REPO / "data" / "jharkhand" / "sources" / "wri_gppd_jharkhand_area_plants.csv"
+    if not wri or not path.exists():
+        return None
+    for r in csv.DictReader(open(path)):
+        if r["name"].strip().upper() != wri:
+            continue
+        d = math.hypot((float(r["longitude"]) - lng) * 111.32 * math.cos(math.radians(lat)), (float(r["latitude"]) - lat) * 110.57)
+        if d <= 15:  # sanity: the same place
+            return float(r["capacity_mw"]), f"{r['name'].title()} ({r['commissioning_year'][:4] or 'year n/a'})", r["gppd_idnr"]
+    return None
+
+
 def curate(name: str = "sources_osm.geojson") -> None:
     fc = json.load(open(RAW / name if (RAW / name).exists() else OUT / name))
     kept, dropped = [], []
@@ -613,6 +643,11 @@ def curate(name: str = "sources_osm.geojson") -> None:
                 continue
             p["name"], p["operator"] = checked
             p["checked"] = True
+            ax = shape(f["geometry"]).representative_point()
+            cap = _plant_capacity(checked[0], ax.x, ax.y)
+            p.pop("capacity_mw", None); p.pop("capacity_note", None); p.pop("capacity_ids", None)
+            if cap:
+                p["capacity_mw"], p["capacity_note"], p["capacity_ids"] = cap[0], cap[1], cap[2]
             if f["geometry"]["type"] != "Point":  # one dot per site, not one per outline vertex
                 f["geometry"] = mapping(make_valid(shape(f["geometry"])).representative_point())
         kept.append(f)

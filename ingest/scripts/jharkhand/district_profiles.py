@@ -141,6 +141,10 @@ def main() -> None:
 
     lc_path = OUT / "landcover_districts.json"
     landcover = json.load(open(lc_path))["districts"] if lc_path.exists() else {}
+    clim_path = OUT / "district_climate.json"
+    climate = json.load(open(clim_path)) if clim_path.exists() else {"districts": {}, "source": None}
+    exp_path = OUT / "district_exposure.json"
+    exposure = json.load(open(exp_path)) if exp_path.exists() else {"districts": {}, "source": None}
     geoms_for_counts = {d["properties"]["name"]: make_valid(shape(d["geometry"])) for d in districts}
     counts = osm_counts(geoms_for_counts)
     profiles = {}
@@ -178,6 +182,8 @@ def main() -> None:
             "mining_area_km2": None,
             "landcover_pct": landcover.get(name),
             "osm_counts": counts[name],
+            "exposure": exposure["districts"].get(name),
+            "climate": {k: v for k, v in climate["districts"].get(name, {}).items() if k not in ("lat", "lng")} or None,
         }
         print(f"{name:22s} area {f['area_km2_soi']:>5}  pop {census[name]:>8}  median {med:>4} m, highest {hi:>4} m  "
               f"fires {n_fires:>3}  plants {len(in_plants)}")
@@ -198,12 +204,15 @@ def main() -> None:
             "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); "
                         "JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
             "mining_area_km2": "No official district-wise figure found",
+            "climate": climate["source"],
+            "exposure": exposure["source"],
             "osm_counts": "Counts of features mapped in OpenStreetMap by volunteers (3 Nov 2026), by the feature's "
                           "position. Incomplete: a count is what is mapped, not what exists",
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",
             "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file",
         },
+        "exposure": exposure.get("state"),
         "heat_detection_dates": fire_dates,
         "districts": profiles,
     }

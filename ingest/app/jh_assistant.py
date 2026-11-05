@@ -40,13 +40,17 @@ FIELDS = (
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
     "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
     "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
-    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages",
+    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages", "annual_rainfall", "monsoon_rain_pct",
+    "winter_wind_speed", "winter_wind_from", "monsoon_wind_from", "near_mines_2km_pct", "near_mines_5km_pct",
+    "near_kilns_2km_pct", "near_plants_5km_pct",
 )
 FieldName = Literal[
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
     "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
     "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
-    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages",
+    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages", "annual_rainfall", "monsoon_rain_pct",
+    "winter_wind_speed", "winter_wind_from", "monsoon_wind_from", "near_mines_2km_pct", "near_mines_5km_pct",
+    "near_kilns_2km_pct", "near_plants_5km_pct",
 ]
 NEAR_WHAT = ("mines", "industrial", "plants", "kilns", "schools", "hospitals", "towns", "villages", "heat",
              "peaks", "rail_stations", "substations")
@@ -314,7 +318,11 @@ Turn the user's message (and the short conversation so far) into up to {MAX_ACTI
 - go_to: fly to the whole state, a district (kind "district", name one of the 24), or a named place \
 (kind "place", the name as people write it, e.g. "Jhumri Tilaiya").
 - facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}. The n_* fields are \
-counts of features volunteers have mapped in OpenStreetMap (incomplete); they are not official totals.
+counts of features volunteers have mapped in OpenStreetMap (incomplete); they are not official totals. The near_* \\
+fields are the share of a district's WorldPop-estimated people living within 2 or 5 km of a mapped site: a \\
+proximity estimate, never a measure of exposure or health risk. annual_rainfall, monsoon_rain_pct and \\
+winter_wind_speed, winter_wind_from and monsoon_wind_from (a compass direction the wind blows FROM) are ERA5 area \\
+climate (not a town's weather). Rank only on numeric fields; the wind-direction fields are for facts.
 - rank: rank all districts by one field (desc/asc, limit up to 10). open_top defaults to FALSE: a plain question \
 ("which district has the most forest?") only ranks and must not move the map. Set open_top=true only when the \
 user explicitly asks to see or go to the winner ("show it", "take me there", "open it").
