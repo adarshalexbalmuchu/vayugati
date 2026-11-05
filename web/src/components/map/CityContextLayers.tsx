@@ -338,6 +338,47 @@ const SKY: maplibregl.SkySpecification = {
   'fog-ground-blend': 0.2,
 }
 
+/** district_profiles.json, built by ingest/scripts/jharkhand/district_profiles.py. */
+interface DistrictProfile {
+  area_km2: number | null
+  population_2011: number | null
+  forest_km2: number | null
+  forest_pct: number | null
+  forest_very_dense_km2: number | null
+  forest_moderately_dense_km2: number | null
+  forest_open_km2: number | null
+  elevation_median_m: number | null
+  elevation_max_m: number | null
+  heat_detections: number | null
+  power_plants: { name: string; operator: string }[]
+  large_works: { name: string; operator: string }[]
+  monitors_continuous_in_feed: number | null
+  monitors_manual_namp: number | null
+  monitors_planned_jspcb: number | null
+  mining_area_km2: number | null
+}
+interface ProfilesDoc {
+  sources: Record<string, string>
+  heat_detection_dates: string[]
+  districts: Record<string, DistrictProfile>
+}
+
+const profilesCache = new Map<string, Promise<ProfilesDoc | null>>()
+function loadProfiles(base: string): Promise<ProfilesDoc | null> {
+  let p = profilesCache.get(base)
+  if (!p) {
+    p = fetch(`${base}/district_profiles.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<ProfilesDoc>) : null))
+      .catch(() => null)
+    profilesCache.set(base, p)
+  }
+  return p
+}
+
+const nf = new Intl.NumberFormat('en-IN')
+const nf1 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
+const NA = 'NA'
+
 function fmtDay(d: string): string {
   const [, m, day] = d.split('-').map(Number)
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -358,6 +399,8 @@ class ViewControl implements maplibregl.IControl {
   private prevTerrain: maplibregl.TerrainSpecification | null = null
   private prevSky: maplibregl.SkySpecification | undefined = undefined
   private panel3D: HTMLDivElement | null = null
+  private profileBox: HTMLDivElement | null = null
+  private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
   private satellite = true
   private fireDates: string[] = []
@@ -387,7 +430,7 @@ class ViewControl implements maplibregl.IControl {
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl w-[250px] rounded-lg border border-slate-200/80 bg-white/95 p-1.5 text-xs text-slate-700 shadow-sm backdrop-blur-sm'
+    el.className = 'maplibregl-ctrl w-[280px] rounded-lg border border-slate-200/80 bg-white/95 p-1.5 text-xs text-slate-700 shadow-sm backdrop-blur-sm'
     const row = document.createElement('div')
     row.className = 'flex items-center gap-1'
     this.button(this.pack.regionLabel, () => this.selectDistrict(null), row)
@@ -409,6 +452,16 @@ class ViewControl implements maplibregl.IControl {
     el.appendChild(pick)
     this.select = select
     this.fillSelect()
+
+    const profile = document.createElement('div')
+    profile.className = 'mt-1.5 max-h-[46vh] overflow-y-auto border-t border-slate-200 pt-1.5'
+    profile.style.display = 'none'
+    el.appendChild(profile)
+    this.profileBox = profile
+    loadProfiles(this.pack.base).then((d) => {
+      this.profiles = d
+      this.renderProfile()
+    })
 
     const panel = document.createElement('div')
     panel.className = 'mt-1.5 space-y-1 border-t border-slate-200 pt-1.5'
@@ -529,6 +582,7 @@ class ViewControl implements maplibregl.IControl {
     this.selected = f ? name : null
     if (this.select) this.select.value = this.selected ?? ''
     this.applySelection()
+    this.renderProfile()
     if (f) {
       if (!this.on3D) this.enter3D()
       const [w, s, e, n] = bboxOf(f.geometry)
@@ -540,6 +594,98 @@ class ViewControl implements maplibregl.IControl {
         map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 0, bearing: 0, duration: 1000 })
       }
     }
+  }
+
+  /** The selected district's facts, each with its source; NA where no
+   *  verified government figure exists. */
+  private renderProfile() {
+    const box = this.profileBox
+    if (!box) return
+    const name = this.selected
+    if (!name) {
+      box.style.display = 'none'
+      box.replaceChildren()
+      return
+    }
+    box.style.display = ''
+    box.replaceChildren()
+    const doc = this.profiles
+    const p = doc?.districts[name]
+    const src = doc?.sources ?? {}
+    const h = document.createElement('p')
+    h.className = 'mb-1 text-[13px] font-semibold text-slate-900'
+    h.textContent = `${name} district`
+    box.appendChild(h)
+    if (!p) {
+      const m = document.createElement('p')
+      m.className = 'text-slate-500'
+      m.textContent = doc ? 'No profile for this district.' : 'Loading…'
+      box.appendChild(m)
+      return
+    }
+    const dl = document.createElement('dl')
+    dl.className = 'space-y-1.5'
+    const row = (label: string, value: string, source?: string, detail?: string) => {
+      const wrap = document.createElement('div')
+      const top = document.createElement('div')
+      top.className = 'flex items-baseline justify-between gap-2'
+      const dt = document.createElement('dt')
+      dt.className = 'text-slate-500'
+      dt.textContent = label
+      const dd = document.createElement('dd')
+      dd.className = `text-right font-semibold tabular-nums ${value === NA ? 'text-slate-400' : 'text-slate-900'}`
+      dd.textContent = value
+      top.append(dt, dd)
+      wrap.appendChild(top)
+      if (detail) {
+        const d = document.createElement('p')
+        d.className = 'text-right text-[10px] text-slate-600'
+        d.textContent = detail
+        wrap.appendChild(d)
+      }
+      if (source) {
+        const sp = document.createElement('p')
+        sp.className = 'text-[9.5px] leading-snug text-slate-400'
+        sp.textContent = source
+        wrap.appendChild(sp)
+      }
+      dl.appendChild(wrap)
+    }
+    const num = (v: number | null, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
+    const dates = doc?.heat_detection_dates ?? []
+    const span = dates.length ? `${fmtDay(dates[0])}–${fmtDay(dates[dates.length - 1])} ${dates[0].slice(0, 4)}` : ''
+    row('Area', num(p.area_km2, ' km²'), 'Survey of India, in FSI ISFR 2023')
+    row('Population (2011)', num(p.population_2011), 'Census of India 2011, Table A-02')
+    row(
+      'Forest cover',
+      p.forest_km2 == null ? NA : `${nf1.format(p.forest_km2)} km² (${p.forest_pct}%)`,
+      'Forest Survey of India, ISFR 2023',
+      p.forest_km2 == null ? undefined
+        : `very dense ${nf1.format(p.forest_very_dense_km2 ?? 0)} · moderately dense ${nf1.format(p.forest_moderately_dense_km2 ?? 0)} · open ${nf1.format(p.forest_open_km2 ?? 0)} km²`,
+    )
+    row('Highest point', num(p.elevation_max_m, ' m'), 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati')
+    row('Typical ground height', num(p.elevation_median_m, ' m'), 'Median of the same elevation grid over the district')
+    row(`Heat detections${span ? ` (${span})` : ''}`, num(p.heat_detections), 'NASA FIRMS (VIIRS satellites)')
+    const sites = [...p.power_plants, ...p.large_works]
+    row(
+      'Power plants and large works',
+      sites.length ? String(sites.length) : 'None checked',
+      'Names and operators checked by Vayu Gati, Nov 2026',
+      sites.length ? sites.map((x) => x.name).join(' · ') : undefined,
+    )
+    row(
+      'Public air monitors',
+      p.monitors_continuous_in_feed == null ? NA
+        : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
+      'CPCB feed (5 Nov 2026) and NAMP list (19 Nov 2024)',
+      p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined,
+    )
+    row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), src.mining_area_km2 ?? 'No official district figure found')
+    box.appendChild(dl)
+    const foot = document.createElement('p')
+    foot.className = 'mt-1.5 text-[9.5px] leading-snug text-slate-400'
+    foot.textContent = 'NA: no verified government figure. District outline: geoBoundaries (approximate, not Survey of India).'
+    box.appendChild(foot)
   }
 
   /** Mask and outline for the selected district. */
