@@ -98,7 +98,7 @@ export default function MapAssistant({
   }
 
   const panel = (
-    <div className="absolute bottom-16 left-3 right-3 z-20 flex max-h-[min(70%,34rem)] flex-col overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card-lg ring-1 ring-ink-900/10 backdrop-blur-sm sm:right-auto sm:w-[360px]">
+    <div className="absolute bottom-16 left-3 right-3 z-20 flex max-h-[min(70%,34rem)] md:bottom-3 md:left-[348px] flex-col overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card-lg ring-1 ring-ink-900/10 backdrop-blur-sm sm:right-auto sm:w-[360px]">
       <div className="flex items-center justify-between gap-2 border-b border-ink-900/10 px-3 py-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-500">Ask the map</p>
@@ -164,7 +164,7 @@ export default function MapAssistant({
     <>
       {open ? panel : (
         <button type="button" onClick={() => setOpen(true)}
-          className="focus-ring absolute bottom-16 left-3 z-20 flex items-center gap-2 rounded-full bg-ink-900 px-4 py-2.5 font-site text-sm font-medium text-cream shadow-card-lg hover:bg-ink-700">
+          className="focus-ring absolute bottom-16 left-3 z-20 flex items-center md:bottom-3 md:left-[348px] gap-2 rounded-full bg-ink-900 px-4 py-2.5 font-site text-sm font-medium text-cream shadow-card-lg hover:bg-ink-700">
           <MessageCircle className="h-4 w-4" aria-hidden /> Ask the map
         </button>
       )}
