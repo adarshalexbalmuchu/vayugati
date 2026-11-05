@@ -1005,14 +1005,22 @@ class ViewControl implements maplibregl.IControl {
     // Tabs: Overview | Nature | Sources
     const tabs = el('div', 'mb-3 flex gap-1 rounded-xl bg-ink-100 p-1')
     const panes = { overview: el('div', ''), nature: el('div', 'space-y-3'), sources: el('div', '') }
+    const tabButtons: Partial<Record<'overview' | 'nature' | 'sources', HTMLButtonElement>> = {}
+    const paint = () => {
+      for (const k of ['overview', 'nature', 'sources'] as const) {
+        tabButtons[k]!.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-ink-900 text-cream shadow-sm' : 'text-ink-700 hover:bg-white'}`
+        panes[k].style.display = this.tab === k ? '' : 'none'
+      }
+    }
     ;(['overview', 'nature', 'sources'] as const).forEach((k) => {
       const b = el('button', '', k === 'overview' ? 'Overview' : k === 'nature' ? 'Nature' : 'Sources') as HTMLButtonElement
       b.type = 'button'
-      b.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-ink-900 text-cream shadow-sm' : 'text-ink-700 hover:bg-white'}`
-      b.addEventListener('click', () => { this.tab = k; this.renderProfile() })
+      // Switch in place: rebuilding the panel here reset its scroll to the top.
+      b.addEventListener('click', () => { this.tab = k; paint() })
+      tabButtons[k] = b
       tabs.appendChild(b)
-      panes[k].style.display = this.tab === k ? '' : 'none'
     })
+    paint()
     box.appendChild(tabs)
     box.append(panes.overview, panes.nature, panes.sources)
 
