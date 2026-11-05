@@ -650,6 +650,10 @@ function loadProfiles(base: string): Promise<ProfilesDoc | null> {
   return p
 }
 
+const LC_COLORS: Record<string, string> = {
+  'Tree cover': '#006400', Shrubland: '#FFBB22', Grassland: '#FFFF4C', Cropland: '#F096FF', 'Built-up': '#FA0000',
+  'Bare / sparse vegetation': '#B4B4B4', 'Permanent water': '#0064C8', 'Herbaceous wetland': '#0096A0',
+}
 const nf = new Intl.NumberFormat('en-IN')
 const nf1 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
 const NA = 'NA'
@@ -706,49 +710,102 @@ class ViewControl implements maplibregl.IControl {
     return b
   }
 
+  private segButtons: HTMLButtonElement[] = []
+
+  private setView(active: 0 | 1) {
+    this.segButtons.forEach((b, k) => {
+      b.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${
+        k === active ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'
+      }`
+    })
+  }
+
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl w-[280px] rounded-lg border border-slate-200/80 bg-white/95 p-1.5 text-xs text-slate-700 shadow-sm backdrop-blur-sm'
-    const row = document.createElement('div')
-    row.className = 'flex items-center gap-1'
-    this.button(this.pack.regionLabel, () => this.selectDistrict(null), row)
-    this.button(this.pack.focusLabel || this.cityLabel, () => {
-      this.selectDistrict(null, false)
-      map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, pitch: 0, bearing: 0, duration: 900 })
-    }, row)
-    el.appendChild(row)
+    el.className = 'maplibregl-ctrl w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-2xl bg-white/95 text-xs text-slate-700 shadow-card ring-1 ring-slate-900/5 backdrop-blur-sm'
 
+    // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
+    const head = document.createElement('div')
+    head.className = 'flex items-center justify-between gap-2 px-3 py-2'
+    const title = document.createElement('div')
+    const t1 = document.createElement('p')
+    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    t1.textContent = 'Geospatial platform'
+    const t2 = document.createElement('p')
+    t2.className = 'text-sm font-bold text-slate-800'
+    t2.textContent = this.pack.regionLabel
+    title.append(t1, t2)
+    const toggle = document.createElement('button')
+    toggle.type = 'button'
+    toggle.className = 'focus-ring rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50'
+    const body = document.createElement('div')
+    body.className = 'max-h-[calc(100svh-210px)] space-y-3 overflow-y-auto border-t border-slate-100 px-3 py-3'
+    const setOpen = (open: boolean) => {
+      body.style.display = open ? '' : 'none'
+      toggle.textContent = open ? 'Hide' : 'Show'
+      toggle.setAttribute('aria-expanded', String(open))
+    }
+    toggle.addEventListener('click', () => setOpen(body.style.display === 'none'))
+    head.append(title, toggle)
+    el.append(head, body)
+    setOpen(typeof window === 'undefined' || window.innerWidth >= 640)
+
+    // View switch
+    const seg = document.createElement('div')
+    seg.className = 'flex gap-1 rounded-xl bg-slate-100 p-1'
+    const segBtn = (label: string, onClick: () => void) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.textContent = label
+      b.addEventListener('click', onClick)
+      seg.appendChild(b)
+      this.segButtons.push(b)
+    }
+    segBtn(this.pack.regionLabel, () => this.selectDistrict(null))
+    segBtn(this.pack.focusLabel || this.cityLabel, () => {
+      this.selectDistrict(null, false)
+      this.setView(1)
+      map.flyTo({ center: this.cityCenter, zoom: this.cityZoom, pitch: 0, bearing: 0, duration: 900 })
+    })
+    this.setView(0)
+    body.appendChild(seg)
+
+    // District picker
     const pick = document.createElement('label')
-    pick.className = 'mt-1.5 flex items-center gap-1.5'
+    pick.className = 'block'
     const pickText = document.createElement('span')
-    pickText.className = 'font-semibold'
-    pickText.textContent = 'District in 3D'
+    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    pickText.textContent = 'District (opens in 3D)'
     const select = document.createElement('select')
-    select.className = 'min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs'
+    select.className = 'focus-ring w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-800'
     select.addEventListener('change', () => this.selectDistrict(select.value || null))
     pick.append(pickText, select)
-    el.appendChild(pick)
+    body.appendChild(pick)
     this.select = select
     this.fillSelect()
 
+    // District profile
     const profile = document.createElement('div')
-    profile.className = 'mt-1.5 max-h-[46vh] overflow-y-auto border-t border-slate-200 pt-1.5'
     profile.style.display = 'none'
-    el.appendChild(profile)
+    body.appendChild(profile)
     this.profileBox = profile
     loadProfiles(this.pack.base).then((d) => {
       this.profiles = d
       this.renderProfile()
     })
 
+    // 3D view controls (only with a district open)
     const panel = document.createElement('div')
-    panel.className = 'mt-1.5 space-y-1 border-t border-slate-200 pt-1.5'
+    panel.className = 'space-y-2 rounded-xl bg-slate-50 p-2.5'
     panel.style.display = 'none'
+    const ph = document.createElement('p')
+    ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    ph.textContent = '3D view'
     const hRow = document.createElement('label')
-    hRow.className = 'flex items-center gap-1.5'
+    hRow.className = 'flex items-center gap-2'
     const hText = document.createElement('span')
-    hText.className = 'w-[78px] shrink-0 font-semibold'
+    hText.className = 'w-[72px] shrink-0 font-semibold tabular-nums text-slate-800'
     hText.textContent = `Heights ×${this.exaggeration}`
     const slider = document.createElement('input')
     slider.type = 'range'
@@ -765,54 +822,57 @@ class ViewControl implements maplibregl.IControl {
       if (this.on3D && t) map.setTerrain({ ...t, exaggeration: this.exaggeration })
     })
     hRow.append(hText, slider)
-    panel.appendChild(hRow)
     const satRow = document.createElement('label')
-    satRow.className = 'flex items-center gap-1.5'
+    satRow.className = 'flex cursor-pointer items-center justify-between gap-2'
+    const satText = document.createElement('span')
+    satText.className = 'font-medium text-slate-700'
+    satText.textContent = 'Satellite imagery'
     const sat = document.createElement('input')
     sat.type = 'checkbox'
     sat.checked = this.satellite
-    sat.className = 'accent-sky-600'
+    sat.className = 'h-4 w-4 accent-sky-600'
     sat.addEventListener('change', () => {
       this.satellite = sat.checked
       ensureSatellite(map, this.satellite)
       ensureRelief(map, !this.satellite, this.satellite)
     })
-    const satText = document.createElement('span')
-    satText.textContent = 'Satellite imagery (off: shaded relief only)'
-    satRow.append(sat, satText)
-    panel.appendChild(satRow)
-    const note = document.createElement('p')
-    note.className = 'text-[10px] leading-snug text-slate-500'
-    note.textContent = 'Contour lines every 10 to 100 m, with heights. Click the ground for its elevation. Drag with the right mouse button (or Ctrl + drag) to tilt and turn; the compass resets north.'
-    panel.appendChild(note)
-    el.appendChild(panel)
+    satRow.append(satText, sat)
+    const tip = document.createElement('p')
+    tip.className = 'text-[10px] leading-snug text-slate-500'
+    tip.textContent = 'Contours every 10–100 m with heights. Click the ground for its elevation. Right-drag or Ctrl-drag to tilt and turn.'
+    panel.append(ph, hRow, satRow, tip)
+    body.appendChild(panel)
     this.panel3D = panel
 
+    // Land-cover key (while that layer is on)
     const lc = document.createElement('div')
-    lc.className = 'mt-1.5 border-t border-slate-200 pt-1.5'
     lc.style.display = 'none'
-    el.appendChild(lc)
+    body.appendChild(lc)
     this.lcLegend = lc
     loadLandcover(this.pack.base).then((m) => {
       this.lcMeta = m
       this.refreshLegend()
     })
 
+    // Heat detections over time
     const fireRow = document.createElement('div')
-    fireRow.className = 'mt-1.5 flex items-center gap-1 border-t border-slate-200 pt-1.5'
+    fireRow.className = 'flex items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-2'
     fireRow.style.display = 'none'
-    const title = document.createElement('span')
-    title.className = 'font-semibold'
-    title.textContent = 'Heat detections'
-    fireRow.appendChild(title)
+    const ft = document.createElement('div')
+    ft.className = 'min-w-0 flex-1'
+    const ft1 = document.createElement('p')
+    ft1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    ft1.textContent = 'Heat detections'
+    const label = document.createElement('p')
+    label.className = 'text-xs font-semibold tabular-nums text-slate-800'
+    this.fireLabel = label
+    ft.append(ft1, label)
     this.playBtn = this.button('▶', () => this.togglePlay(), fireRow)
     this.playBtn.setAttribute('aria-label', 'Play heat detections day by day')
-    this.button('All', () => { this.stopPlay(); this.setFireDay(null) }, fireRow)
-    const label = document.createElement('span')
-    label.className = 'ml-auto tabular-nums text-slate-600'
-    fireRow.appendChild(label)
-    this.fireLabel = label
-    el.appendChild(fireRow)
+    const all = this.button('All', () => { this.stopPlay(); this.setFireDay(null) }, fireRow)
+    fireRow.insertBefore(ft, this.playBtn)
+    void all
+    body.appendChild(fireRow)
     this.fireRow = fireRow
 
     map.on('styledata', this.reapply)
@@ -848,10 +908,11 @@ class ViewControl implements maplibregl.IControl {
     if (!box) return
     const on = this.wanted().landcover && this.lcMeta != null
     box.style.display = on ? '' : 'none'
+    box.className = 'rounded-xl bg-slate-50 p-2.5'
     if (!on || box.childElementCount) return
     const t = document.createElement('p')
-    t.className = 'mb-0.5 font-semibold'
-    t.textContent = 'Land cover (ESA WorldCover 2021)'
+    t.className = 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    t.textContent = 'Land cover key (ESA, 2021)'
     box.appendChild(t)
     const grid = document.createElement('div')
     grid.className = 'grid grid-cols-2 gap-x-2 gap-y-0.5'
@@ -909,6 +970,7 @@ class ViewControl implements maplibregl.IControl {
     if (this.select) this.select.value = this.selected ?? ''
     this.applySelection()
     this.renderProfile()
+    this.setView(0)
     if (f) {
       if (!this.on3D) this.enter3D()
       const [w, s, e, n] = bboxOf(f.geometry)
@@ -928,97 +990,139 @@ class ViewControl implements maplibregl.IControl {
     const box = this.profileBox
     if (!box) return
     const name = this.selected
+    box.replaceChildren()
     if (!name) {
       box.style.display = 'none'
-      box.replaceChildren()
       return
     }
     box.style.display = ''
-    box.replaceChildren()
     const doc = this.profiles
     const p = doc?.districts[name]
-    const src = doc?.sources ?? {}
-    const h = document.createElement('p')
-    h.className = 'mb-1 text-[13px] font-semibold text-slate-900'
-    h.textContent = `${name} district`
-    box.appendChild(h)
+    const el = (tag: string, cls: string, text?: string) => {
+      const n = document.createElement(tag)
+      n.className = cls
+      if (text != null) n.textContent = text
+      return n
+    }
+    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400', t)
+
+    const top = el('div', 'mb-2 flex items-start justify-between gap-2')
+    const tt = el('div', 'min-w-0')
+    tt.append(el('p', 'text-[10px] font-semibold uppercase tracking-widest text-slate-400', 'District profile'),
+      el('p', 'truncate text-base font-bold text-slate-900', name))
+    const back = el('button', 'focus-ring shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50', 'Whole state')
+    ;(back as HTMLButtonElement).type = 'button'
+    back.addEventListener('click', () => this.selectDistrict(null))
+    top.append(tt, back)
+    box.appendChild(top)
     if (!p) {
-      const m = document.createElement('p')
-      m.className = 'text-slate-500'
-      m.textContent = doc ? 'No profile for this district.' : 'Loading…'
-      box.appendChild(m)
+      box.appendChild(el('p', 'text-slate-500', doc ? 'No profile for this district.' : 'Loading…'))
       return
     }
-    const dl = document.createElement('dl')
-    dl.className = 'space-y-1.5'
-    const row = (label: string, value: string, source?: string, detail?: string) => {
-      const wrap = document.createElement('div')
-      const top = document.createElement('div')
-      top.className = 'flex items-baseline justify-between gap-2'
-      const dt = document.createElement('dt')
-      dt.className = 'text-slate-500'
-      dt.textContent = label
-      const dd = document.createElement('dd')
-      dd.className = `text-right font-semibold tabular-nums ${value === NA ? 'text-slate-400' : 'text-slate-900'}`
-      dd.textContent = value
-      top.append(dt, dd)
-      wrap.appendChild(top)
-      if (detail) {
-        const d = document.createElement('p')
-        d.className = 'text-right text-[10px] text-slate-600'
-        d.textContent = detail
-        wrap.appendChild(d)
-      }
-      if (source) {
-        const sp = document.createElement('p')
-        sp.className = 'text-[9.5px] leading-snug text-slate-400'
-        sp.textContent = source
-        wrap.appendChild(sp)
-      }
-      dl.appendChild(wrap)
+    const num = (v: number | null | undefined, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
+
+    // Key figures
+    const grid = el('div', 'grid grid-cols-2 gap-1.5')
+    const tile = (k: string, v: string, sub?: string) => {
+      const t = el('div', 'rounded-xl bg-slate-50 px-2.5 py-2')
+      t.append(el('p', 'text-[10px] text-slate-500', k),
+        el('p', `text-base font-bold tabular-nums ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
+      if (sub) t.appendChild(el('p', 'text-[10px] text-slate-500', sub))
+      grid.appendChild(t)
     }
-    const num = (v: number | null, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
-    const dates = doc?.heat_detection_dates ?? []
-    const span = dates.length ? `${fmtDay(dates[0])}–${fmtDay(dates[dates.length - 1])} ${dates[0].slice(0, 4)}` : ''
-    row('Area', num(p.area_km2, ' km²'), 'Survey of India, in FSI ISFR 2023')
-    row('Population (2011)', num(p.population_2011), 'Census of India 2011, Table A-02')
-    row(
-      'Forest cover',
-      p.forest_km2 == null ? NA : `${nf1.format(p.forest_km2)} km² (${p.forest_pct}%)`,
-      'Forest Survey of India, ISFR 2023',
-      p.forest_km2 == null ? undefined
-        : `very dense ${nf1.format(p.forest_very_dense_km2 ?? 0)} · moderately dense ${nf1.format(p.forest_moderately_dense_km2 ?? 0)} · open ${nf1.format(p.forest_open_km2 ?? 0)} km²`,
-    )
-    row('Highest point', num(p.elevation_max_m, ' m'), 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati')
-    row('Typical ground height', num(p.elevation_median_m, ' m'), 'Median of the same elevation grid over the district')
-    row(`Heat detections${span ? ` (${span})` : ''}`, num(p.heat_detections), 'NASA FIRMS (VIIRS satellites)')
-    const sites = [...p.power_plants, ...p.large_works]
-    row(
-      'Power plants and large works',
-      sites.length ? String(sites.length) : 'None checked',
-      'Names and operators checked by Vayu Gati, Nov 2026',
-      sites.length ? sites.map((x) => x.name).join(' · ') : undefined,
-    )
-    row(
-      'Public air monitors',
-      p.monitors_continuous_in_feed == null ? NA
-        : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
-      'CPCB feed (5 Nov 2026) and NAMP list (19 Nov 2024)',
-      p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined,
-    )
+    tile('Area', num(p.area_km2, ' km²'))
+    tile('Population (2011)', num(p.population_2011))
+    tile('Forest cover', p.forest_pct == null ? NA : `${p.forest_pct}%`, p.forest_km2 == null ? undefined : `${nf.format(Math.round(p.forest_km2))} km²`)
+    tile('Highest point', num(p.elevation_max_m, ' m'), p.elevation_median_m == null ? undefined : `typical ${nf.format(p.elevation_median_m)} m`)
+    box.appendChild(grid)
+
+    // Stacked bar helper
+    const bar = (parts: { label: string; pct: number; color: string }[]) => {
+      const wrap = el('div', 'space-y-1')
+      const b = el('div', 'flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100')
+      for (const q of parts) {
+        if (q.pct <= 0) continue
+        const seg = el('div', '')
+        seg.style.width = `${q.pct}%`
+        seg.style.background = q.color
+        seg.title = `${q.label} ${q.pct}%`
+        b.appendChild(seg)
+      }
+      const lg = el('div', 'flex flex-wrap gap-x-2.5 gap-y-0.5')
+      for (const q of parts) {
+        if (q.pct < 0.5) continue
+        const r = el('span', 'flex items-center gap-1 text-[10px] text-slate-600')
+        const sw = el('span', 'inline-block h-2 w-2 rounded-sm')
+        sw.style.background = q.color
+        r.append(sw, document.createTextNode(`${q.label} ${nf1.format(q.pct)}%`))
+        lg.appendChild(r)
+      }
+      wrap.append(b, lg)
+      return wrap
+    }
+
+    // Forest, by density (share of district area)
+    const fsec = el('div', 'mt-3')
+    fsec.appendChild(label('Forest by density (ISFR 2023)'))
+    if (p.area_km2 && p.forest_km2 != null) {
+      const a = p.area_km2
+      const share = (v: number | null) => Math.round(((v ?? 0) / a) * 1000) / 10
+      const vd = share(p.forest_very_dense_km2), md = share(p.forest_moderately_dense_km2), op = share(p.forest_open_km2)
+      fsec.appendChild(bar([
+        { label: 'Very dense', pct: vd, color: '#14532D' },
+        { label: 'Moderately dense', pct: md, color: '#2F7D3A' },
+        { label: 'Open', pct: op, color: '#86C28B' },
+        { label: 'Not forest', pct: Math.max(0, Math.round((100 - vd - md - op) * 10) / 10), color: '#E5E7EB' },
+      ]))
+    } else fsec.appendChild(el('p', 'text-slate-300', NA))
+    box.appendChild(fsec)
+
+    // Land cover (satellite)
+    const lsec = el('div', 'mt-3')
+    lsec.appendChild(label('Land cover (ESA, 2021)'))
     const lc = p.landcover_pct
-    row(
-      'Land cover',
-      lc ? `${lc['Tree cover'] ?? 0}% trees · ${lc['Cropland'] ?? 0}% crops` : NA,
-      'ESA WorldCover 2021 (satellite, 10 m); computed by Vayu Gati',
-      lc ? `${lc['Grassland'] ?? 0}% grassland · ${lc['Built-up'] ?? 0}% built-up · ${lc['Permanent water'] ?? 0}% water · ${lc['Bare / sparse vegetation'] ?? 0}% bare` : undefined,
-    )
-    row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), src.mining_area_km2 ?? 'No official district figure found')
-    box.appendChild(dl)
-    const foot = document.createElement('p')
-    foot.className = 'mt-1.5 text-[9.5px] leading-snug text-slate-400'
-    foot.textContent = 'NA: no verified government figure. District outline: geoBoundaries (approximate, not Survey of India).'
-    box.appendChild(foot)
+    if (lc) {
+      lsec.appendChild(bar(Object.entries(lc).map(([k, v]) => ({ label: k, pct: v, color: LC_COLORS[k] ?? '#999' }))))
+    } else lsec.appendChild(el('p', 'text-slate-300', NA))
+    box.appendChild(lsec)
+
+    // In the district
+    const rows = el('div', 'mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200')
+    const dates = doc?.heat_detection_dates ?? []
+    const span = dates.length ? `${fmtDay(dates[0])}–${fmtDay(dates[dates.length - 1])}` : ''
+    const row = (k: string, v: string, sub?: string) => {
+      const r = el('div', 'px-2.5 py-1.5')
+      const line = el('div', 'flex items-baseline justify-between gap-2')
+      line.append(el('span', 'text-slate-500', k), el('span', `text-right font-semibold tabular-nums ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
+      r.appendChild(line)
+      if (sub) r.appendChild(el('p', 'mt-0.5 text-right text-[10px] leading-snug text-slate-500', sub))
+      rows.appendChild(r)
+    }
+    row(`Heat detections${span ? ` (${span})` : ''}`, num(p.heat_detections))
+    const sites = [...p.power_plants, ...p.large_works]
+    row('Power plants and works', sites.length ? String(sites.length) : 'None checked', sites.map((x) => x.name).join(' · ') || undefined)
+    row('Public air monitors', p.monitors_continuous_in_feed == null ? NA : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
+      p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined)
+    row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), p.mining_area_km2 == null ? 'No official district figure' : undefined)
+    box.appendChild(rows)
+
+    // Sources, folded away
+    const src = doc?.sources ?? {}
+    const det = el('details', 'mt-3 rounded-xl border border-slate-200 px-2.5 py-1.5')
+    det.appendChild(el('summary', 'cursor-pointer text-[11px] font-medium text-slate-600', 'Sources and notes'))
+    const ul = el('ul', 'mt-1.5 space-y-1 text-[10px] leading-snug text-slate-500')
+    for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
+      ['landcover', 'Land cover'], ['heat_detections', 'Heat detections'], ['power_plants', 'Plants and works'],
+      ['monitors', 'Monitors'], ['outline', 'Outline']] as const) {
+      if (src[k]) {
+        const li = el('li', '')
+        li.append(el('span', 'font-semibold text-slate-600', `${lab}: `), document.createTextNode(src[k]))
+        ul.appendChild(li)
+      }
+    }
+    ul.appendChild(el('li', '', 'NA: no verified government figure found.'))
+    det.appendChild(ul)
+    box.appendChild(det)
   }
 
   /** Mask and outline for the selected district. */
