@@ -9,7 +9,7 @@
   "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
   "mining_area_km2": "No official district-wise figure found",
   "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at about 180 m over the district outline",
-  "outline": "District outlines: Datameet India district map (CC BY 2.5 India), compiled from Bhuvan taluk data with names and extent from the Census of India 2011 Atlas. Areas checked against Survey of India (ISFR 2023): mean difference 1.7%, largest 7.2% (Sahibganj). Not Survey of India's own file"
+  "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match Survey of India areas (ISFR 2023): mean difference 0.8%, largest 4.1% (Sahibganj). Not Survey of India's own file"
  },
  "heat_detection_dates": [
   "2026-11-01",
@@ -27,7 +27,7 @@
    "forest_very_dense_km2": 59.04,
    "forest_moderately_dense_km2": 231.4,
    "forest_open_km2": 281.97,
-   "elevation_median_m": 273,
+   "elevation_median_m": 274,
    "elevation_max_m": 975,
    "heat_detections": 12,
    "power_plants": [
@@ -50,13 +50,13 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 36.8,
+    "Tree cover": 37.0,
     "Shrubland": 0.1,
-    "Grassland": 19.9,
-    "Cropland": 37.9,
-    "Built-up": 2.7,
+    "Grassland": 19.8,
+    "Cropland": 37.6,
+    "Built-up": 2.6,
     "Bare / sparse vegetation": 0.5,
-    "Permanent water": 2.1
+    "Permanent water": 2.4
    }
   },
   "Chatra": {
@@ -82,9 +82,9 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 45.1,
+    "Tree cover": 45.0,
     "Shrubland": 0.8,
-    "Grassland": 20.8,
+    "Grassland": 20.7,
     "Cropland": 32.2,
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.4,
@@ -99,7 +99,7 @@
    "forest_very_dense_km2": 0.03,
    "forest_moderately_dense_km2": 13.18,
    "forest_open_km2": 192.45,
-   "elevation_median_m": 233,
+   "elevation_median_m": 234,
    "elevation_max_m": 726,
    "heat_detections": 3,
    "power_plants": [],
@@ -109,13 +109,13 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 12.9,
+    "Tree cover": 12.7,
     "Shrubland": 0.0,
     "Grassland": 27.1,
-    "Cropland": 56.7,
-    "Built-up": 1.6,
+    "Cropland": 56.9,
+    "Built-up": 1.5,
     "Bare / sparse vegetation": 0.4,
-    "Permanent water": 1.3
+    "Permanent water": 1.2
    }
   },
   "Dhanbad": {
@@ -126,7 +126,7 @@
    "forest_very_dense_km2": 0.0,
    "forest_moderately_dense_km2": 43.62,
    "forest_open_km2": 177.58,
-   "elevation_median_m": 201,
+   "elevation_median_m": 203,
    "elevation_max_m": 723,
    "heat_detections": 135,
    "power_plants": [
@@ -150,13 +150,13 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 35.4,
+    "Tree cover": 35.9,
     "Shrubland": 0.0,
-    "Grassland": 22.9,
-    "Cropland": 32.1,
-    "Built-up": 5.0,
+    "Grassland": 22.6,
+    "Cropland": 32.2,
+    "Built-up": 5.1,
     "Bare / sparse vegetation": 1.5,
-    "Permanent water": 3.2
+    "Permanent water": 2.7
    }
   },
   "Dumka": {
@@ -180,7 +180,7 @@
     "Tree cover": 30.0,
     "Shrubland": 0.3,
     "Grassland": 17.1,
-    "Cropland": 50.7,
+    "Cropland": 50.6,
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 1.3
@@ -207,7 +207,7 @@
     "Tree cover": 40.7,
     "Shrubland": 0.4,
     "Grassland": 15.0,
-    "Cropland": 41.1,
+    "Cropland": 41.2,
     "Built-up": 0.4,
     "Bare / sparse vegetation": 0.7,
     "Permanent water": 1.6
@@ -231,10 +231,10 @@
    "monitors_planned_jspcb": 2,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 22.4,
+    "Tree cover": 22.5,
     "Shrubland": 0.4,
     "Grassland": 28.6,
-    "Cropland": 46.7,
+    "Cropland": 46.6,
     "Built-up": 1.2,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.5
@@ -248,7 +248,7 @@
    "forest_very_dense_km2": 13.52,
    "forest_moderately_dense_km2": 275.09,
    "forest_open_km2": 141.87,
-   "elevation_median_m": 115,
+   "elevation_median_m": 114,
    "elevation_max_m": 570,
    "heat_detections": 5,
    "power_plants": [
@@ -263,11 +263,11 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 30.9,
+    "Tree cover": 31.0,
     "Shrubland": 0.1,
-    "Grassland": 12.0,
-    "Cropland": 55.2,
-    "Built-up": 1.4,
+    "Grassland": 11.7,
+    "Cropland": 55.3,
+    "Built-up": 1.3,
     "Bare / sparse vegetation": 0.3,
     "Permanent water": 0.2
    }
@@ -281,7 +281,7 @@
    "forest_moderately_dense_km2": 587.15,
    "forest_open_km2": 559.79,
    "elevation_median_m": 641,
-   "elevation_max_m": 1110,
+   "elevation_max_m": 1121,
    "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
@@ -290,7 +290,7 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 35.5,
+    "Tree cover": 35.6,
     "Shrubland": 0.0,
     "Grassland": 14.3,
     "Cropland": 48.9,
@@ -307,7 +307,7 @@
    "forest_very_dense_km2": 233.2,
    "forest_moderately_dense_km2": 467.06,
    "forest_open_km2": 941.28,
-   "elevation_median_m": 474,
+   "elevation_median_m": 476,
    "elevation_max_m": 845,
    "heat_detections": 12,
    "power_plants": [],
@@ -317,13 +317,13 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 43.5,
+    "Tree cover": 43.6,
     "Shrubland": 0.7,
-    "Grassland": 18.0,
-    "Cropland": 34.1,
+    "Grassland": 17.9,
+    "Cropland": 34.2,
     "Built-up": 1.9,
     "Bare / sparse vegetation": 0.4,
-    "Permanent water": 1.4
+    "Permanent water": 1.2
    }
   },
   "Jamtara": {
@@ -334,7 +334,7 @@
    "forest_very_dense_km2": 0.0,
    "forest_moderately_dense_km2": 20.28,
    "forest_open_km2": 87.21,
-   "elevation_median_m": 168,
+   "elevation_median_m": 167,
    "elevation_max_m": 354,
    "heat_detections": 0,
    "power_plants": [],
@@ -344,13 +344,13 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 13.6,
+    "Tree cover": 13.7,
     "Shrubland": 0.0,
-    "Grassland": 21.7,
-    "Cropland": 62.3,
-    "Built-up": 0.7,
+    "Grassland": 21.9,
+    "Cropland": 61.6,
+    "Built-up": 0.6,
     "Bare / sparse vegetation": 0.2,
-    "Permanent water": 1.5
+    "Permanent water": 2.0
    }
   },
   "Khunti": {
@@ -361,7 +361,7 @@
    "forest_very_dense_km2": 77.18,
    "forest_moderately_dense_km2": 358.61,
    "forest_open_km2": 515.92,
-   "elevation_median_m": 535,
+   "elevation_median_m": 540,
    "elevation_max_m": 867,
    "heat_detections": 0,
    "power_plants": [],
@@ -371,13 +371,13 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 52.3,
+    "Tree cover": 50.7,
     "Shrubland": 0.1,
-    "Grassland": 11.9,
-    "Cropland": 35.1,
+    "Grassland": 11.8,
+    "Cropland": 36.9,
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
-    "Permanent water": 0.3
+    "Permanent water": 0.2
    }
   },
   "Kodarma": {
@@ -420,7 +420,7 @@
    "forest_very_dense_km2": 485.48,
    "forest_moderately_dense_km2": 1291.23,
    "forest_open_km2": 606.49,
-   "elevation_median_m": 492,
+   "elevation_median_m": 491,
    "elevation_max_m": 1152,
    "heat_detections": 1,
    "power_plants": [],
@@ -433,10 +433,10 @@
     "Tree cover": 56.9,
     "Shrubland": 0.1,
     "Grassland": 11.9,
-    "Cropland": 30.5,
+    "Cropland": 30.4,
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
-    "Permanent water": 0.3
+    "Permanent water": 0.4
    }
   },
   "Lohardaga": {
@@ -457,10 +457,10 @@
    "monitors_planned_jspcb": 0,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 38.6,
+    "Tree cover": 38.5,
     "Shrubland": 0.0,
-    "Grassland": 9.4,
-    "Cropland": 50.9,
+    "Grassland": 9.5,
+    "Cropland": 51.0,
     "Built-up": 0.7,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.2
@@ -484,10 +484,10 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 27.0,
+    "Tree cover": 27.1,
     "Shrubland": 0.3,
     "Grassland": 7.8,
-    "Cropland": 63.3,
+    "Cropland": 63.2,
     "Built-up": 0.9,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.3,
@@ -512,10 +512,10 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 34.1,
+    "Tree cover": 34.0,
     "Shrubland": 0.2,
-    "Grassland": 15.0,
-    "Cropland": 48.0,
+    "Grassland": 15.1,
+    "Cropland": 48.1,
     "Built-up": 0.9,
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 1.3
@@ -598,11 +598,11 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 36.7,
+    "Tree cover": 35.9,
     "Shrubland": 0.0,
-    "Grassland": 14.1,
-    "Cropland": 44.3,
-    "Built-up": 2.9,
+    "Grassland": 14.2,
+    "Cropland": 44.9,
+    "Built-up": 3.0,
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 1.4
    }
@@ -615,7 +615,7 @@
    "forest_very_dense_km2": 63.57,
    "forest_moderately_dense_km2": 349.76,
    "forest_open_km2": 727.13,
-   "elevation_median_m": 600,
+   "elevation_median_m": 594,
    "elevation_max_m": 1043,
    "heat_detections": 7,
    "power_plants": [],
@@ -625,11 +625,11 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 32.8,
+    "Tree cover": 34.3,
     "Shrubland": 0.1,
     "Grassland": 13.8,
-    "Cropland": 49.9,
-    "Built-up": 2.6,
+    "Cropland": 48.4,
+    "Built-up": 2.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.8
    }
@@ -642,8 +642,8 @@
    "forest_very_dense_km2": 18.12,
    "forest_moderately_dense_km2": 262.43,
    "forest_open_km2": 311.9,
-   "elevation_median_m": 60,
-   "elevation_max_m": 475,
+   "elevation_median_m": 57,
+   "elevation_max_m": 459,
    "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
@@ -655,10 +655,10 @@
     "Tree cover": 37.8,
     "Shrubland": 0.1,
     "Grassland": 2.1,
-    "Cropland": 54.1,
+    "Cropland": 54.0,
     "Built-up": 1.2,
-    "Bare / sparse vegetation": 0.5,
-    "Permanent water": 3.7,
+    "Bare / sparse vegetation": 0.6,
+    "Permanent water": 3.8,
     "Herbaceous wetland": 0.6
    }
   },
@@ -680,7 +680,7 @@
    "monitors_planned_jspcb": 1,
    "mining_area_km2": null,
    "landcover_pct": {
-    "Tree cover": 39.5,
+    "Tree cover": 39.6,
     "Shrubland": 0.0,
     "Grassland": 12.0,
     "Cropland": 44.1,

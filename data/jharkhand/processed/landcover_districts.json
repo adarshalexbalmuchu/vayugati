@@ -2,46 +2,46 @@
  "source": "ESA WorldCover 10 m 2021 v200 (European Space Agency); class shares computed by Vayu Gati at about 180 m over geoBoundaries district outlines",
  "districts": {
   "Bokaro": {
-   "Tree cover": 36.8,
+   "Tree cover": 37.0,
    "Shrubland": 0.1,
-   "Grassland": 19.9,
-   "Cropland": 37.9,
-   "Built-up": 2.7,
+   "Grassland": 19.8,
+   "Cropland": 37.6,
+   "Built-up": 2.6,
    "Bare / sparse vegetation": 0.5,
-   "Permanent water": 2.1
+   "Permanent water": 2.4
   },
   "Chatra": {
-   "Tree cover": 45.1,
+   "Tree cover": 45.0,
    "Shrubland": 0.8,
-   "Grassland": 20.8,
+   "Grassland": 20.7,
    "Cropland": 32.2,
    "Built-up": 0.5,
    "Bare / sparse vegetation": 0.4,
    "Permanent water": 0.3
   },
   "Deoghar": {
-   "Tree cover": 12.9,
+   "Tree cover": 12.7,
    "Shrubland": 0.0,
    "Grassland": 27.1,
-   "Cropland": 56.7,
-   "Built-up": 1.6,
+   "Cropland": 56.9,
+   "Built-up": 1.5,
    "Bare / sparse vegetation": 0.4,
-   "Permanent water": 1.3
+   "Permanent water": 1.2
   },
   "Dhanbad": {
-   "Tree cover": 35.4,
+   "Tree cover": 35.9,
    "Shrubland": 0.0,
-   "Grassland": 22.9,
-   "Cropland": 32.1,
-   "Built-up": 5.0,
+   "Grassland": 22.6,
+   "Cropland": 32.2,
+   "Built-up": 5.1,
    "Bare / sparse vegetation": 1.5,
-   "Permanent water": 3.2
+   "Permanent water": 2.7
   },
   "Dumka": {
    "Tree cover": 30.0,
    "Shrubland": 0.3,
    "Grassland": 17.1,
-   "Cropland": 50.7,
+   "Cropland": 50.6,
    "Built-up": 0.5,
    "Bare / sparse vegetation": 0.1,
    "Permanent water": 1.3
@@ -50,31 +50,31 @@
    "Tree cover": 40.7,
    "Shrubland": 0.4,
    "Grassland": 15.0,
-   "Cropland": 41.1,
+   "Cropland": 41.2,
    "Built-up": 0.4,
    "Bare / sparse vegetation": 0.7,
    "Permanent water": 1.6
   },
   "Giridih": {
-   "Tree cover": 22.4,
+   "Tree cover": 22.5,
    "Shrubland": 0.4,
    "Grassland": 28.6,
-   "Cropland": 46.7,
+   "Cropland": 46.6,
    "Built-up": 1.2,
    "Bare / sparse vegetation": 0.2,
    "Permanent water": 0.5
   },
   "Godda": {
-   "Tree cover": 30.9,
+   "Tree cover": 31.0,
    "Shrubland": 0.1,
-   "Grassland": 12.0,
-   "Cropland": 55.2,
-   "Built-up": 1.4,
+   "Grassland": 11.7,
+   "Cropland": 55.3,
+   "Built-up": 1.3,
    "Bare / sparse vegetation": 0.3,
    "Permanent water": 0.2
   },
   "Gumla": {
-   "Tree cover": 35.5,
+   "Tree cover": 35.6,
    "Shrubland": 0.0,
    "Grassland": 14.3,
    "Cropland": 48.9,
@@ -83,31 +83,31 @@
    "Permanent water": 0.6
   },
   "Hazaribagh": {
-   "Tree cover": 43.5,
+   "Tree cover": 43.6,
    "Shrubland": 0.7,
-   "Grassland": 18.0,
-   "Cropland": 34.1,
+   "Grassland": 17.9,
+   "Cropland": 34.2,
    "Built-up": 1.9,
    "Bare / sparse vegetation": 0.4,
-   "Permanent water": 1.4
+   "Permanent water": 1.2
   },
   "Jamtara": {
-   "Tree cover": 13.6,
+   "Tree cover": 13.7,
    "Shrubland": 0.0,
-   "Grassland": 21.7,
-   "Cropland": 62.3,
-   "Built-up": 0.7,
+   "Grassland": 21.9,
+   "Cropland": 61.6,
+   "Built-up": 0.6,
    "Bare / sparse vegetation": 0.2,
-   "Permanent water": 1.5
+   "Permanent water": 2.0
   },
   "Khunti": {
-   "Tree cover": 52.3,
+   "Tree cover": 50.7,
    "Shrubland": 0.1,
-   "Grassland": 11.9,
-   "Cropland": 35.1,
+   "Grassland": 11.8,
+   "Cropland": 36.9,
    "Built-up": 0.2,
    "Bare / sparse vegetation": 0.1,
-   "Permanent water": 0.3
+   "Permanent water": 0.2
   },
   "Kodarma": {
    "Tree cover": 46.0,
@@ -122,35 +122,35 @@
    "Tree cover": 56.9,
    "Shrubland": 0.1,
    "Grassland": 11.9,
-   "Cropland": 30.5,
+   "Cropland": 30.4,
    "Built-up": 0.2,
    "Bare / sparse vegetation": 0.1,
-   "Permanent water": 0.3
+   "Permanent water": 0.4
   },
   "Lohardaga": {
-   "Tree cover": 38.6,
+   "Tree cover": 38.5,
    "Shrubland": 0.0,
-   "Grassland": 9.4,
-   "Cropland": 50.9,
+   "Grassland": 9.5,
+   "Cropland": 51.0,
    "Built-up": 0.7,
    "Bare / sparse vegetation": 0.2,
    "Permanent water": 0.2
   },
   "Pakur": {
-   "Tree cover": 27.0,
+   "Tree cover": 27.1,
    "Shrubland": 0.3,
    "Grassland": 7.8,
-   "Cropland": 63.3,
+   "Cropland": 63.2,
    "Built-up": 0.9,
    "Bare / sparse vegetation": 0.4,
    "Permanent water": 0.3,
    "Herbaceous wetland": 0.0
   },
   "Palamu": {
-   "Tree cover": 34.1,
+   "Tree cover": 34.0,
    "Shrubland": 0.2,
-   "Grassland": 15.0,
-   "Cropland": 48.0,
+   "Grassland": 15.1,
+   "Cropland": 48.1,
    "Built-up": 0.9,
    "Bare / sparse vegetation": 0.6,
    "Permanent water": 1.3
@@ -174,20 +174,20 @@
    "Permanent water": 1.0
   },
   "Ramgarh": {
-   "Tree cover": 36.7,
+   "Tree cover": 35.9,
    "Shrubland": 0.0,
-   "Grassland": 14.1,
-   "Cropland": 44.3,
-   "Built-up": 2.9,
+   "Grassland": 14.2,
+   "Cropland": 44.9,
+   "Built-up": 3.0,
    "Bare / sparse vegetation": 0.6,
    "Permanent water": 1.4
   },
   "Ranchi": {
-   "Tree cover": 32.8,
+   "Tree cover": 34.3,
    "Shrubland": 0.1,
    "Grassland": 13.8,
-   "Cropland": 49.9,
-   "Built-up": 2.6,
+   "Cropland": 48.4,
+   "Built-up": 2.5,
    "Bare / sparse vegetation": 0.1,
    "Permanent water": 0.8
   },
@@ -195,14 +195,14 @@
    "Tree cover": 37.8,
    "Shrubland": 0.1,
    "Grassland": 2.1,
-   "Cropland": 54.1,
+   "Cropland": 54.0,
    "Built-up": 1.2,
-   "Bare / sparse vegetation": 0.5,
-   "Permanent water": 3.7,
+   "Bare / sparse vegetation": 0.6,
+   "Permanent water": 3.8,
    "Herbaceous wetland": 0.6
   },
   "Saraikela-Kharsawan": {
-   "Tree cover": 39.5,
+   "Tree cover": 39.6,
    "Shrubland": 0.0,
    "Grassland": 12.0,
    "Cropland": 44.1,

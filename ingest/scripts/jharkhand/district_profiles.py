@@ -148,7 +148,7 @@ def main() -> None:
             "mining_area_km2": "No official district-wise figure found",
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",
-            "outline": "District outlines: Datameet India district map (CC BY 2.5 India), compiled from Bhuvan taluk data with names and extent from the Census of India 2011 Atlas. Areas checked against Survey of India (ISFR 2023): mean difference 1.7%, largest 7.2% (Sahibganj). Not Survey of India's own file",
+            "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match Survey of India areas (ISFR 2023): mean difference 0.8%, largest 4.1% (Sahibganj). Not Survey of India's own file",
         },
         "heat_detection_dates": fire_dates,
         "districts": profiles,

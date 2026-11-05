@@ -124,7 +124,7 @@ DISTRICT_ALIAS = {"Saraikela-kharsawan": "Saraikela-Kharsawan"}
 DISTRICT_SIMPLIFY = 0.0006  # degrees, about 65 m, applied to the whole coverage so shared borders stay shared
 
 
-def _datameet_districts() -> dict:
+def _datameet_districts(simplify: bool = True) -> dict:
     """Jharkhand's 24 districts from Datameet's India district map (CC BY 2.5 India), compiled from Bhuvan taluk
     boundaries with names and extent from the Census of India 2011 Administrative Atlas. Measured 5 Nov 2026
     against Survey of India areas (ISFR 2023): mean error 1.7%, against 5.2% for geoBoundaries ADM2, which had
@@ -164,13 +164,97 @@ def _datameet_districts() -> dict:
     for h in holes:
         best = max(out, key=lambda n: out[n].boundary.intersection(h.boundary.buffer(1e-6)).length)
         out[best] = make_valid(unary_union([out[best], h]))
+    if not simplify:
+        return out
     names = list(out)
     simp = shapely.coverage_simplify([out[n] for n in names], DISTRICT_SIMPLIFY)
     return {n: make_valid(g) for n, g in zip(names, simp)}
 
 
+def _osm_districts() -> dict:
+    """OSM admin_level 5 districts, extracted from the Geofabrik pbf (OSM data as of 3 Nov 2026) and kept in
+    data/jharkhand/sources/ (re-extract with the scan described in that folder's README)."""
+    name_map = {"East Singhbhum": "Purbi Singhbhum", "West Singhbhum": "Pashchimi Singhbhum",
+                "Seraikela-Kharsawan": "Saraikela-Kharsawan"}
+    out = {}
+    for f in json.load(open(REPO / "data" / "jharkhand" / "sources" / "osm_districts_admin5_2026-11-03.geojson"))["features"]:
+        if f["properties"]["admin_level"] == "5":
+            out[name_map.get(f["properties"]["name"], f["properties"]["name"])] = make_valid(shape(f["geometry"]))
+    return out
+
+
+def _soi_areas() -> dict:
+    return {r["district"]: float(r["area_km2_soi"])
+            for r in csv.DictReader(open(REPO / "data" / "jharkhand" / "sources" / "isfr2023_district_forest.csv"))}
+
+
+def _fused_districts() -> tuple[dict, dict]:
+    """Best open district borders, by checking against Survey of India's areas (ISFR 2023).
+
+    Three open sources (Datameet / Census 2011, OpenStreetMap, geoBoundaries) each draw the 24 districts
+    slightly differently. Start from Datameet; for each district try the other sources' version and keep it if
+    the mean area error over all 24 improves. Where a version is taken, it keeps its land and neighbours give
+    way; leftover gaps go to the neighbour sharing the longest border. Measured 6 Nov 2026: mean error 0.8%
+    (Datameet alone 1.7%, OSM 3.5%, geoBoundaries 5.2%), largest 4.1%. The area is the only check: a district
+    can match in area and still have a wrong shape, so this is "closer to", not "equal to", Survey of India."""
+    soi = _soi_areas()
+    names = sorted(soi)
+    dm = _datameet_districts(simplify=False)
+    gb = {n: g for n, g in _districts_geoboundaries().items()}
+    sources = {"DM": dm, "OSM": _osm_districts(), "GB": gb}
+    state = unary_union(list(dm.values()))
+    state = shapely_fill_holes(state)
+
+    def err(out):
+        e = [abs(100 * (_area_km2(out[n]) - soi[n]) / soi[n]) for n in names]
+        return sum(e) / len(e)
+
+    def build(assign):
+        g = {n: sources[assign[n]][n].intersection(state) for n in names}
+        out, taken = {}, None
+        for n in sorted(names, key=lambda n: (assign[n] == "DM", n)):  # non-Datameet versions keep their land
+            geo = g[n] if taken is None else g[n].difference(taken)
+            out[n] = geo
+            taken = geo if taken is None else unary_union([taken, geo])
+        gap = state.difference(unary_union(list(out.values())))
+        for piece in (gap.geoms if hasattr(gap, "geoms") else [gap]):
+            if piece.is_empty or piece.area <= 0:
+                continue
+            best = max(names, key=lambda n: out[n].boundary.intersection(piece.buffer(1e-5)).length)
+            out[best] = unary_union([out[best], piece])
+        return out
+
+    assign = {n: "DM" for n in names}
+    best = err(build(assign))
+    improved = True
+    while improved:
+        improved = False
+        for n in names:
+            for src in ("DM", "OSM", "GB"):
+                if src == assign[n] or n not in sources[src]:
+                    continue
+                trial = {**assign, n: src}
+                e = err(build(trial))
+                if e < best - 0.01:
+                    assign, best, improved = trial, e, True
+    out = build(assign)
+    return out, assign
+
+
 def _districts() -> dict:
-    return _datameet_districts()
+    import shapely
+
+    fused, assign = _fused_districts()
+    print("district sources:", {n: s for n, s in assign.items() if s != "DM"}, "(others: Datameet)")
+    # snap seams to a 1e-6 degree grid (about 0.1 m), drop crumbs, then simplify as one coverage
+    names = list(fused)
+    snapped = []
+    for n in names:
+        g = shapely.set_precision(fused[n], 1e-6)
+        parts = [p for p in (g.geoms if g.geom_type == "MultiPolygon" else [g]) if _area_km2(p) >= 0.05]
+        snapped.append(make_valid(unary_union(parts)))
+    simp = shapely.coverage_simplify(snapped, DISTRICT_SIMPLIFY)
+    return {n: make_valid(g) for n, g in zip(names, simp)}
 
 
 def _districts_geoboundaries() -> dict:

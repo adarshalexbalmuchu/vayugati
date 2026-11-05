@@ -9,3 +9,4 @@ Extracted as printed; nothing estimated. Re-extract only from these documents.
 
 District names follow the Census spelling (Purbi Singhbhum, Pashchimi Singhbhum, Saraikela-Kharsawan),
 which matches `processed/districts.geojson`.
+| `osm_districts_admin5_2026-11-03.geojson` | The 24 district boundaries (admin_level 5) from OpenStreetMap, extracted from the Geofabrik eastern-zone pbf (data as of 3 Nov 2026), ODbL. One of three open sources fused into the district outlines. | OSM, 3 Nov 2026 |

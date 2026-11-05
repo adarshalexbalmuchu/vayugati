@@ -465,7 +465,7 @@ function popupNode(props: Record<string, unknown>, layerId: string): HTMLElement
   }
   if (layerId === 'ctx-districts-fill') {
     line(`${props.name} district`, true)
-    line('Outline: Datameet district map (Census 2011), not Survey of India’s own file.')
+    line('Outline: open data (Datameet / Census 2011, OpenStreetMap, geoBoundaries), not Survey of India’s own file.')
   } else if (layerId === 'ctx-towngrid-fill') {
     line(`${props.town} grid cell ${props.id}`, true)
     line(`${props.district} district · ${props.area_km2} km² · ${props.builtup_pct}% built-up (ESA WorldCover 2021)`)
