@@ -66,9 +66,9 @@ export default function Login() {
           maskImage: 'linear-gradient(to top, #000 55%, transparent)',
         }}
       />
-      <div className="relative z-10 w-full max-w-[400px] animate-fade-in">
+      <div className="relative z-10 w-full max-w-[400px] animate-fade-in [@media(min-height:860px)]:max-w-[440px]">
         <div className="mb-6 flex flex-col items-center text-center [@media(max-height:700px)]:mb-4">
-          <LogoWordmark className="h-auto w-[104px] sm:w-[116px] [@media(max-height:700px)]:w-[84px]" />
+          <LogoWordmark className="h-auto w-[104px] sm:w-[116px] [@media(max-height:700px)]:w-[84px] [@media(min-height:860px)]:w-[150px]" />
           <p className="mt-3 text-sm font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
           <p className="mt-0.5 text-xs text-[#422B1B]/60">From information to action</p>
         </div>
