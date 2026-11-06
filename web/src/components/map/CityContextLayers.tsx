@@ -427,7 +427,7 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   // Everything outside the selected district is dimmed, and everything
   // outside Jharkhand is covered: the platform shows Jharkhand only.
   map.addSource(MASK_DISTRICT, { type: 'geojson', data: EMPTY_FC })
-  map.addLayer({ id: MASK_DISTRICT, type: 'fill', source: MASK_DISTRICT, paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 0.72 } })
+  map.addLayer({ id: MASK_DISTRICT, type: 'fill', source: MASK_DISTRICT, paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 0.5 } })
   const stateGeom = data.state.features[0]?.geometry
   map.addSource(MASK_STATE, { type: 'geojson', data: stateGeom ? maskOutside(stateGeom) : EMPTY_FC })
   map.addLayer({ id: MASK_STATE, type: 'fill', source: MASK_STATE, paint: { 'fill-color': MASK_COLOR, 'fill-opacity': 1 } })
@@ -661,7 +661,7 @@ function ensureSatellite(map: maplibregl.Map, visible = true) {
   }
   if (!map.getLayer(SAT_LAYER)) {
     map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE,
-      paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 } }, anchorBelow(map, 'ctx-forest-fill'))
+      paint: { 'raster-saturation': 0.1, 'raster-contrast': 0.12 } }, anchorBelow(map, 'ctx-forest-fill'))
   }
   map.setLayoutProperty(SAT_LAYER, 'visibility', visible ? 'visible' : 'none')
 }
