@@ -530,7 +530,7 @@ const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be inc
 /** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
 function popupNode(props: Record<string, unknown>, layerId: string, district: string | null): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'min-w-[180px] max-w-[250px] px-3 py-2.5 text-xs text-slate-700'
+  el.className = 'min-w-[180px] max-w-[250px] py-2.5 pl-3 pr-3 text-xs text-slate-700'
   let eyebrow = ''
   let title = ''
   const rows: [string, string][] = []
@@ -771,12 +771,6 @@ const nf = new Intl.NumberFormat('en-IN')
 const nf1 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
 const NA = 'NA'
 
-function fmtDay(d: string): string {
-  const [, m, day] = d.split('-').map(Number)
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${day} ${months[m - 1]}`
-}
-
 /** Jharkhand / city buttons, a district picker that shows the chosen
  *  district in 3D (terrain, relief shading and satellite imagery, the rest
  *  of the state dimmed), and a day-by-day player for the satellite heat
@@ -806,12 +800,6 @@ class ViewControl implements maplibregl.IControl {
   private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
   private satellite = true
-  private fireDates: string[] = []
-  private fireDay: string | null = null // null = all days
-  private fireRow: HTMLDivElement | null = null
-  private fireLabel: HTMLSpanElement | null = null
-  private playBtn: HTMLButtonElement | null = null
-  private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(
     private pack: ContextPack,
@@ -931,16 +919,6 @@ class ViewControl implements maplibregl.IControl {
     return wrap
   }
 
-  private button(label: string, onClick: () => void, parent: HTMLElement) {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.textContent = label
-    b.className = 'rounded-md bg-accent-500 px-2.5 py-1.5 font-medium text-white hover:bg-accent-600'
-    b.addEventListener('click', onClick)
-    parent.appendChild(b)
-    return b
-  }
-
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
@@ -1031,7 +1009,7 @@ class ViewControl implements maplibregl.IControl {
     this.dockTabs = dockTabs
     this.profileBox = profile
     this.chatSlot = chatSlot
-    // Bottom toolbar: 3D controls and the heat-detection player.
+    // Bottom toolbar: the 3D controls (height scale, satellite).
     const toolbar = document.createElement('div')
     toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg px-3 py-2 text-xs text-slate-700 md:left-1/2 md:right-auto md:-translate-x-1/2'
     toolbar.style.display = 'none'
@@ -1119,27 +1097,6 @@ class ViewControl implements maplibregl.IControl {
       this.refreshLegend()
     })
 
-    // Heat detections over time
-    const fireRow = document.createElement('div')
-    fireRow.className = 'flex items-center gap-2'
-    fireRow.style.display = 'none'
-    const ft = document.createElement('div')
-    ft.className = 'min-w-0 flex-1'
-    const ft1 = document.createElement('p')
-    ft1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
-    ft1.textContent = 'Heat detections'
-    const label = document.createElement('p')
-    label.className = 'text-xs font-semibold tabular-nums text-slate-900'
-    this.fireLabel = label
-    ft.append(ft1, label)
-    this.playBtn = this.button('▶', () => this.togglePlay(), fireRow)
-    this.playBtn.setAttribute('aria-label', 'Play heat detections day by day')
-    const all = this.button('All', () => { this.stopPlay(); this.setFireDay(null) }, fireRow)
-    fireRow.insertBefore(ft, this.playBtn)
-    void all
-    toolbar.appendChild(fireRow)
-    this.fireRow = fireRow
-
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
     glassify(el, { tint: 0.55 })
@@ -1199,7 +1156,7 @@ class ViewControl implements maplibregl.IControl {
   private syncToolbar() {
     const t = this.toolbar
     if (!t) return
-    const any = [this.panel3D, this.fireRow].some((n) => n && n.style.display !== 'none')
+    const any = [this.panel3D].some((n) => n && n.style.display !== 'none')
     t.style.display = any ? '' : 'none'
   }
 
@@ -1207,7 +1164,6 @@ class ViewControl implements maplibregl.IControl {
     this.dock?.remove()
     this.toolbar?.remove()
     this.legendWrap?.remove()
-    this.stopPlay()
     this.map?.off('styledata', this.reapply)
     this.map?.off('style.load', this.onStyleLoad)
     if (this.on3D) this.leave3D()
@@ -1304,10 +1260,6 @@ class ViewControl implements maplibregl.IControl {
     this.districts = [...data.districts.features].sort((a, b) =>
       String(a.properties?.name).localeCompare(String(b.properties?.name)))
     this.fillSelect()
-    this.fireDates = [...new Set(data.fires.features.map((f) => String(f.properties?.date ?? '')))].filter(Boolean).sort()
-    if (this.fireRow) this.fireRow.style.display = this.fireDates.length > 1 ? '' : 'none'
-    this.syncToolbar()
-    this.updateFireLabel()
   }
 
   private fillSelect() {
@@ -1651,48 +1603,11 @@ class ViewControl implements maplibregl.IControl {
     }
   }
 
-  private updateFireLabel() {
-    if (!this.fireLabel) return
-    const n = this.fireDates.length
-    this.fireLabel.textContent = this.fireDay
-      ? `${fmtDay(this.fireDay)} (UTC)`
-      : n ? `${fmtDay(this.fireDates[0])}–${fmtDay(this.fireDates[n - 1])}` : ''
-  }
-
-  private setFireDay(day: string | null) {
-    this.fireDay = day
-    this.updateFireLabel()
-    this.reapply()
-  }
-
-  private togglePlay() {
-    if (this.timer) return this.stopPlay()
-    if (!this.fireDates.length) return
-    if (this.playBtn) this.playBtn.textContent = '❚❚'
-    let i = this.fireDay ? this.fireDates.indexOf(this.fireDay) : -1
-    const step = () => {
-      i = (i + 1) % this.fireDates.length
-      this.setFireDay(this.fireDates[i])
-    }
-    step()
-    this.timer = setInterval(step, 1500)
-  }
-
-  private stopPlay() {
-    if (this.timer) clearInterval(this.timer)
-    this.timer = null
-    if (this.playBtn) this.playBtn.textContent = '▶'
-  }
-
-  /** Re-apply the fire-day filter and the district selection after our
+  /** Re-apply the district selection after our
    *  layers are re-created (style reloads). */
   private reapply = () => {
     const map = this.map
     if (!alive(map)) return
-    if (map.getLayer('ctx-fires')) {
-      const want: maplibregl.FilterSpecification | null = this.fireDay ? ['==', ['get', 'date'], this.fireDay] : null
-      if (JSON.stringify(map.getFilter('ctx-fires') ?? null) !== JSON.stringify(want)) map.setFilter('ctx-fires', want)
-    }
     if (map.getLayer(DISTRICT_SELECTED)) {
       const want = JSON.stringify(['==', ['get', 'name'], this.selected ?? ''])
       if (JSON.stringify(map.getFilter(DISTRICT_SELECTED)) !== want) this.applySelection()
@@ -1814,7 +1729,7 @@ export default function CityContextLayers({
       CLICKABLE.filter((id) => map.getLayer(id) && (id !== 'ctx-districts-fill' || map.getZoom() < DISTRICT_CLICK_MAX_ZOOM))
     const showElevation = (e: maplibregl.MapMouseEvent, extra?: HTMLElement) => {
       const el = extra ?? document.createElement('div')
-      if (!extra) el.className = 'min-w-[150px] px-3 py-2 text-xs text-slate-700'
+      if (!extra) el.className = 'min-w-[150px] py-2 pl-3 pr-8 text-xs text-slate-700'
       const row = document.createElement('div')
       row.className = `${extra ? 'mt-2 border-t border-slate-200/80 pt-2' : ''} flex items-baseline justify-between gap-4`
       const lab = document.createElement('span')
