@@ -79,6 +79,9 @@ const FILES = {
   canals: 'canals.geojson',
   seismic: 'seismic.geojson',
   aquifers: 'aquifers.geojson',
+  coalmines: 'coalmines.geojson',
+  coalboundaries: 'coalboundaries.geojson',
+  coalplants: 'coalplants.geojson',
 } as const
 /** Files the code itself needs (the state mask, district lookup and heat-detection dates). Everything else is given to
  *  MapLibre as a URL, so each layer loads on its own: one slow or missing file cannot hold up the rest. */
@@ -152,6 +155,9 @@ const SRC = {
   canals: 'ctx-canals',
   seismic: 'ctx-seismic',
   aquifers: 'ctx-aquifers',
+  coalmines: 'ctx-coalmines',
+  coalboundaries: 'ctx-coalboundaries',
+  coalplants: 'ctx-coalplants',
 } as const
 
 /** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
@@ -163,6 +169,7 @@ const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
   'ctx-majorrivers': ['majorrivers'], 'ctx-basins': ['basins'], 'ctx-dams': ['dams'],
   'ctx-blocks': ['blocks', 'groundwater'], 'ctx-assembly': ['constituencies'], 'ctx-monitors': ['monitors'], 'ctx-canals': ['canals'],
   'ctx-seismic': ['seismic'], 'ctx-aquifers': ['aquifers'],
+  'ctx-coalmines': ['coalmines'], 'ctx-coalboundaries': ['coalmines'], 'ctx-coalplants': ['coalplants'],
 }
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -179,6 +186,8 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   basins: ['ctx-basins-line', 'ctx-basins-label'],
   dams: ['ctx-dams', 'ctx-dams-label'],
   canals: ['ctx-canals-line'],
+  coalmines: ['ctx-coalmines', 'ctx-coalmines-label', 'ctx-coalboundaries-fill', 'ctx-coalboundaries-line'],
+  coalplants: ['ctx-coalplants', 'ctx-coalplants-label'],
   seismic: ['ctx-seismic-fill'],
   aquifers: ['ctx-aquifers-fill'],
   groundwater: ['ctx-groundwater-fill'],
@@ -199,8 +208,8 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
-  'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
+const CLICKABLE = ['ctx-coalplants', 'ctx-coalmines', 'ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
+  'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-coalboundaries-fill', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
   'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
   'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-aquifers-fill', 'ctx-seismic-fill', 'ctx-districts-fill']
 
@@ -329,6 +338,10 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
   map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
+  map.addLayer({ id: 'ctx-coalboundaries-fill', type: 'fill', source: SRC.coalboundaries, layout: { visibility: vis('coalmines') },
+    paint: { 'fill-color': '#212121', 'fill-opacity': 0.22 } })
+  map.addLayer({ id: 'ctx-coalboundaries-line', type: 'line', source: SRC.coalboundaries, layout: { visibility: vis('coalmines') },
+    paint: { 'line-color': '#212121', 'line-width': 1.2 } })
   map.addLayer({ id: 'ctx-seismic-fill', type: 'fill', source: SRC.seismic, layout: { visibility: vis('seismic') },
     paint: { 'fill-color': ['match', ['get', 'zone'], 'II', '#FFE9A8', 'III', '#F9C46B', 'IV', '#F08A4B', 'V', '#D9534F', '#DDDDDD'], 'fill-opacity': 0.5 } })
   map.addLayer({ id: 'ctx-aquifers-fill', type: 'fill', source: SRC.aquifers, layout: { visibility: vis('aquifers') },
@@ -439,6 +452,13 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-landmarks', type: 'circle', source: SRC.landmarks, minzoom: 7, layout: { visibility: vis('landmarks') },
     paint: { 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
       'circle-color': ['match', ['get', 'kind'], 'peak', '#6D4C41', 'waterfall', '#0288D1', '#455A64'] } })
+  map.addLayer({ id: 'ctx-coalmines', type: 'circle', source: SRC.coalmines, layout: { visibility: vis('coalmines') },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'capacity_mtpa'], 0.5], 0, 3.5, 5, 6, 25, 10],
+      'circle-color': ['match', ['get', 'status'], 'Operating', '#212121', 'Proposed', '#F9A825', 'Closed', '#C62828', '#8E8E8E'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 1.2 } })
+  map.addLayer({ id: 'ctx-coalplants', type: 'circle', source: SRC.coalplants, layout: { visibility: vis('coalplants') },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'total_mw'], 100], 0, 5, 500, 7.5, 2000, 11],
+      'circle-color': '#B23A48', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
   map.addLayer({ id: 'ctx-monitors', type: 'circle', source: SRC.monitors, minzoom: 7, layout: { visibility: vis('monitors') },
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.5, 12, 5],
       'circle-color': ['match', ['get', 'kind'], 'groundwater_level', '#00796B', 'water_quality', '#C2185B', 'rainfall', '#0277BD', '#283593'],
@@ -447,6 +467,14 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6.5], 'circle-color': '#0B3C7D',
       'circle-stroke-color': '#fff', 'circle-stroke-width': 1.3 } })
   if (font) {
+    map.addLayer({ id: 'ctx-coalplants-label', type: 'symbol', source: SRC.coalplants, minzoom: 8,
+      layout: { visibility: vis('coalplants'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10.5, 'text-offset': [0, 1.2],
+        'text-anchor': 'top', 'text-optional': true, 'text-max-width': 9 },
+      paint: { 'text-color': '#7A2430', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.3 } })
+    map.addLayer({ id: 'ctx-coalmines-label', type: 'symbol', source: SRC.coalmines, minzoom: 9,
+      layout: { visibility: vis('coalmines'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10, 'text-offset': [0, 1],
+        'text-anchor': 'top', 'text-optional': true, 'text-max-width': 9 },
+      paint: { 'text-color': '#212121', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.3 } })
     map.addLayer({ id: 'ctx-blocks-label', type: 'symbol', source: SRC.blocks, minzoom: 8.5,
       layout: { visibility: vis('blocks'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10, 'text-max-width': 7, 'text-optional': true },
       paint: { 'text-color': '#4A4A4A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
@@ -747,6 +775,43 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
       note = 'No ground water assessment is listed for this block.'
     }
     source = 'Block boundary: India-WRIS. Ground water: Central Ground Water Board, Dynamic Ground Water Resources 2020, via India-WRIS.'
+  } else if (layerId === 'ctx-coalmines') {
+    const mt = (v: unknown) => (v == null || v === '' ? null : `${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 })} million tonnes`)
+    eyebrow = `Coal mine · ${props.status ?? ''}${props.status_detail && props.status === 'Closed' ? ` (${props.status_detail})` : ''}`
+    title = String(props.name || 'Coal mine')
+    rows.push(['Owner', props.owner ? String(props.owner) : 'not listed'])
+    if (mt(props.capacity_mtpa)) rows.push(['Capacity', `${mt(props.capacity_mtpa)} a year`])
+    if (mt(props.output_mt)) rows.push(['Output', `${mt(props.output_mt)}${props.output_year ? ` (${props.output_year})` : ''}`])
+    const how = [props.mine_type, props.method].filter(Boolean).join(', ')
+    if (how) rows.push(['Mine type', how])
+    if (props.coalfield) rows.push(['Coalfield', String(props.coalfield)])
+    if (props.coal_type) rows.push(['Coal', `${props.coal_type}${props.grade ? `, ${String(props.grade).toLowerCase()}` : ''}`])
+    if (props.opened) rows.push(['Opened', String(props.opened)])
+    if (props.workforce) rows.push(['Workforce', Number(props.workforce).toLocaleString('en-IN')])
+    if (props.expansion_mtpa) rows.push(['Expansion', `to ${mt(props.expansion_mtpa)} a year${props.expansion_status ? ` (${String(props.expansion_status).toLowerCase()})` : ''}`])
+    if (district) rows.push(['District', district])
+    note = `Location rated ${String(props.accuracy ?? 'unknown').toLowerCase()} by Global Energy Monitor. Mines of 1 million tonnes a year or more, and some smaller ones; not a complete list.`
+    source = `Global Energy Monitor, Global Coal Mine Tracker, August 2026 release (CC BY 4.0); mine ${props.id ?? ''}.`
+  } else if (layerId === 'ctx-coalplants') {
+    const mw = (v: unknown) => (v == null || v === '' ? null : `${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 1 })} MW`)
+    eyebrow = `Coal power plant · ${String(props.status ?? '').replace(/^./, (c) => c.toUpperCase())}`
+    title = String(props.name || 'Coal power plant')
+    rows.push(['Owner', props.owner ? String(props.owner) : 'not listed'])
+    if (mw(props.operating_mw)) rows.push(['Operating capacity', mw(props.operating_mw) ?? ''])
+    if (mw(props.total_mw) && props.total_mw !== props.operating_mw) rows.push(['All units listed', mw(props.total_mw) ?? ''])
+    if (props.technology) rows.push(['Technology', String(props.technology)])
+    if (props.captive) rows.push(['Captive use', String(props.captive)])
+    if (district) rows.push(['District', district])
+    note = String(props.units ?? '')
+    source = `Global Energy Monitor, Global Coal Plant Tracker, July 2026 release (CC BY 4.0); plant ${props.id ?? ''}.`
+  } else if (layerId === 'ctx-coalboundaries-fill') {
+    eyebrow = 'Coal mine boundary'
+    title = String(props.name || 'Coal mine')
+    if (props.kind) rows.push(['Mining', String(props.kind)])
+    if (props.dated) rows.push(['Source dated', String(props.dated)])
+    if (district) rows.push(['District', district])
+    note = props.note ? String(props.note) : 'Outline as compiled by Global Energy Monitor.'
+    source = 'Global Energy Monitor, Coal Mine Boundaries and Methane Sources v1.0.2 (CC BY 4.0).'
   } else if (layerId === 'ctx-seismic-fill') {
     eyebrow = 'Earthquake zone'
     title = `Zone ${props.zone}`
@@ -841,7 +906,7 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
   }
   if (note) {
     const n = document.createElement('p')
-    n.className = 'mt-1.5 text-[11px] leading-snug text-slate-500'
+    n.className = 'mt-1.5 whitespace-pre-line text-[11px] leading-snug text-slate-500'
     n.textContent = note
     el.appendChild(n)
   }
