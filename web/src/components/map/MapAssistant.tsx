@@ -11,6 +11,8 @@ export interface AssistantHandlers {
   goPlace: (lng: number, lat: number, name: string, zoom?: number) => void
   /** What is on screen now, sent with every message so "I can't see it" and "this" make sense. */
   getState: () => MapStateForAssistant
+  /** Tell the map whether answers are being shown in the side panel (it folds the layers away). */
+  onResults: (has: boolean) => void
   zoom: (direction: 'in' | 'out') => void
 }
 
@@ -26,6 +28,8 @@ interface Msg {
   role: 'user' | 'assistant'
   text: string
   cards?: Card[]
+  /** Data cards were shown in the left card's answers section. */
+  moved?: boolean
 }
 
 const SUGGESTIONS = [
@@ -43,6 +47,7 @@ const label = (key: string, layers: { key: string; label: string }[]) => layers.
 export default function MapAssistant({
   container,
   slot,
+  resultsSlot,
   open,
   onOpenChange,
   layers,
@@ -53,6 +58,8 @@ export default function MapAssistant({
   container: HTMLElement
   /** The dock's chat slot: the chat panel renders here while open. */
   slot: HTMLElement | null
+  /** The left card's answers section; on wide screens the data cards render here instead of in the chat. */
+  resultsSlot: HTMLElement | null
   open: boolean
   onOpenChange: (open: boolean) => void
   layers: { key: string; label: string; note?: string }[]
@@ -62,6 +69,11 @@ export default function MapAssistant({
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  // Answers (rankings, facts, overview) go to the left card on wide screens; the chat keeps the conversation.
+  const [results, setResults] = useState<{ q: string; cards: Card[] }[]>([])
+  const wide = typeof window !== 'undefined' && window.innerWidth >= 768
+  const sideResults = wide && resultsSlot != null
+  useEffect(() => { handlers.onResults(sideResults && results.length > 0) }, [results.length, sideResults])
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [msgs, busy, open])
 
@@ -114,7 +126,10 @@ export default function MapAssistant({
     const cards = await execute(r.data.actions)
     // The model's wording carries no figures (enforced server-side); every number is in the cards below.
     const onlyNotes = r.data.actions.every((a) => a.type === 'unsupported')
-    setMsgs((m) => [...m, { role: 'assistant', text: onlyNotes ? '' : r.data.reply, cards }])
+    const isData = (c: Card) => c.kind === 'facts' || c.kind === 'rank' || c.kind === 'overview'
+    const dataCards = sideResults ? cards.filter(isData) : []
+    if (dataCards.length) setResults((rs) => [{ q: question, cards: dataCards }, ...rs].slice(0, 8))
+    setMsgs((m) => [...m, { role: 'assistant', text: onlyNotes ? '' : r.data.reply, cards: sideResults ? cards.filter((c) => !isData(c)) : cards, moved: dataCards.length > 0 }])
   }
 
   const panel = (
@@ -153,6 +168,7 @@ export default function MapAssistant({
               <div className="space-y-2">
                 {m.text && <p className="text-ink-900">{m.text}</p>}
                 {m.cards?.map((c, j) => <ResultCard key={j} card={c} />)}
+                {m.moved && <p className="text-[11px] text-ink-500">← Shown in the Answers section on the left.</p>}
               </div>
             )}
           </div>
@@ -180,8 +196,25 @@ export default function MapAssistant({
     </div>
   )
 
+  const resultsPanel = (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-ink-500">{results.length} {results.length === 1 ? 'answer' : 'answers'}, newest first</p>
+        <button type="button" onClick={() => setResults([])}
+          className="focus-ring rounded-md border border-ink-900/15 px-2 py-0.5 text-[11px] font-medium text-ink-800 hover:bg-cream">Clear</button>
+      </div>
+      {results.map((r, i) => (
+        <div key={i} className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-ink-700">“{r.q}”</p>
+          {r.cards.map((c, j) => <ResultCard key={j} card={c} />)}
+        </div>
+      ))}
+    </div>
+  )
+
   return (
     <>
+      {sideResults && results.length > 0 && resultsSlot && createPortal(resultsPanel, resultsSlot)}
       {open && slot && createPortal(panel, slot)}
       {!open && createPortal(
         <button type="button" onClick={() => onOpenChange(true)}

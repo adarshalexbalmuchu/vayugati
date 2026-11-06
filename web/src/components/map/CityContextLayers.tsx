@@ -790,6 +790,10 @@ class ViewControl implements maplibregl.IControl {
 
   private layerInputs: Partial<Record<CityContextLayerKey, HTMLInputElement>> = {}
   private layerCount: HTMLSpanElement | null = null
+  private layersDetails: HTMLDetailsElement | null = null
+  private resultsWrap: HTMLDetailsElement | null = null
+  /** Where the assistant's answers (rankings, facts, overview) render, in the left card under the layers. */
+  resultsSlot: HTMLDivElement | null = null
 
   /** Sync the checkboxes with the current visibility. */
   setVisible(v: CityContextVisibility) {
@@ -801,6 +805,7 @@ class ViewControl implements maplibregl.IControl {
   private buildLayerControl(): HTMLElement {
     const wrap = document.createElement('details')
     wrap.open = true
+    this.layersDetails = wrap
     wrap.className = 'rounded-xl border border-ink-900/10 bg-white'
     const sum = document.createElement('summary')
     sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
@@ -918,6 +923,24 @@ class ViewControl implements maplibregl.IControl {
     this.fillSelect()
 
     body.appendChild(this.buildLayerControl())
+
+    // Assistant answers: a drop-down section under the layers. The layers fold away when an answer arrives.
+    const rw = document.createElement('details')
+    rw.open = true
+    rw.className = 'rounded-xl border border-ink-900/10 bg-white'
+    rw.style.display = 'none'
+    const rsum = document.createElement('summary')
+    rsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
+    const rst = document.createElement('span')
+    rst.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    rst.textContent = 'Answers from the assistant'
+    rsum.appendChild(rst)
+    const rslot = document.createElement('div')
+    rslot.className = 'border-t border-ink-900/10 p-2.5'
+    rw.append(rsum, rslot)
+    body.appendChild(rw)
+    this.resultsWrap = rw
+    this.resultsSlot = rslot
 
     // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
     const dock = document.createElement('div')
@@ -1047,6 +1070,16 @@ class ViewControl implements maplibregl.IControl {
     map.resize()
     const [w, s, e, n] = this.pack.regionBounds
     map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
+  }
+
+  /** Show the answers section (and fold the layers away), or hide it (and reopen the layers). */
+  showResults(show: boolean) {
+    if (!this.resultsWrap) return
+    this.resultsWrap.style.display = show ? '' : 'none'
+    if (show) {
+      this.resultsWrap.open = true
+      if (this.layersDetails) this.layersDetails.open = false
+    } else if (this.layersDetails) this.layersDetails.open = true
   }
 
   /** Open or close the chat in the dock. */
@@ -1738,6 +1771,7 @@ export default function CityContextLayers({
     map.addControl(nav, 'bottom-right')
     controlRef.current = ctrl
     setChatSlot(ctrl.chatSlot)
+    setResultsSlot(ctrl.resultsSlot)
     if (map.getSource(SRC.sources)) ctrl.afterLayersAdded()
     loadPack(pack.base)
       .then((d) => ctrl.setPackData(d))
@@ -1745,6 +1779,7 @@ export default function CityContextLayers({
     return () => {
       controlRef.current = null
       setChatSlot(null)
+      setResultsSlot(null)
       try {
         map.removeControl(nav)
         map.removeControl(ctrl)
@@ -1776,6 +1811,7 @@ export default function CityContextLayers({
   // controls the viewer uses: the layer switches and the district picker.
   const [chatOpen, setChatOpen] = useState(false)
   const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null)
+  const [resultsSlot, setResultsSlot] = useState<HTMLElement | null>(null)
   useEffect(() => { controlRef.current?.setChatOpen(chatOpen) }, [chatOpen])
   const [factsDoc, setFactsDoc] = useState<FactsDoc | null>(null)
   useEffect(() => {
@@ -1789,6 +1825,7 @@ export default function CityContextLayers({
     <MapAssistant
       container={map.getContainer()}
       slot={chatSlot}
+      resultsSlot={resultsSlot}
       open={chatOpen}
       onOpenChange={setChatOpen}
       layers={CONTEXT_LAYER_DEFS.map((d) => ({ key: d.key, label: d.label, note: d.note }))}
@@ -1806,6 +1843,7 @@ export default function CityContextLayers({
           zoom: map.getZoom(),
           view3d: controlRef.current?.is3D === true,
         }),
+        onResults: (has) => controlRef.current?.showResults(has),
         zoom: (direction) => (direction === 'in' ? map.zoomIn({ duration: 600 }) : map.zoomOut({ duration: 600 })),
       }}
     />
