@@ -27,6 +27,7 @@ export interface DistrictProfile {
     rose_all_pct: number[]
     rose_winter_pct: number[]
   } | null
+  groundwater?: { stage_pct: number | null; net_ham: number | null; draft_ham: number | null; blocks: Record<string, number> } | null
 }
 
 export interface ProfilesDoc {
@@ -39,6 +40,7 @@ export type FactField =
   | 'tree_cover_pct' | 'cropland_pct' | 'builtup_pct' | 'water_pct'
   | 'monitors_continuous' | 'monitors_manual' | 'monitors_planned'
   | 'annual_rainfall' | 'monsoon_rain_pct' | 'winter_wind_speed' | 'winter_wind_from' | 'monsoon_wind_from'
+  | 'groundwater_stage'
 
 interface FieldDef {
   /** A text value (e.g. a compass direction); such fields cannot be ranked. */
@@ -54,6 +56,7 @@ const ISFR = 'Forest Survey of India, ISFR 2023'
 const ESA = 'ESA WorldCover 2021 (satellite, 10 m); shares computed by Vayu Gati'
 const DEM = 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati'
 
+const CGWB = 'Central Ground Water Board, Dynamic Ground Water Resources 2020, via India-WRIS'
 const ERA5 = 'ERA5 reanalysis (ECMWF / Copernicus), 2015-2024, about a 30 km grid: the area\'s climate, not a town\'s'
 
 export const FIELD_DEFS: Record<FactField, FieldDef> = {
@@ -74,6 +77,7 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   monsoon_wind_from: { label: 'Monsoon wind mostly from (Jun-Sep)', unit: '', get: () => null, text: (p) => p.climate?.wind_from?.monsoon, source: ERA5 },
   annual_rainfall: { label: 'Average yearly rainfall', unit: ' mm', get: (p) => p.climate?.rain_annual_mm, source: ERA5 },
   monsoon_rain_pct: { label: 'Share of rain in the monsoon (Jun-Sep)', unit: '%', get: (p) => p.climate?.rain_monsoon_pct, decimals: 1, source: ERA5 },
+  groundwater_stage: { label: 'Ground water drawn each year (share of what is replenished)', unit: '%', get: (p) => p.groundwater?.stage_pct, decimals: 1, source: CGWB },
   winter_wind_speed: { label: 'Average winter wind speed (Dec-Feb)', unit: ' m/s', get: (p) => p.climate?.wind_mean_ms?.winter, decimals: 1, source: ERA5 },
 }
 

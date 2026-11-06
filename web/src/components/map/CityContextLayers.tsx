@@ -73,6 +73,10 @@ const FILES = {
   majorrivers: 'majorrivers.geojson',
   basins: 'basins.geojson',
   dams: 'dams.geojson',
+  blocks: 'blocks.geojson',
+  assembly: 'assembly.geojson',
+  monitors: 'monitors.geojson',
+  canals: 'canals.geojson',
 } as const
 /** Files the code itself needs (the state mask, district lookup and heat-detection dates). Everything else is given to
  *  MapLibre as a URL, so each layer loads on its own: one slow or missing file cannot hold up the rest. */
@@ -140,6 +144,10 @@ const SRC = {
   majorrivers: 'ctx-majorrivers',
   basins: 'ctx-basins',
   dams: 'ctx-dams',
+  blocks: 'ctx-blocks',
+  assembly: 'ctx-assembly',
+  monitors: 'ctx-monitors',
+  canals: 'ctx-canals',
 } as const
 
 /** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
@@ -149,6 +157,7 @@ const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
   'ctx-protected': ['protected'], 'ctx-places': ['places'], 'ctx-facilities': ['facilities'],
   'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'], 'ctx-kilns': ['kilns'], 'ctx-builtup': ['builtup'],
   'ctx-majorrivers': ['majorrivers'], 'ctx-basins': ['basins'], 'ctx-dams': ['dams'],
+  'ctx-blocks': ['blocks', 'groundwater'], 'ctx-assembly': ['constituencies'], 'ctx-monitors': ['monitors'], 'ctx-canals': ['canals'],
 }
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -164,6 +173,11 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   majorrivers: ['ctx-majorrivers-line', 'ctx-majorrivers-label'],
   basins: ['ctx-basins-line', 'ctx-basins-label'],
   dams: ['ctx-dams', 'ctx-dams-label'],
+  canals: ['ctx-canals-line'],
+  groundwater: ['ctx-groundwater-fill'],
+  monitors: ['ctx-monitors'],
+  blocks: ['ctx-blocks-fill', 'ctx-blocks-line', 'ctx-blocks-label'],
+  constituencies: ['ctx-assembly-line', 'ctx-assembly-label'],
   places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
   builtup: ['ctx-builtup-fill'],
   facilities: ['ctx-facilities'],
@@ -178,10 +192,10 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-plants', 'ctx-dams', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
+const CLICKABLE = ['ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
-  'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
-  'ctx-districts-fill']
+  'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
+  'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -288,7 +302,7 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   if (landcover) {
     map.addSource('ctx-landcover', { type: 'image', url: `${base}/landcover_2021.png`, coordinates: landcover.coordinates })
     map.addLayer({ id: 'ctx-landcover', type: 'raster', source: 'ctx-landcover', layout: { visibility: vis('landcover') },
-      paint: { 'raster-opacity': 0.8, 'raster-resampling': 'nearest' } })
+      paint: { 'raster-opacity': 0.5, 'raster-resampling': 'nearest' } })
   }
   map.addSource('ctx-nightlights', {
     type: 'raster',
@@ -308,6 +322,11 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
   map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
+  map.addLayer({ id: 'ctx-groundwater-fill', type: 'fill', source: SRC.blocks, layout: { visibility: vis('groundwater') },
+    paint: { 'fill-color': ['match', ['get', 'gw_class'], 'Safe', '#7CC576', 'Semi-Critical', '#F2D45C', 'Critical', '#F29B4B',
+      'Over Exploited', '#D9534F', '#BDBDBD'], 'fill-opacity': 0.55 } })
+  map.addLayer({ id: 'ctx-blocks-fill', type: 'fill', source: SRC.blocks, layout: { visibility: vis('blocks') },
+    paint: { 'fill-color': '#000000', 'fill-opacity': 0 } })
   map.addLayer({ id: 'ctx-water-fill', type: 'fill', source: SRC.water, layout: { visibility: vis('water') },
     paint: { 'fill-color': '#3B82C4', 'fill-opacity': 0.75 } })
   map.addLayer({ id: 'ctx-basins-line', type: 'line', source: SRC.basins, layout: { visibility: vis('basins') },
@@ -315,6 +334,12 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-rivers-line', type: 'line', source: SRC.rivers, layout: { visibility: vis('water') },
     paint: { 'line-color': '#3B82C4', 'line-width': ['interpolate', ['linear'], ['zoom'], 6,
       ['match', ['get', 'kind'], 'river', 0.8, 0.4], 11, ['match', ['get', 'kind'], 'river', 2.4, 1.2]] } })
+  map.addLayer({ id: 'ctx-blocks-line', type: 'line', source: SRC.blocks, minzoom: 6.5, layout: { visibility: vis('blocks') },
+    paint: { 'line-color': '#7A7A7A', 'line-width': 0.9, 'line-dasharray': [3, 2] } })
+  map.addLayer({ id: 'ctx-assembly-line', type: 'line', source: SRC.assembly, minzoom: 6.5, layout: { visibility: vis('constituencies') },
+    paint: { 'line-color': '#7E57C2', 'line-width': 1.1, 'line-dasharray': [5, 3] } })
+  map.addLayer({ id: 'ctx-canals-line', type: 'line', source: SRC.canals, minzoom: 7, layout: { visibility: vis('canals') },
+    paint: { 'line-color': '#4FA3D9', 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.7, 12, 2] } })
   map.addLayer({ id: 'ctx-majorrivers-line', type: 'line', source: SRC.majorrivers, layout: { visibility: vis('majorrivers'), 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': '#1D6FB8', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 11, 3.2] } })
   map.addLayer({
@@ -401,10 +426,20 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-landmarks', type: 'circle', source: SRC.landmarks, minzoom: 7, layout: { visibility: vis('landmarks') },
     paint: { 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
       'circle-color': ['match', ['get', 'kind'], 'peak', '#6D4C41', 'waterfall', '#0288D1', '#455A64'] } })
+  map.addLayer({ id: 'ctx-monitors', type: 'circle', source: SRC.monitors, minzoom: 7, layout: { visibility: vis('monitors') },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.5, 12, 5],
+      'circle-color': ['match', ['get', 'kind'], 'groundwater_level', '#00796B', 'water_quality', '#C2185B', 'rainfall', '#0277BD', '#283593'],
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 0.9 } })
   map.addLayer({ id: 'ctx-dams', type: 'circle', source: SRC.dams, layout: { visibility: vis('dams') },
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6.5], 'circle-color': '#0B3C7D',
       'circle-stroke-color': '#fff', 'circle-stroke-width': 1.3 } })
   if (font) {
+    map.addLayer({ id: 'ctx-blocks-label', type: 'symbol', source: SRC.blocks, minzoom: 8.5,
+      layout: { visibility: vis('blocks'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10, 'text-max-width': 7, 'text-optional': true },
+      paint: { 'text-color': '#4A4A4A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
+    map.addLayer({ id: 'ctx-assembly-label', type: 'symbol', source: SRC.assembly, minzoom: 8,
+      layout: { visibility: vis('constituencies'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10, 'text-max-width': 7, 'text-optional': true },
+      paint: { 'text-color': '#5E3FA0', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
     map.addLayer({ id: 'ctx-basins-label', type: 'symbol', source: SRC.basins, minzoom: 6,
       filter: ['!=', ['get', 'sub_basin'], ''], layout: { visibility: vis('basins'),
         'text-field': ['get', 'sub_basin'], 'text-font': font, 'text-size': 10, 'text-max-width': 8, 'text-optional': true },
@@ -598,6 +633,51 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     if (props.owner) rows.push(['Managed by', String(props.owner)])
     note = 'Large dams only; smaller dams are not in the register.'
     source = `National Register of Large Dams (Central Water Commission), via India-WRIS${props.nrld ? `; register no. ${props.nrld}` : ''}.`
+  } else if (layerId === 'ctx-places-village' || layerId === 'ctx-places-town') {
+    const fmt = (v: unknown, d = 0) => (v == null || v === '' ? null : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d }))
+    const isVillage = props.kind === 'village'
+    eyebrow = isVillage ? 'Village' : `${props.kind === 'city' ? 'City' : 'Town'}${props.status ? ` · ${props.status}` : ''}`
+    title = String(props.name || eyebrow)
+    const pop = fmt(props.pop)
+    if (pop) rows.push(['Population (2011)', pop])
+    if (!isVillage && props.pop2001) rows.push(['Population (2001)', fmt(props.pop2001) ?? ''])
+    if (fmt(props.hh)) rows.push(['Households', fmt(props.hh) ?? ''])
+    if (fmt(props.km2, 2)) rows.push(['Area', `${fmt(props.km2, 2)} km²`])
+    if (!isVillage && fmt(props.density)) rows.push(['Density', `${fmt(props.density)} per km²`])
+    if (!isVillage && fmt(props.sex_ratio)) rows.push(['Sex ratio', `${fmt(props.sex_ratio)} females per 1,000 males`])
+    if (isVillage && props.block) rows.push(['Block', String(props.block)])
+    if (district) rows.push(['District', district])
+    source = `Census of India 2011 (${isVillage ? 'village' : 'town'} directory), via India-WRIS. Point is approximate.`
+  } else if (layerId === 'ctx-blocks-fill' || layerId === 'ctx-groundwater-fill') {
+    eyebrow = 'Block (CD block)'
+    title = String(props.name || 'Block')
+    if (props.district) rows.push(['District', String(props.district)])
+    if (props.gw_class) {
+      rows.push(['Ground water', String(props.gw_class).replace('Over Exploited', 'Over-exploited')])
+      if (props.gw_stage_pct != null && props.gw_stage_pct !== '') rows.push(['Drawn each year', `${Number(props.gw_stage_pct).toFixed(1)}% of what is replenished`])
+      if (props.gw_net_ham != null && props.gw_net_ham !== '') rows.push(['Net available', `${Number(props.gw_net_ham).toLocaleString('en-IN')} ham`])
+      if (props.gw_draft_ham != null && props.gw_draft_ham !== '') rows.push(['Drawn', `${Number(props.gw_draft_ham).toLocaleString('en-IN')} ham`])
+      note = 'ham = hectare-metre (10,000 m³). Block status is the 2020 assessment; it can differ from local conditions.'
+    } else {
+      note = 'No ground water assessment is listed for this block.'
+    }
+    source = 'Block boundary: India-WRIS. Ground water: Central Ground Water Board, Dynamic Ground Water Resources 2020, via India-WRIS.'
+  } else if (layerId === 'ctx-monitors') {
+    const label: Record<string, string> = { groundwater_level: 'Ground water level station', water_quality: 'Water quality station', rainfall: 'Rainfall station', reservoir: 'Reservoir station' }
+    eyebrow = label[String(props.kind)] ?? 'Monitoring station'
+    title = String(props.name || props.code || 'Station')
+    if (props.agency) rows.push(['Agency', String(props.agency)])
+    if (props.medium) rows.push(['Water', String(props.medium)])
+    if (props.block) rows.push(['Block', String(props.block)])
+    if (district) rows.push(['District', district])
+    note = 'A listed monitoring site. Readings are published on India-WRIS.'
+    source = 'India-WRIS water information system (agency as listed).'
+  } else if (layerId === 'ctx-canals-line') {
+    eyebrow = String(props.kind || 'Canal')
+    title = String(props.name || 'Canal')
+    if (props.project) rows.push(['Project', String(props.project)])
+    if (district) rows.push(['District', district])
+    source = 'India-WRIS (Central Water Commission), water-resource project canals.'
   } else if (layerId === 'ctx-majorrivers-line') {
     eyebrow = 'Major river'
     title = String(props.name || 'River')
@@ -806,6 +886,7 @@ interface DistrictProfile {
   monitors_continuous_in_feed: number | null
   monitors_manual_namp: number | null
   monitors_planned_jspcb: number | null
+  groundwater?: { stage_pct: number | null; net_ham: number | null; draft_ham: number | null; blocks: Record<string, number> } | null
   mining_area_km2: number | null
   landcover_pct?: Record<string, number> | null
   climate?: {
@@ -1597,6 +1678,26 @@ class ViewControl implements maplibregl.IControl {
     } else csec.appendChild(el('p', 'text-slate-300', NA))
     panes.nature.appendChild(csec)
 
+    // Ground water (CGWB 2020)
+    const gw = p.groundwater
+    const gsec = el('div', 'mt-3')
+    gsec.appendChild(label('Ground water (CGWB 2020)'))
+    if (gw && gw.stage_pct != null) {
+      const stats = el('div', 'grid grid-cols-2 gap-1.5')
+      const stat = (k: string, v: string) => {
+        const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
+        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-xl font-bold leading-none text-slate-900', v))
+        stats.appendChild(t)
+      }
+      stat('Drawn each year', `${nf1.format(gw.stage_pct)}%`)
+      const total = Object.values(gw.blocks).reduce((a, b) => a + b, 0)
+      stat('Blocks rated safe', total ? `${gw.blocks.Safe ?? 0} of ${total}` : NA)
+      gsec.appendChild(stats)
+      gsec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-slate-500',
+        'Share of the yearly replenishable ground water that is drawn. Under 70% is rated safe; over 100% is over-exploited. Turn on "Ground water by block" to see each block.'))
+    } else gsec.appendChild(el('p', 'text-slate-300', NA))
+    panes.nature.appendChild(gsec)
+
     // In the district
     const rows = el('div', 'mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white')
     const row = (k: string, v: string, sub?: string) => {
@@ -1622,7 +1723,7 @@ class ViewControl implements maplibregl.IControl {
     const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-slate-500')
     for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
       ['landcover', 'Land cover'], ['power_plants', 'Plants and works'],
-      ['monitors', 'Monitors'], ['climate', 'Rain and wind'], ['outline', 'Outline']] as const) {
+      ['monitors', 'Monitors'], ['climate', 'Rain and wind'], ['groundwater', 'Ground water'], ['outline', 'Outline']] as const) {
       if (src[k]) {
         const li = el('li', '')
         li.append(el('span', 'font-semibold text-slate-600', `${lab}: `), document.createTextNode(src[k]))

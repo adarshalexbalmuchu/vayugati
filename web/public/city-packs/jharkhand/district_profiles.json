@@ -7,6 +7,7 @@
   "power_plants": "Power plants and large works whose names and operators were checked by Vayu Gati, Nov 2026; locations from OpenStreetMap",
   "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
   "mining_area_km2": "No official district-wise figure found",
+  "groundwater": "Central Ground Water Board, Dynamic Ground Water Resources of India 2020 (stage of extraction = yearly draft as a share of the net yearly availability), via India-WRIS (Ministry of Jal Shakti)",
   "climate": "ERA5 reanalysis (ECMWF / Copernicus Climate Change Service), hourly 10 m wind and precipitation, 2015-2024, via Open-Meteo archive API. About a 30 km grid: the climate of the area, not a measurement at a town. Wind direction is where the wind blows FROM.",
   "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at about 180 m over the district outline",
   "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file"
@@ -51,6 +52,16 @@
     "Built-up": 2.6,
     "Bare / sparse vegetation": 0.5,
     "Permanent water": 2.4
+   },
+   "groundwater": {
+    "stage_pct": 43.9,
+    "net_ham": 22338,
+    "draft_ham": 9801,
+    "blocks": {
+     "Over Exploited": 1,
+     "Safe": 7,
+     "Semi-Critical": 1
+    }
    },
    "climate": {
     "rain_annual_mm": 1456,
@@ -135,6 +146,14 @@
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.3
    },
+   "groundwater": {
+    "stage_pct": 35.0,
+    "net_ham": 23604,
+    "draft_ham": 8270,
+    "blocks": {
+     "Safe": 12
+    }
+   },
    "climate": {
     "rain_annual_mm": 1225,
     "rain_monsoon_pct": 84.1,
@@ -212,6 +231,15 @@
     "Built-up": 1.5,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 1.2
+   },
+   "groundwater": {
+    "stage_pct": 52.1,
+    "net_ham": 14269,
+    "draft_ham": 7439,
+    "blocks": {
+     "Safe": 9,
+     "Semi-Critical": 1
+    }
    },
    "climate": {
     "rain_annual_mm": 1274,
@@ -305,6 +333,18 @@
     "Bare / sparse vegetation": 1.5,
     "Permanent water": 2.7
    },
+   "groundwater": {
+    "stage_pct": 67.1,
+    "net_ham": 23577,
+    "draft_ham": 15824,
+    "blocks": {
+     "Safe": 5,
+     "Critical": 1,
+     "Semi-Critical": 1,
+     "Over Exploited": 1,
+     "Not Assessed": 1
+    }
+   },
    "climate": {
     "rain_annual_mm": 1505,
     "rain_monsoon_pct": 79.2,
@@ -382,6 +422,14 @@
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 1.3
+   },
+   "groundwater": {
+    "stage_pct": 22.1,
+    "net_ham": 25366,
+    "draft_ham": 5616,
+    "blocks": {
+     "Safe": 10
+    }
    },
    "climate": {
     "rain_annual_mm": 1385,
@@ -461,6 +509,15 @@
     "Bare / sparse vegetation": 0.7,
     "Permanent water": 1.6
    },
+   "groundwater": {
+    "stage_pct": 33.2,
+    "net_ham": 27991,
+    "draft_ham": 9286,
+    "blocks": {
+     "Safe": 18,
+     "Semi-Critical": 1
+    }
+   },
    "climate": {
     "rain_annual_mm": 1353,
     "rain_monsoon_pct": 86.6,
@@ -538,6 +595,14 @@
     "Built-up": 1.2,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.5
+   },
+   "groundwater": {
+    "stage_pct": 34.1,
+    "net_ham": 38822,
+    "draft_ham": 13255,
+    "blocks": {
+     "Safe": 13
+    }
    },
    "climate": {
     "rain_annual_mm": 1192,
@@ -622,6 +687,14 @@
     "Bare / sparse vegetation": 0.3,
     "Permanent water": 0.2
    },
+   "groundwater": {
+    "stage_pct": 20.6,
+    "net_ham": 19334,
+    "draft_ham": 3989,
+    "blocks": {
+     "Safe": 9
+    }
+   },
    "climate": {
     "rain_annual_mm": 1244,
     "rain_monsoon_pct": 76.4,
@@ -699,6 +772,14 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.5,
     "Permanent water": 0.6
+   },
+   "groundwater": {
+    "stage_pct": 15.4,
+    "net_ham": 33214,
+    "draft_ham": 5122,
+    "blocks": {
+     "Safe": 12
+    }
    },
    "climate": {
     "rain_annual_mm": 1474,
@@ -778,6 +859,15 @@
     "Bare / sparse vegetation": 0.3,
     "Permanent water": 1.0
    },
+   "groundwater": {
+    "stage_pct": 37.4,
+    "net_ham": 29843,
+    "draft_ham": 11153,
+    "blocks": {
+     "Safe": 15,
+     "Semi-Critical": 1
+    }
+   },
    "climate": {
     "rain_annual_mm": 1275,
     "rain_monsoon_pct": 80.9,
@@ -856,6 +946,14 @@
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 2.0
    },
+   "groundwater": {
+    "stage_pct": 41.0,
+    "net_ham": 8328,
+    "draft_ham": 3418,
+    "blocks": {
+     "Safe": 6
+    }
+   },
    "climate": {
     "rain_annual_mm": 1413,
     "rain_monsoon_pct": 77.7,
@@ -933,6 +1031,14 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.2
+   },
+   "groundwater": {
+    "stage_pct": 25.6,
+    "net_ham": 12312,
+    "draft_ham": 3147,
+    "blocks": {
+     "Safe": 6
+    }
    },
    "climate": {
     "rain_annual_mm": 1472,
@@ -1017,6 +1123,14 @@
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 1.1
    },
+   "groundwater": {
+    "stage_pct": 56.7,
+    "net_ham": 6405,
+    "draft_ham": 3633,
+    "blocks": {
+     "Safe": 6
+    }
+   },
    "climate": {
     "rain_annual_mm": 1173,
     "rain_monsoon_pct": 80.7,
@@ -1095,6 +1209,14 @@
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.4
    },
+   "groundwater": {
+    "stage_pct": 28.3,
+    "net_ham": 22061,
+    "draft_ham": 6247,
+    "blocks": {
+     "Safe": 9
+    }
+   },
    "climate": {
     "rain_annual_mm": 1312,
     "rain_monsoon_pct": 84.9,
@@ -1172,6 +1294,14 @@
     "Built-up": 0.7,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.2
+   },
+   "groundwater": {
+    "stage_pct": 14.8,
+    "net_ham": 17052,
+    "draft_ham": 2522,
+    "blocks": {
+     "Safe": 7
+    }
    },
    "climate": {
     "rain_annual_mm": 1399,
@@ -1252,6 +1382,14 @@
     "Permanent water": 0.3,
     "Herbaceous wetland": 0.0
    },
+   "groundwater": {
+    "stage_pct": 13.8,
+    "net_ham": 22015,
+    "draft_ham": 3050,
+    "blocks": {
+     "Safe": 6
+    }
+   },
    "climate": {
     "rain_annual_mm": 1598,
     "rain_monsoon_pct": 76.5,
@@ -1330,6 +1468,14 @@
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 1.3
    },
+   "groundwater": {
+    "stage_pct": 31.5,
+    "net_ham": 32055,
+    "draft_ham": 10089,
+    "blocks": {
+     "Safe": 20
+    }
+   },
    "climate": {
     "rain_annual_mm": 1265,
     "rain_monsoon_pct": 87.5,
@@ -1407,6 +1553,14 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.3
+   },
+   "groundwater": {
+    "stage_pct": 8.8,
+    "net_ham": 45026,
+    "draft_ham": 3965,
+    "blocks": {
+     "Safe": 18
+    }
    },
    "climate": {
     "rain_annual_mm": 1583,
@@ -1491,6 +1645,15 @@
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 1.0
    },
+   "groundwater": {
+    "stage_pct": 23.4,
+    "net_ham": 26114,
+    "draft_ham": 6105,
+    "blocks": {
+     "Safe": 10,
+     "Over Exploited": 1
+    }
+   },
    "climate": {
     "rain_annual_mm": 1553,
     "rain_monsoon_pct": 76.0,
@@ -1569,6 +1732,15 @@
     "Bare / sparse vegetation": 0.7,
     "Permanent water": 1.4
    },
+   "groundwater": {
+    "stage_pct": 55.3,
+    "net_ham": 11458,
+    "draft_ham": 6339,
+    "blocks": {
+     "Semi-Critical": 2,
+     "Safe": 3
+    }
+   },
    "climate": {
     "rain_annual_mm": 1351,
     "rain_monsoon_pct": 81.5,
@@ -1646,6 +1818,16 @@
     "Built-up": 2.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.8
+   },
+   "groundwater": {
+    "stage_pct": 41.5,
+    "net_ham": 39441,
+    "draft_ham": 16369,
+    "blocks": {
+     "Safe": 15,
+     "Semi-Critical": 2,
+     "Critical": 1
+    }
    },
    "climate": {
     "rain_annual_mm": 1457,
@@ -1726,6 +1908,14 @@
     "Permanent water": 3.8,
     "Herbaceous wetland": 0.6
    },
+   "groundwater": {
+    "stage_pct": 15.2,
+    "net_ham": 25959,
+    "draft_ham": 3950,
+    "blocks": {
+     "Safe": 7
+    }
+   },
    "climate": {
     "rain_annual_mm": 1501,
     "rain_monsoon_pct": 77.4,
@@ -1804,6 +1994,14 @@
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 3.2
    },
+   "groundwater": {
+    "stage_pct": 19.5,
+    "net_ham": 16430,
+    "draft_ham": 3210,
+    "blocks": {
+     "Safe": 9
+    }
+   },
    "climate": {
     "rain_annual_mm": 1648,
     "rain_monsoon_pct": 79.1,
@@ -1880,6 +2078,14 @@
     "Built-up": 0.1,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.8
+   },
+   "groundwater": {
+    "stage_pct": 12.4,
+    "net_ham": 21416,
+    "draft_ham": 2648,
+    "blocks": {
+     "Safe": 10
+    }
    },
    "climate": {
     "rain_annual_mm": 1701,

@@ -107,6 +107,32 @@ def main() -> None:
     landcover = json.load(open(lc_path))["districts"] if lc_path.exists() else {}
     clim_path = OUT / "district_climate.json"
     climate = json.load(open(clim_path)) if clim_path.exists() else {"districts": {}, "source": None}
+    # Ground water (CGWB Dynamic Ground Water Resources 2020, via India-WRIS): the district record is matched to ours by
+    # outline overlap (the two sources spell district names differently), the block counts come from the block layer.
+    gw_dist = []
+    gw_path = SRC / "wris" / "gwr_districts.geojson"
+    if gw_path.exists():
+        gw_dist = [(make_valid(shape(f["geometry"])), f["properties"]) for f in json.load(open(gw_path))["features"]]
+    blocks_path = OUT / "state_blocks.geojson"
+    block_feats = json.load(open(blocks_path))["features"] if blocks_path.exists() else []
+
+    def groundwater(geom, name):
+        best, share = None, 0.0
+        for g2, props in gw_dist:
+            u = geom.union(g2).area
+            if u and geom.intersection(g2).area / u > share:
+                best, share = props, geom.intersection(g2).area / u
+        if best is None or share < 0.7:
+            return None
+        counts = {}
+        for b in block_feats:
+            if b["properties"].get("district") == name and b["properties"].get("gw_class"):
+                counts[b["properties"]["gw_class"]] = counts.get(b["properties"]["gw_class"], 0) + 1
+        return {"stage_pct": round(float(best["sod"]), 1) if best.get("sod") is not None else None,
+                "net_ham": round(float(best["nagwa"])) if best.get("nagwa") is not None else None,
+                "draft_ham": round(float(best["agwd_tot"])) if best.get("agwd_tot") is not None else None,
+                "blocks": counts}
+
     profiles = {}
     for d in districts:
         p = d["properties"]
@@ -137,6 +163,7 @@ def main() -> None:
             "monitors_planned_jspcb": p.get("planned_caaqms"),
             "mining_area_km2": None,
             "landcover_pct": landcover.get(name),
+            "groundwater": groundwater(g, name),
             "climate": {k: v for k, v in climate["districts"].get(name, {}).items() if k not in ("lat", "lng")} or None,
         }
         print(f"{name:22s} area {f['area_km2_soi']:>5}  pop {census[name]:>8}  median {med:>4} m, highest {hi:>4} m  "
@@ -156,6 +183,8 @@ def main() -> None:
             "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); "
                         "JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
             "mining_area_km2": "No official district-wise figure found",
+            "groundwater": "Central Ground Water Board, Dynamic Ground Water Resources of India 2020 (stage of extraction = "
+                           "yearly draft as a share of the net yearly availability), via India-WRIS (Ministry of Jal Shakti)",
             "climate": climate["source"],
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",

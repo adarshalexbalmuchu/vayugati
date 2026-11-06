@@ -43,11 +43,13 @@ FIELDS = (
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "tree_cover_pct",
     "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual", "monitors_planned",
     "annual_rainfall", "monsoon_rain_pct", "winter_wind_speed", "winter_wind_from", "monsoon_wind_from",
+    "groundwater_stage",
 )
 FieldName = Literal[
     "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "tree_cover_pct",
     "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual", "monitors_planned",
     "annual_rainfall", "monsoon_rain_pct", "winter_wind_speed", "winter_wind_from", "monsoon_wind_from",
+    "groundwater_stage",
 ]
 class SetLayersAction(BaseModel):
     type: Literal["set_layers"]

@@ -949,6 +949,131 @@ def wris() -> None:
 
 
 
+CANAL_TYPE = {1: "Main canal", 2: "Branch canal", 3: "Distributary", 4: "Minor", 5: "Sub-minor", 6: "Sub-sub-minor",
+              7: "Power channel", 8: "Feeder", 9: "Approach channel", 10: "Pipe", 11: "Other"}
+
+
+def _norm(name: str) -> str:
+    import re
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def _clean_town(name: str) -> str:
+    import re
+    return re.sub(r"\s*\([^)]*\)\s*$", "", (name or "").strip()).strip()
+
+
+def wris_census() -> None:
+    """Census 2011 villages and towns, CD blocks with ground water assessment, assembly constituencies, water monitoring
+    stations and canals, all from India-WRIS (fetched by wris_fetch.py). Values are copied as published."""
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+    districts = [(f["properties"]["name"], make_valid(shape(f["geometry"])))
+                 for f in json.load(open(OUT / "districts.geojson"))["features"]]
+
+    def load(name):
+        return json.load(open(WRIS / f"{name}.geojson"))["features"]
+
+    def district_of(g):
+        pt = g.representative_point()
+        for name, dg in districts:
+            if dg.contains(pt):
+                return name
+        return ""
+
+    # Towns and villages (replace the volunteer-mapped places).
+    places = []
+    for f in load("towns"):
+        p = f["properties"]
+        g = f["geometry"]
+        pop = p.get("town_population_census_2011") or p.get("total_population_of_town")
+        places.append({"type": "Feature", "geometry": g, "properties": {
+            "kind": "city" if p.get("class") == "I" else "town", "name": _clean_town(p.get("town_name")),
+            "status": (p.get("civic_status_of_town") or "").strip(), "pop": int(pop) if pop is not None else None,
+            "pop2001": int(p["town_population_census_2001"]) if p.get("town_population_census_2001") else None,
+            "hh": int(p["total_households"]) if p.get("total_households") is not None else None,
+            "km2": p.get("area_sqkm"), "density": p.get("density_census_2011"), "sex_ratio": p.get("sex_ratio_census_2011"),
+            "district": p.get("district_name") or ""}})
+    n_towns = len(places)
+    for f in load("villages"):
+        p = f["properties"]
+        ha = p.get("total_geographical_area__in_hec")
+        places.append({"type": "Feature", "geometry": f["geometry"], "properties": {
+            "kind": "village", "name": (p.get("village_name") or "").strip(), "pop": p.get("total_population_of_village"),
+            "hh": p.get("total___households"), "km2": round(ha / 100, 2) if ha is not None else None,
+            "block": (p.get("cd_block_name") or "").strip()}})
+    _save("state_places_census.geojson", _fc(places))
+    print(f"census places: {n_towns} towns, {len(places) - n_towns} villages")
+
+    # CD blocks, each with the CGWB ground water assessment of the block it overlaps most (both are block maps of the
+    # same 260 blocks, but spell names differently, so they are joined by area, not by name).
+    from shapely.strtree import STRtree
+    gwf = [(make_valid(shape(f["geometry"])), f["properties"]) for f in load("gwr_blocks")]
+    tree = STRtree([g for g, _ in gwf])
+    blocks, weak = [], []
+    for f in load("blocks"):
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if g.is_empty:
+            continue
+        name = (f["properties"].get("block_name") or f["properties"].get("block") or "").strip()
+        props = {"name": name, "district": district_of(g)}
+        best, share = None, 0.0
+        for i in tree.query(g):
+            inter = g.intersection(gwf[i][0]).area
+            union = g.union(gwf[i][0]).area
+            if union and inter / union > share:
+                best, share = gwf[i][1], inter / union
+        if best is not None and share >= 0.6:
+            props.update({"gw_class": best.get("class") or "", "gw_stage_pct": _num(best.get("sgw_dev_pe")),
+                          "gw_net_ham": _num(best.get("na_gwa")), "gw_draft_ham": _num(best.get("agwd_tot"))})
+            if _norm(best.get("block")) != _norm(name):
+                weak.append(f"{name} ~ {best.get('block')} ({share:.2f})")
+        else:
+            weak.append(f"{name}: NO ground water match (best overlap {share:.2f})")
+        blocks.append(_feat(g, **props))
+    _save("state_blocks.geojson", _fc(blocks))
+    withgw = sum(1 for b in blocks if "gw_class" in b["properties"])
+    print(f"blocks: {len(blocks)}, with ground water assessment: {withgw}; spelling differences / no match: {len(weak)}")
+    for w in weak[:40]:
+        print("   ", w)
+
+    # Assembly constituencies.
+    asm = [_feat(make_valid(shape(f["geometry"])).intersection(state), name=(f["properties"].get("ac_name") or "").strip())
+           for f in load("assembly")]
+    _save("state_assembly.geojson", _fc(asm))
+    print("assembly constituencies:", len(asm))
+
+    # Water monitoring stations.
+    kinds = {"stations_gw_level": "groundwater_level", "stations_quality": "water_quality",
+             "stations_rain": "rainfall", "stations_reservoir": "reservoir"}
+    mon = []
+    for file, kind in kinds.items():
+        for f in load(file):
+            p = f["properties"]
+            if not f["geometry"] or not state.contains(Point(*f["geometry"]["coordinates"][:2])):
+                continue
+            mon.append({"type": "Feature", "geometry": f["geometry"], "properties": {
+                "kind": kind, "name": (p.get("station_name") or p.get("station_code") or "").strip(),
+                "code": (p.get("station_code") or "").strip(), "agency": (p.get("agency_name") or "").strip(),
+                "medium": (p.get("station_type") or "").strip(), "district": _title(p.get("district_name")),
+                "block": _title(p.get("block_name")) if (p.get("block_name") or "").upper() != "NULL" else ""}})
+    _save("state_monitors.geojson", _fc(mon))
+    print("monitoring stations:", dict(collections.Counter(m["properties"]["kind"] for m in mon)))
+
+    # Canals in the state.
+    canals = []
+    for f in load("canals"):
+        p = f["properties"]
+        if p.get("state") != "JH":
+            continue
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if g.is_empty:
+            continue
+        canals.append(_feat(g, name=(p.get("canname") or "").strip(), kind=CANAL_TYPE.get(p.get("can_type"), ""),
+                            project=(p.get("prjname") or "").strip()))
+    _save("state_canals.geojson", _fc(canals))
+    print("canals:", len(canals))
+
+
 def pack() -> None:
     import shutil
 
@@ -966,13 +1091,17 @@ def pack() -> None:
     for name in ("state.geojson", "districts.geojson", "fires_firms_5d.geojson", "stations.geojson"):
         shutil.copy(OUT / name, web / name)
     for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
-                  "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers"):
-        if (OUT / f"state_{layer}.geojson").exists():
-            shutil.copy(OUT / f"state_{layer}.geojson", web / f"{layer}.geojson")
+                  "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers", "blocks", "assembly",
+                  "monitors", "canals"):
+        src = OUT / f"state_{layer}.geojson"
+        if layer == "places" and (OUT / "state_places_census.geojson").exists():
+            src = OUT / "state_places_census.geojson"  # Census 2011 list replaces the volunteer-mapped places
+        if src.exists():
+            shutil.copy(src, web / f"{layer}.geojson")
 
 
 STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
-         "curate": curate, "osm_base": osm_base, "landcover": landcover, "wris": wris, "pack": pack}
+         "curate": curate, "osm_base": osm_base, "landcover": landcover, "wris": wris, "wris_census": wris_census, "pack": pack}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]
