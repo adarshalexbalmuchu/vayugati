@@ -1119,6 +1119,151 @@ def wris_census() -> None:
     print("canals:", len(canals))
 
 
+GEM = REPO / "data" / "jharkhand" / "sources" / "gem"
+
+
+def _gem_owner(v) -> str:
+    """'Bharat Coking Coal Ltd [100.0%]' -> 'Bharat Coking Coal Ltd'; shared ownership keeps each share."""
+    import re
+    parts = [x.strip() for x in str(v or "").split(";") if x.strip()]
+    out = []
+    for x in parts:
+        m = re.match(r"^(.*?)\s*\[([\d.]+)%\]$", x)
+        if m and float(m.group(2)) >= 99.99 and len(parts) == 1:
+            out.append(m.group(1))
+        elif m:
+            out.append(f"{m.group(1)} ({float(m.group(2)):g}%)")
+        else:
+            out.append(x)
+    return "; ".join(out)
+
+
+def gem() -> None:
+    """Coal mines of Jharkhand from Global Energy Monitor's Global Coal Mine Tracker (August 2026 release, CC BY 4.0), with
+    the mine boundaries of its 'Coal Mine Boundaries and Methane Sources' data set (v1.0.2) where it has them. The files are
+    downloaded by hand from globalenergymonitor.org into data/jharkhand/sources/gem/ (not committed). Values are copied as
+    published; GEM's own location accuracy ('Exact' or 'Approximate') is kept."""
+    import openpyxl
+
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+    wb = openpyxl.load_workbook(GEM / "gcmt_2026-08.xlsx", read_only=True, data_only=True)
+
+    def table(sheet):
+        rows = list(wb[sheet].iter_rows(values_only=True))
+        head = [str(h).replace("\n", " ") if h else "" for h in rows[0]]
+        return [dict(zip(head, r)) for r in rows[1:]]
+
+    def val(r, k):
+        v = r.get(k)
+        return None if v in (None, "", "-") else v
+
+    def num(r, k, d=3):
+        try:
+            return round(float(r.get(k)), d)
+        except (TypeError, ValueError):
+            return None
+
+    jh = [r for r in table("Non-closed mines") if r.get("Country / Area") == "India" and str(r.get("State, Province") or "").lower().startswith("jharkhand")]
+    closed = [r for r in table("Closed mines") if r.get("Country / Area") == "India" and str(r.get("State, Province") or "").lower().startswith("jharkhand")]
+    by_id: dict[str, list] = {}
+    for r in jh:
+        by_id.setdefault(r["GEM Mine ID"], []).append(r)
+    feats, outside = [], []
+    for mid, group in by_id.items():
+        # one mine, possibly with an expansion listed as a second row: the existing mine row leads.
+        group.sort(key=lambda r: (r.get("Status") != "Operating", r.get("Status") != "Mothballed"))
+        r = group[0]
+        exp = next((g for g in group[1:] if g.get("Status") == "Proposed"), None)
+        lon, lat = num(r, "Longitude", 6), num(r, "Latitude", 6)
+        if lon is None or lat is None:
+            continue
+        pt = Point(lon, lat)
+        if not state.contains(pt):
+            outside.append(r["Mine Name"])
+            continue
+        feats.append(_feat(pt, id=mid, name=str(r["Mine Name"]).strip(), status=r.get("Status"), status_detail=val(r, "Status Detail"),
+                           owner=_gem_owner(r.get("Owners")), capacity_mtpa=num(r, "Capacity (Mtpa)"), output_mt=num(r, "Production (Mtpa)"),
+                           output_year=int(float(r["Year of Production"])) if val(r, "Year of Production") else None,
+                           mine_type=val(r, "Mine Type"), method=val(r, "Mining Method"), coal_type=val(r, "Coal Type"),
+                           grade=val(r, "Coal Grade"), opened=int(float(r["Opening Year"])) if val(r, "Opening Year") else None,
+                           coalfield=val(r, "Coalfield"), accuracy=val(r, "Location Accuracy"),
+                           workforce=int(float(r["Workforce Size"])) if val(r, "Workforce Size") else None,
+                           expansion_mtpa=num(exp, "Capacity (Mtpa)") if exp else None,
+                           expansion_status=(exp.get("Status Detail") or exp.get("Status")) if exp else None))
+    for r in closed:
+        lon, lat = num(r, "Longitude", 6), num(r, "Latitude", 6)
+        if lon is None or lat is None or not state.contains(Point(lon, lat)):
+            continue
+        feats.append(_feat(Point(lon, lat), id=r["GEM Mine ID"], name=str(r["Mine Name"]).strip(), status="Closed",
+                           status_detail=val(r, "Reason for Closure"), owner=_gem_owner(r.get("Owners")),
+                           capacity_mtpa=num(r, "Capacity (Mtpa)"), output_mt=num(r, "Production (Mtpa)"),
+                           output_year=int(float(r["Year of Production"])) if val(r, "Year of Production") else None,
+                           mine_type=val(r, "Mine Type"), method=val(r, "Mining Method"), coal_type=val(r, "Coal Type"),
+                           grade=val(r, "Coal Grade"), opened=int(float(r["Opening Year"])) if val(r, "Opening Year") else None,
+                           closed=int(float(r["Closing Year"])) if val(r, "Closing Year") else None,
+                           coalfield=val(r, "Coalfield"), accuracy=val(r, "Location Accuracy")))
+    _save("state_coalmines.geojson", _fc(feats))
+    print("GEM coal mines:", dict(collections.Counter(f["properties"]["status"] for f in feats)), "outside the state, dropped:", outside)
+
+    ids = {f["properties"]["id"]: f["properties"]["name"] for f in feats}
+    bounds = []
+    for path in sorted((GEM / "boundaries").glob("*, India, M*.geojson")):
+        mid = path.stem.rsplit(", ", 1)[-1]
+        if mid not in ids:
+            continue
+        for f in json.load(open(path))["features"]:
+            props = f["properties"]
+            if props.get("mine feature category") != "mine boundary":
+                continue
+            g = make_valid(shape(f["geometry"]))
+            note = " ".join(str(props.get("notes") or "").split())
+            bounds.append(_feat(g, id=mid, name=ids[mid], kind=props.get("mine feature subcategory") or "",
+                                dated=str(props.get("data source date") or "")[:10], note=note[:520]))
+    _save("state_coalboundaries.geojson", _fc(bounds))
+    print("GEM mine boundaries:", len(bounds), "for", len({b['properties']['id'] for b in bounds}), "mines")
+
+    # Coal power plants (Global Coal Plant Tracker, July 2026 release, CC BY 4.0): one point per plant, units listed.
+    wbp = openpyxl.load_workbook(GEM / "gcpt_2026-07.xlsx", read_only=True, data_only=True)
+    prow = list(wbp["Units"].iter_rows(values_only=True))
+    ph = [str(h) if h else "" for h in prow[0]]
+    units = [dict(zip(ph, r)) for r in prow[1:]
+             if r[ph.index("Country/Area")] == "India"
+             and str(r[ph.index("Subnational unit (province, state)")] or "").lower().startswith("jharkhand")]
+    plants: dict[str, list] = {}
+    for u in units:
+        if u["Status"] == "cancelled":
+            continue
+        plants.setdefault(u["GEM location ID"], []).append(u)
+    pfeats, pout = [], []
+    order = ["operating", "construction", "announced", "retired"]
+    for lid, us in plants.items():
+        u0 = us[0]
+        pt = Point(float(u0["Longitude"]), float(u0["Latitude"]))
+        if not state.contains(pt):
+            pout.append(u0["Plant name"])
+            continue
+        status = next(st for st in order if any(u["Status"] == st for u in us))
+        live = [u for u in us if u["Status"] == "operating"]
+        lines = []
+        for u in sorted(us, key=lambda x: (str(x.get("Unit name")), )):
+            bits = [str(u.get("Unit name") or "").strip(), f"{u['Capacity (MW)']:g} MW" if u.get("Capacity (MW)") else None, u["Status"]]
+            if u.get("Start year"):
+                bits.append(f"since {int(u['Start year'])}")
+            lines.append(" · ".join(b for b in bits if b))
+        owners = sorted({_gem_owner(u.get("Owner")) for u in us if u.get("Owner")})
+        techs = sorted({u["Combustion technology"] for u in us if u.get("Combustion technology") and u["Combustion technology"] != "unknown"})
+        captive = sorted({u["Captive industry use"] for u in us if u.get("Captive industry use")})
+        pfeats.append(_feat(pt, id=lid, name=str(u0["Plant name"]).strip(), status=status,
+                            operating_mw=round(sum(u["Capacity (MW)"] or 0 for u in live), 1) or None,
+                            total_mw=round(sum(u["Capacity (MW)"] or 0 for u in us), 1),
+                            owner="; ".join(owners), technology=", ".join(techs), captive=", ".join(captive),
+                            units="\n".join(lines[:14]) + (f"\n+{len(lines) - 14} more units" if len(lines) > 14 else ""),
+                            accuracy=u0.get("Location accuracy")))
+    _save("state_coalplants.geojson", _fc(pfeats))
+    print("GEM coal plants:", dict(collections.Counter(f["properties"]["status"] for f in pfeats)), "outside:", pout)
+
+
+
 def pack() -> None:
     import shutil
 
@@ -1137,7 +1282,7 @@ def pack() -> None:
         shutil.copy(OUT / name, web / name)
     for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
                   "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers", "blocks", "assembly",
-                  "monitors", "canals", "seismic", "aquifers"):
+                  "monitors", "canals", "seismic", "aquifers", "coalmines", "coalboundaries", "coalplants"):
         src = OUT / f"state_{layer}.geojson"
         if layer == "places" and (OUT / "state_places_census.geojson").exists():
             src = OUT / "state_places_census.geojson"  # Census 2011 list replaces the volunteer-mapped places
@@ -1148,7 +1293,7 @@ def pack() -> None:
 
 
 STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
-         "curate": curate, "osm_base": osm_base, "landcover": landcover, "wris": wris, "wris_census": wris_census, "pack": pack}
+         "curate": curate, "osm_base": osm_base, "landcover": landcover, "wris": wris, "wris_census": wris_census, "gem": gem, "pack": pack}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]

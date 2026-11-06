@@ -57,6 +57,10 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Main roads from OpenStreetMap (trunk, primary and secondary; 3 Nov 2026).' },
   { key: 'power', label: 'Power lines and substations', on: false,
     note: 'Transmission lines and substations from OpenStreetMap (3 Nov 2026).' },
+  { key: 'coalmines', label: 'Coal mines (Global Energy Monitor)', on: false,
+    note: 'The 151 coal mines of Jharkhand in Global Energy Monitor\u2019s Global Coal Mine Tracker (August 2026 release, CC BY 4.0): owner, status, capacity and output. It covers mines of 1 million tonnes a year or more and some smaller ones, so it is not a complete list. Positions GEM rates Approximate may be off; mine boundaries are shown where GEM has them.' },
+  { key: 'coalplants', label: 'Coal power plants (Global Energy Monitor)', on: false,
+    note: 'The 15 coal-fired power plants of Jharkhand in Global Energy Monitor\u2019s Global Coal Plant Tracker (July 2026 release, CC BY 4.0), with owner, unit capacities and start years. Includes captive plants of steel and other works.' },
   { key: 'mines', label: 'Mining and quarry areas', on: false,
     note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (3 Nov 2026). Not official lease boundaries; many are missing (e.g. large parts of the North Karanpura coalfield).' },
   { key: 'industry', label: 'Industry and power plants', on: false,
@@ -100,14 +104,14 @@ export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = 
   { label: 'Hazards', keys: ['seismic'] },
   { label: 'People', keys: ['places', 'builtup', 'facilities'] },
   { label: 'Transport and energy', keys: ['railways', 'roads', 'power'] },
-  { label: 'Industry and fires', keys: ['mines', 'industry', 'kilns', 'fires'] },
+  { label: 'Industry and fires', keys: ['coalmines', 'coalplants', 'mines', 'industry', 'kilns', 'fires'] },
 ]
 
 export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   districts: '#2E2219', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
   nightlights: '#E9B949', forest: '#2F7D3A', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
   majorrivers: '#1D6FB8', basins: '#5B7FA6', dams: '#0B3C7D',
-  canals: '#4FA3D9', aquifers: '#8FB8A8', seismic: '#F08A4B', groundwater: '#E8B93C', monitors: '#00796B', blocks: '#7A7A7A', constituencies: '#7E57C2',
+  canals: '#4FA3D9', coalmines: '#212121', coalplants: '#B23A48', aquifers: '#8FB8A8', seismic: '#F08A4B', groundwater: '#E8B93C', monitors: '#00796B', blocks: '#7A7A7A', constituencies: '#7E57C2',
   places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
   power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',
 }
@@ -139,6 +143,14 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
     { shape: 'dot', color: '#5B4A3A', label: 'Village (Census 2011)' },
   ],
   canals: [{ shape: 'line', color: '#4FA3D9', label: 'Canal' }],
+  coalplants: [{ shape: 'dot', color: '#B23A48', label: 'Coal power plant (GEM)' }],
+  coalmines: [
+    { shape: 'dot', color: '#212121', label: 'Coal mine: operating' },
+    { shape: 'dot', color: '#F9A825', label: 'Coal mine: proposed' },
+    { shape: 'dot', color: '#8E8E8E', label: 'Coal mine: mothballed or shelved' },
+    { shape: 'dot', color: '#C62828', label: 'Coal mine: closed' },
+    { shape: 'area', color: '#212121', label: 'Coal mine boundary (GEM)' },
+  ],
   seismic: [
     { shape: 'area', color: '#FFE9A8', label: 'Zone II (low)' },
     { shape: 'area', color: '#F9C46B', label: 'Zone III (moderate)' },
