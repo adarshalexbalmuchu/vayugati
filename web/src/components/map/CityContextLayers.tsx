@@ -502,7 +502,7 @@ const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be inc
 /** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
 function popupNode(props: Record<string, unknown>, layerId: string, district: string | null): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 font-site text-xs text-ink-800'
+  el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 text-xs text-slate-700'
   let eyebrow = ''
   let title = ''
   const rows: [string, string][] = []
@@ -537,23 +537,23 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     source = OSM_SOURCE
   }
   const e = document.createElement('p')
-  e.className = 'pr-5 text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+  e.className = 'pr-5 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
   e.textContent = eyebrow
   const t = document.createElement('p')
-  t.className = 'mt-1 pr-5 font-display text-2xl leading-[1.05] text-ink-900'
+  t.className = 'mt-1 pr-5 text-lg font-bold leading-tight text-slate-900'
   t.textContent = title
   el.append(e, t)
   if (rows.length) {
     const dl = document.createElement('dl')
-    dl.className = 'mt-2.5 divide-y divide-ink-900/10 rounded-lg border border-ink-900/10 bg-white'
+    dl.className = 'mt-2.5 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white'
     for (const [k, v] of rows) {
       const r = document.createElement('div')
       r.className = 'flex items-baseline justify-between gap-3 px-2.5 py-1.5'
       const dt = document.createElement('dt')
-      dt.className = 'text-ink-600'
+      dt.className = 'text-slate-500'
       dt.textContent = k
       const dd = document.createElement('dd')
-      dd.className = 'text-right font-semibold text-ink-900'
+      dd.className = 'text-right font-semibold text-slate-900'
       dd.textContent = v
       r.append(dt, dd)
       dl.appendChild(r)
@@ -562,12 +562,12 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
   }
   if (note) {
     const n = document.createElement('p')
-    n.className = 'mt-2 leading-snug text-ink-700'
+    n.className = 'mt-2 leading-snug text-slate-600'
     n.textContent = note
     el.appendChild(n)
   }
   const f = document.createElement('p')
-  f.className = 'mt-2.5 border-t border-ink-900/10 pt-2 text-[10px] leading-snug text-ink-500'
+  f.className = 'mt-2.5 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-400'
   f.textContent = source
   el.appendChild(f)
   return el
@@ -821,7 +821,7 @@ class ViewControl implements maplibregl.IControl {
       note.className = 'shrink-0 text-[10px] font-semibold text-red-700'
     } else if (on && states.some((x) => x !== 'ok')) {
       note.textContent = 'loading…'
-      note.className = 'shrink-0 text-[10px] text-ink-500'
+      note.className = 'shrink-0 text-[10px] text-slate-400'
     } else note.textContent = ''
   }
 
@@ -839,26 +839,26 @@ class ViewControl implements maplibregl.IControl {
     wrap.open = true
     wrap.setAttribute('data-layers', '1')
     this.layersDetails = wrap
-    wrap.className = 'rounded-xl border border-ink-900/10 bg-white'
+    wrap.className = 'rounded-lg border border-slate-200 bg-white'
     const sum = document.createElement('summary')
     sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const st = document.createElement('span')
-    st.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    st.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     st.textContent = 'Map layers'
     const count = document.createElement('span')
-    count.className = 'text-[11px] font-semibold tabular-nums text-ink-800'
+    count.className = 'text-[11px] font-semibold tabular-nums text-slate-700'
     this.layerCount = count
     sum.append(st, count)
     wrap.appendChild(sum)
     const inner = document.createElement('div')
-    inner.className = 'space-y-2.5 border-t border-ink-900/10 px-2.5 py-2.5'
+    inner.className = 'space-y-2.5 border-t border-slate-200 px-2.5 py-2.5'
     const quick = document.createElement('div')
     quick.className = 'flex gap-1'
     const qbtn = (label: string, patch: () => Partial<CityContextVisibility>) => {
       const b = document.createElement('button')
       b.type = 'button'
       b.textContent = label
-      b.className = 'focus-ring flex-1 rounded-md border border-ink-900/15 px-2 py-1 text-[11px] font-medium text-ink-800 hover:bg-cream'
+      b.className = 'focus-ring flex-1 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
       b.addEventListener('click', () => this.onChange(patch()))
       quick.appendChild(b)
     }
@@ -871,24 +871,24 @@ class ViewControl implements maplibregl.IControl {
     for (const g of CONTEXT_GROUPS) {
       const sec = document.createElement('div')
       const gl = document.createElement('p')
-      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
       gl.textContent = g.label
       sec.appendChild(gl)
       for (const key of g.keys) {
         const d = defs.get(key)!
         const row = document.createElement('label')
-        row.className = 'flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-cream'
+        row.className = 'flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-slate-50'
         row.title = d.note
         const input = document.createElement('input')
         input.type = 'checkbox'
-        input.className = 'h-3.5 w-3.5 shrink-0 accent-ink-700'
+        input.className = 'h-3.5 w-3.5 shrink-0 accent-accent-500'
         input.addEventListener('change', () => this.onChange({ [key]: input.checked }))
         this.layerInputs[key] = input
         const sw = document.createElement('span')
-        sw.className = 'h-2.5 w-2.5 shrink-0 rounded-sm border border-ink-900/20'
+        sw.className = 'h-2.5 w-2.5 shrink-0 rounded-sm border border-slate-300'
         sw.style.background = CONTEXT_SWATCH[key]
         const tx = document.createElement('span')
-        tx.className = 'min-w-0 flex-1 text-xs text-ink-900'
+        tx.className = 'min-w-0 flex-1 text-xs text-slate-900'
         tx.textContent = d.label
         const note = document.createElement('span')
         note.className = 'shrink-0 text-[10px]'
@@ -907,7 +907,7 @@ class ViewControl implements maplibregl.IControl {
     const b = document.createElement('button')
     b.type = 'button'
     b.textContent = label
-    b.className = 'rounded-md bg-ink-900 px-2.5 py-1.5 font-medium text-cream hover:bg-ink-700'
+    b.className = 'rounded-md bg-accent-500 px-2.5 py-1.5 font-medium text-white hover:bg-accent-600'
     b.addEventListener('click', onClick)
     parent.appendChild(b)
     return b
@@ -916,24 +916,24 @@ class ViewControl implements maplibregl.IControl {
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm'
+    el.className = 'maplibregl-ctrl w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200'
 
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
     head.className = 'flex items-center justify-between gap-2 px-3 py-2'
     const title = document.createElement('div')
     const t1 = document.createElement('p')
-    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     t1.textContent = 'Geospatial platform'
     const t2 = document.createElement('p')
-    t2.className = 'font-display text-2xl leading-none text-ink-900'
+    t2.className = 'text-xl font-bold leading-none text-slate-900'
     t2.textContent = this.pack.regionLabel
     title.append(t1, t2)
     const toggle = document.createElement('button')
     toggle.type = 'button'
-    toggle.className = 'focus-ring rounded-md border border-ink-900/20 px-2.5 py-1 text-[11px] font-medium text-ink-800 hover:bg-white'
+    toggle.className = 'focus-ring rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
     const body = document.createElement('div')
-    body.className = 'max-h-[calc(100svh-210px)] space-y-3 overflow-y-auto border-t border-ink-900/10 px-3 py-3'
+    body.className = 'max-h-[calc(100svh-210px)] space-y-3 overflow-y-auto border-t border-slate-200 px-3 py-3'
     const setOpen = (open: boolean) => {
       body.style.display = open ? '' : 'none'
       toggle.textContent = open ? 'Hide' : 'Show'
@@ -948,10 +948,10 @@ class ViewControl implements maplibregl.IControl {
     const pick = document.createElement('label')
     pick.className = 'block'
     const pickText = document.createElement('span')
-    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     pickText.textContent = 'Go to district (opens in 3D)'
     const select = document.createElement('select')
-    select.className = 'focus-ring w-full rounded-lg border border-ink-900/10 bg-white px-2.5 py-2 text-sm font-medium text-ink-900'
+    select.className = 'focus-ring w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900'
     select.addEventListener('change', () => this.selectDistrict(select.value || null))
     pick.append(pickText, select)
     body.appendChild(pick)
@@ -963,16 +963,16 @@ class ViewControl implements maplibregl.IControl {
     // Assistant answers: a drop-down section under the layers. The layers fold away when an answer arrives.
     const rw = document.createElement('details')
     rw.open = true
-    rw.className = 'rounded-xl border border-ink-900/10 bg-white'
+    rw.className = 'rounded-lg border border-slate-200 bg-white'
     rw.style.display = 'none'
     const rsum = document.createElement('summary')
     rsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const rst = document.createElement('span')
-    rst.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    rst.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     rst.textContent = 'Answers from the assistant'
     rsum.appendChild(rst)
     const rslot = document.createElement('div')
-    rslot.className = 'border-t border-ink-900/10 p-2.5'
+    rslot.className = 'border-t border-slate-200 p-2.5'
     rw.append(rsum, rslot)
     body.appendChild(rw)
     this.resultsWrap = rw
@@ -980,10 +980,10 @@ class ViewControl implements maplibregl.IControl {
 
     // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
     const dock = document.createElement('div')
-    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
+    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
     dock.style.display = 'none'
     const dockTabs = document.createElement('div')
-    dockTabs.className = 'flex gap-1 border-b border-ink-900/10 bg-ink-100/60 p-1.5'
+    dockTabs.className = 'flex gap-1 border-b border-slate-200 bg-slate-50/60 p-1.5'
     dockTabs.style.display = 'none'
     for (const k of ['district', 'ask'] as const) {
       const b = document.createElement('button')
@@ -1004,7 +1004,7 @@ class ViewControl implements maplibregl.IControl {
     this.chatSlot = chatSlot
     // Bottom toolbar: 3D controls and the heat-detection player.
     const toolbar = document.createElement('div')
-    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-xl bg-cream/95 px-3 py-2 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:left-1/2 md:right-auto md:-translate-x-1/2'
+    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg bg-white/85 backdrop-blur-md px-3 py-2 text-xs text-slate-700 shadow-card-lg border border-slate-200 md:left-1/2 md:right-auto md:-translate-x-1/2'
     toolbar.style.display = 'none'
     map.getContainer().appendChild(toolbar)
     this.toolbar = toolbar
@@ -1019,12 +1019,12 @@ class ViewControl implements maplibregl.IControl {
     panel.style.display = 'none'
     panel.title = 'Contours every 10–100 m with heights. Click the ground for its elevation. Right-drag or Ctrl-drag to tilt and turn.'
     const ph = document.createElement('p')
-    ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     ph.textContent = '3D'
     const hRow = document.createElement('label')
     hRow.className = 'flex items-center gap-2'
     const hText = document.createElement('span')
-    hText.className = 'w-[72px] shrink-0 font-semibold tabular-nums text-ink-900'
+    hText.className = 'w-[72px] shrink-0 font-semibold tabular-nums text-slate-900'
     hText.textContent = `Heights ×${this.exaggeration}`
     const slider = document.createElement('input')
     slider.type = 'range'
@@ -1032,7 +1032,7 @@ class ViewControl implements maplibregl.IControl {
     slider.max = '6'
     slider.step = '0.5'
     slider.value = String(this.exaggeration)
-    slider.className = 'w-28 accent-ink-700'
+    slider.className = 'w-28 accent-accent-500'
     slider.setAttribute('aria-label', 'Height exaggeration')
     slider.addEventListener('input', () => {
       this.exaggeration = Number(slider.value)
@@ -1044,12 +1044,12 @@ class ViewControl implements maplibregl.IControl {
     const satRow = document.createElement('label')
     satRow.className = 'flex cursor-pointer items-center gap-2'
     const satText = document.createElement('span')
-    satText.className = 'font-medium text-ink-800'
+    satText.className = 'font-medium text-slate-700'
     satText.textContent = 'Satellite imagery'
     const sat = document.createElement('input')
     sat.type = 'checkbox'
     sat.checked = this.satellite
-    sat.className = 'h-4 w-4 accent-ink-700'
+    sat.className = 'h-4 w-4 accent-accent-500'
     sat.addEventListener('change', () => {
       this.satellite = sat.checked
       ensureSatellite(map, this.satellite)
@@ -1064,16 +1064,16 @@ class ViewControl implements maplibregl.IControl {
     const legend = document.createElement('details')
     legend.open = true
     // A floating box on the map (like Delhi's legend), not part of the layers card.
-    legend.className = 'absolute bottom-24 left-2 z-10 w-[min(250px,calc(100vw-1rem))] overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-3 md:left-[348px]'
+    legend.className = 'absolute bottom-24 left-2 z-10 w-[min(250px,calc(100vw-1rem))] overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200 md:bottom-3 md:left-[348px]'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const lst = document.createElement('span')
-    lst.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    lst.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     lst.textContent = 'Legend'
     lsum.appendChild(lst)
     const lbody = document.createElement('div')
-    lbody.className = 'max-h-[min(55svh,26rem)] space-y-2.5 overflow-y-auto border-t border-ink-900/10 p-2.5'
+    lbody.className = 'max-h-[min(55svh,26rem)] space-y-2.5 overflow-y-auto border-t border-slate-200 p-2.5'
     this.legendList = document.createElement('div')
     this.legendList.className = 'space-y-1'
     const lc = document.createElement('div')
@@ -1095,10 +1095,10 @@ class ViewControl implements maplibregl.IControl {
     const ft = document.createElement('div')
     ft.className = 'min-w-0 flex-1'
     const ft1 = document.createElement('p')
-    ft1.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    ft1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     ft1.textContent = 'Heat detections'
     const label = document.createElement('p')
-    label.className = 'text-xs font-semibold tabular-nums text-ink-900'
+    label.className = 'text-xs font-semibold tabular-nums text-slate-900'
     this.fireLabel = label
     ft.append(ft1, label)
     this.playBtn = this.button('▶', () => this.togglePlay(), fireRow)
@@ -1159,7 +1159,7 @@ class ViewControl implements maplibregl.IControl {
       const b = this.dockBtns[k]
       if (!b) continue
       b.textContent = labels[k]
-      b.className = `min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-xs font-semibold transition ${tab === k ? 'bg-ink-900 text-cream shadow-sm' : 'text-ink-700 hover:bg-white'}`
+      b.className = `min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-xs font-semibold transition ${tab === k ? 'bg-accent-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`
     }
   }
 
@@ -1197,7 +1197,7 @@ class ViewControl implements maplibregl.IControl {
       any = true
       for (const s of symbols) {
         const row = document.createElement('div')
-        row.className = 'flex items-center gap-2 text-[11px] text-ink-800'
+        row.className = 'flex items-center gap-2 text-[11px] text-slate-700'
         const sw = document.createElement('span')
         sw.className = 'flex h-3 w-6 shrink-0 items-center justify-center'
         const mark = document.createElement('span')
@@ -1237,10 +1237,10 @@ class ViewControl implements maplibregl.IControl {
     if (!box) return
     const on = this.wanted().landcover && this.lcMeta != null
     box.style.display = on ? '' : 'none'
-    box.className = 'rounded-lg bg-cream p-2'
+    box.className = 'rounded-lg bg-slate-50 p-2'
     if (!on || box.childElementCount) return
     const t = document.createElement('p')
-    t.className = 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    t.className = 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
     t.textContent = 'Land cover key (ESA, 2021)'
     box.appendChild(t)
     const grid = document.createElement('div')
@@ -1335,30 +1335,30 @@ class ViewControl implements maplibregl.IControl {
       if (text != null) n.textContent = text
       return n
     }
-    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-500', t)
+    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400', t)
 
-    const top = el('div', '-mx-3 -mt-3 mb-3 flex items-start justify-between gap-2 rounded-t-xl bg-gradient-to-b from-sky-300 via-sky-200 to-sky-100 px-3 pb-3 pt-3')
+    const top = el('div', '-mx-3 -mt-3 mb-3 flex items-start justify-between gap-2 rounded-t-lg border-b border-slate-100 bg-white/50 px-3 pb-3 pt-3')
     const tt = el('div', 'min-w-0')
-    tt.append(el('p', 'text-[10px] font-semibold uppercase tracking-widest text-ink-700', 'District profile'),
-      el('p', 'truncate font-display text-4xl leading-none text-ink-900', name))
-    const back = el('button', 'focus-ring shrink-0 rounded-md bg-ink-900 px-2.5 py-1.5 text-[11px] font-medium text-cream hover:bg-ink-700', 'Whole state')
+    tt.append(el('p', 'text-[10px] font-semibold uppercase tracking-widest text-slate-600', 'District profile'),
+      el('p', 'truncate text-xl font-bold leading-tight text-slate-900', name))
+    const back = el('button', 'focus-ring shrink-0 rounded-md bg-accent-500 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-accent-600', 'Whole state')
     ;(back as HTMLButtonElement).type = 'button'
     back.addEventListener('click', () => this.selectDistrict(null))
     top.append(tt, back)
     box.appendChild(top)
     if (!p) {
-      box.appendChild(el('p', 'text-ink-600', doc ? 'No profile for this district.' : 'Loading…'))
+      box.appendChild(el('p', 'text-slate-500', doc ? 'No profile for this district.' : 'Loading…'))
       return
     }
     const num = (v: number | null | undefined, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
 
     // Tabs: Overview | Nature | Sources
-    const tabs = el('div', 'mb-3 flex gap-1 rounded-xl bg-ink-100 p-1')
+    const tabs = el('div', 'mb-3 flex gap-1 rounded-lg bg-slate-100 p-1')
     const panes = { overview: el('div', ''), nature: el('div', 'space-y-3'), sources: el('div', '') }
     const tabButtons: Partial<Record<'overview' | 'nature' | 'sources', HTMLButtonElement>> = {}
     const paint = () => {
       for (const k of ['overview', 'nature', 'sources'] as const) {
-        tabButtons[k]!.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-ink-900 text-cream shadow-sm' : 'text-ink-700 hover:bg-white'}`
+        tabButtons[k]!.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-accent-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`
         panes[k].style.display = this.tab === k ? '' : 'none'
       }
     }
@@ -1377,10 +1377,10 @@ class ViewControl implements maplibregl.IControl {
     // Key figures
     const grid = el('div', 'grid grid-cols-2 gap-1.5')
     const tile = (k: string, v: string, sub?: string) => {
-      const t = el('div', 'rounded-xl border border-ink-900/10 bg-white px-2.5 py-2')
-      t.append(el('p', 'mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-500', k),
-        el('p', `font-display text-3xl leading-none ${v === NA ? 'text-ink-300' : 'text-ink-900'}`, v))
-      if (sub) t.appendChild(el('p', 'text-[10px] text-ink-600', sub))
+      const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
+      t.append(el('p', 'mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400', k),
+        el('p', `text-2xl font-bold tabular-nums leading-none ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
+      if (sub) t.appendChild(el('p', 'text-[10px] text-slate-500', sub))
       grid.appendChild(t)
     }
     tile('Area', num(p.area_km2, ' km²'), p.area_note ? 'sources differ, see Sources' : undefined)
@@ -1392,7 +1392,7 @@ class ViewControl implements maplibregl.IControl {
     // Stacked bar helper
     const bar = (parts: { label: string; pct: number; color: string }[]) => {
       const wrap = el('div', 'space-y-1')
-      const b = el('div', 'flex h-2.5 w-full overflow-hidden rounded-full bg-ink-100')
+      const b = el('div', 'flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100')
       for (const q of parts) {
         if (q.pct <= 0) continue
         const seg = el('div', '')
@@ -1404,7 +1404,7 @@ class ViewControl implements maplibregl.IControl {
       const lg = el('div', 'flex flex-wrap gap-x-2.5 gap-y-0.5')
       for (const q of parts) {
         if (q.pct < 0.5) continue
-        const r = el('span', 'flex items-center gap-1 text-[10px] text-ink-700')
+        const r = el('span', 'flex items-center gap-1 text-[10px] text-slate-600')
         const sw = el('span', 'inline-block h-2 w-2 rounded-sm')
         sw.style.background = q.color
         r.append(sw, document.createTextNode(`${q.label} ${nf1.format(q.pct)}%`))
@@ -1427,7 +1427,7 @@ class ViewControl implements maplibregl.IControl {
         { label: 'Open', pct: op, color: '#86C28B' },
         { label: 'Not forest', pct: Math.max(0, Math.round((100 - vd - md - op) * 10) / 10), color: '#E5E7EB' },
       ]))
-    } else fsec.appendChild(el('p', 'text-ink-300', NA))
+    } else fsec.appendChild(el('p', 'text-slate-300', NA))
     panes.nature.appendChild(fsec)
 
     // Land cover (satellite)
@@ -1436,7 +1436,7 @@ class ViewControl implements maplibregl.IControl {
     const lc = p.landcover_pct
     if (lc) {
       lsec.appendChild(bar(Object.entries(lc).map(([k, v]) => ({ label: k, pct: v, color: LC_COLORS[k] ?? '#999' }))))
-    } else lsec.appendChild(el('p', 'text-ink-300', NA))
+    } else lsec.appendChild(el('p', 'text-slate-300', NA))
     panes.nature.appendChild(lsec)
 
     // Relief: typical and highest ground height against the state's range (about 0 to 1,400 m)
@@ -1457,11 +1457,11 @@ class ViewControl implements maplibregl.IControl {
       mark(p.elevation_median_m, `Typical ${nf.format(p.elevation_median_m)} m`, '#0369A1')
       mark(p.elevation_max_m, `Highest ${nf.format(p.elevation_max_m)} m`, '#B5542E')
       rsec.appendChild(track)
-      const lg = el('div', 'flex justify-between text-[10px] text-ink-700')
+      const lg = el('div', 'flex justify-between text-[10px] text-slate-600')
       lg.append(el('span', '', '0 m'), el('span', 'font-semibold text-sky-700', `typical ${nf.format(p.elevation_median_m)} m`),
         el('span', 'font-semibold text-orange-800', `highest ${nf.format(p.elevation_max_m)} m`), el('span', '', '1,400 m'))
       rsec.appendChild(lg)
-    } else rsec.appendChild(el('p', 'text-ink-300', NA))
+    } else rsec.appendChild(el('p', 'text-slate-300', NA))
     panes.nature.appendChild(rsec)
 
     // Rain and wind (ERA5)
@@ -1471,8 +1471,8 @@ class ViewControl implements maplibregl.IControl {
     if (c) {
       const stats = el('div', 'grid grid-cols-2 gap-1.5')
       const stat = (k: string, v: string) => {
-        const t = el('div', 'rounded-xl border border-ink-900/10 bg-white px-2.5 py-2')
-        t.append(el('p', 'text-[10px] text-ink-600', k), el('p', 'font-display text-2xl leading-none text-ink-900', v))
+        const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
+        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-xl font-bold leading-none text-slate-900', v))
         stats.appendChild(t)
       }
       stat('Rain per year', `${nf.format(c.rain_annual_mm)} mm`)
@@ -1487,11 +1487,11 @@ class ViewControl implements maplibregl.IControl {
         const bar = el('div', 'w-full rounded-sm bg-sky-400')
         bar.style.height = `${Math.max(2, (v / maxm) * 100)}%`
         bar.title = `${months[i]}: ${nf.format(Math.round(v))} mm`
-        col.append(bar, el('span', 'mt-0.5 text-[9px] text-ink-500', months[i]))
+        col.append(bar, el('span', 'mt-0.5 text-[9px] text-slate-400', months[i]))
         bars.appendChild(col)
       })
       csec.appendChild(bars)
-      csec.appendChild(el('p', 'text-[10px] text-ink-500', 'Average rain by month'))
+      csec.appendChild(el('p', 'text-[10px] text-slate-400', 'Average rain by month'))
       // wind rose (winter), 8 sectors, bar length = share of hours
       const rose = c.rose_winter_pct
       const mx = Math.max(...rose, 1)
@@ -1502,7 +1502,7 @@ class ViewControl implements maplibregl.IControl {
       const ring = document.createElementNS(NS, 'circle')
       ring.setAttribute('r', '46')
       ring.setAttribute('fill', 'none')
-      ring.setAttribute('stroke', '#E6D9C3')
+      ring.setAttribute('stroke', '#E2E8F0')
       svg.appendChild(ring)
       const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
       rose.forEach((v, i) => {
@@ -1512,7 +1512,7 @@ class ViewControl implements maplibregl.IControl {
         const pt = (a: number, rr: number) => `${(rr * Math.sin(a)).toFixed(1)},${(-rr * Math.cos(a)).toFixed(1)}`
         const path = document.createElementNS(NS, 'path')
         path.setAttribute('d', `M0,0 L${pt(a0, r)} L${pt(a1, r)} Z`)
-        path.setAttribute('fill', '#422B1C')
+        path.setAttribute('fill', '#0F6CBD')
         path.setAttribute('fill-opacity', '0.85')
         const t = document.createElementNS(NS, 'title')
         t.textContent = `Wind from ${dirs[i]}: ${v}% of winter hours`
@@ -1524,31 +1524,31 @@ class ViewControl implements maplibregl.IControl {
         lab.setAttribute('y', (-54 * Math.cos(la) + 2.5).toFixed(1))
         lab.setAttribute('text-anchor', 'middle')
         lab.setAttribute('font-size', '7')
-        lab.setAttribute('fill', '#6B4A2A')
+        lab.setAttribute('fill', '#64748B')
         lab.textContent = dirs[i]
         svg.appendChild(lab)
       })
-      const roseBox = el('div', 'mt-2 flex items-center gap-3 rounded-xl border border-ink-900/10 bg-white p-2')
+      const roseBox = el('div', 'mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2')
       roseBox.appendChild(svg as unknown as HTMLElement)
-      const rt = el('div', 'min-w-0 text-ink-700')
+      const rt = el('div', 'min-w-0 text-slate-600')
       rt.append(
-        el('p', 'font-semibold text-ink-900', `Winter wind mostly from the ${c.wind_from.winter ?? '—'}`),
+        el('p', 'font-semibold text-slate-900', `Winter wind mostly from the ${c.wind_from.winter ?? '—'}`),
         el('p', '', `Average ${c.wind_mean_ms.winter == null ? NA : nf1.format(c.wind_mean_ms.winter)} m/s (December to February). The bars show how often the wind blows from each direction.`),
       )
       roseBox.appendChild(rt)
       csec.appendChild(roseBox)
-      csec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-ink-500', 'ERA5 is a weather-model reanalysis on a grid of about 30 km: the climate of the area, not a measurement in one town.'))
-    } else csec.appendChild(el('p', 'text-ink-300', NA))
+      csec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-slate-400', 'ERA5 is a weather-model reanalysis on a grid of about 30 km: the climate of the area, not a measurement in one town.'))
+    } else csec.appendChild(el('p', 'text-slate-300', NA))
     panes.nature.appendChild(csec)
 
     // In the district
-    const rows = el('div', 'mt-3 divide-y divide-ink-900/10 rounded-xl border border-ink-900/10 bg-white')
+    const rows = el('div', 'mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white')
     const row = (k: string, v: string, sub?: string) => {
       const r = el('div', 'px-2.5 py-1.5')
       const line = el('div', 'flex items-baseline justify-between gap-2')
-      line.append(el('span', 'text-ink-600', k), el('span', `text-right font-semibold tabular-nums ${v === NA ? 'text-ink-300' : 'text-ink-900'}`, v))
+      line.append(el('span', 'text-slate-500', k), el('span', `text-right font-semibold tabular-nums ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
       r.appendChild(line)
-      if (sub) r.appendChild(el('p', 'mt-0.5 text-right text-[10px] leading-snug text-ink-600', sub))
+      if (sub) r.appendChild(el('p', 'mt-0.5 text-right text-[10px] leading-snug text-slate-500', sub))
       rows.appendChild(r)
     }
     const sites = [...p.power_plants, ...p.large_works]
@@ -1563,19 +1563,19 @@ class ViewControl implements maplibregl.IControl {
     const src = doc?.sources ?? {}
     const det = el('div', '')
     det.appendChild(label('Where each figure comes from'))
-    const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-ink-600')
+    const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-slate-500')
     for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
       ['landcover', 'Land cover'], ['power_plants', 'Plants and works'],
       ['monitors', 'Monitors'], ['climate', 'Rain and wind'], ['outline', 'Outline']] as const) {
       if (src[k]) {
         const li = el('li', '')
-        li.append(el('span', 'font-semibold text-ink-700', `${lab}: `), document.createTextNode(src[k]))
+        li.append(el('span', 'font-semibold text-slate-600', `${lab}: `), document.createTextNode(src[k]))
         ul.appendChild(li)
       }
     }
     if (p.area_note) {
       const li = el('li', '')
-      li.append(el('span', 'font-semibold text-ink-700', 'Area: '), document.createTextNode(p.area_note))
+      li.append(el('span', 'font-semibold text-slate-600', 'Area: '), document.createTextNode(p.area_note))
       ul.insertBefore(li, ul.firstChild)
     }
     ul.appendChild(el('li', '', 'NA: no verified government figure found.'))
@@ -1782,17 +1782,17 @@ export default function CityContextLayers({
       CLICKABLE.filter((id) => map.getLayer(id) && (id !== 'ctx-districts-fill' || map.getZoom() < DISTRICT_CLICK_MAX_ZOOM))
     const showElevation = (e: maplibregl.MapMouseEvent, extra?: HTMLElement) => {
       const el = extra ?? document.createElement('div')
-      if (!extra) el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 font-site text-xs text-ink-800'
+      if (!extra) el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 text-xs text-slate-700'
       const box = document.createElement('div')
-      box.className = `${extra ? 'mt-2.5' : ''} rounded-lg bg-white px-2.5 py-2 border border-ink-900/10`
+      box.className = `${extra ? 'mt-2.5' : ''} rounded-lg bg-white px-2.5 py-2 border border-slate-200`
       const lab = document.createElement('p')
-      lab.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+      lab.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
       lab.textContent = 'Ground elevation'
       const val = document.createElement('p')
-      val.className = 'font-display text-3xl leading-none text-ink-900'
+      val.className = 'text-2xl font-bold tabular-nums leading-none text-slate-900'
       val.textContent = '…'
       const src = document.createElement('p')
-      src.className = 'mt-1 text-[10px] leading-snug text-ink-500'
+      src.className = 'mt-1 text-[10px] leading-snug text-slate-400'
       src.textContent = 'MapTiler terrain model, about 30 m grid'
       box.append(lab, val, src)
       el.appendChild(box)
