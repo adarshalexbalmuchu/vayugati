@@ -77,6 +77,8 @@ const FILES = {
   assembly: 'assembly.geojson',
   monitors: 'monitors.geojson',
   canals: 'canals.geojson',
+  seismic: 'seismic.geojson',
+  aquifers: 'aquifers.geojson',
 } as const
 /** Files the code itself needs (the state mask, district lookup and heat-detection dates). Everything else is given to
  *  MapLibre as a URL, so each layer loads on its own: one slow or missing file cannot hold up the rest. */
@@ -148,6 +150,8 @@ const SRC = {
   assembly: 'ctx-assembly',
   monitors: 'ctx-monitors',
   canals: 'ctx-canals',
+  seismic: 'ctx-seismic',
+  aquifers: 'ctx-aquifers',
 } as const
 
 /** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
@@ -158,6 +162,7 @@ const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
   'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'], 'ctx-kilns': ['kilns'], 'ctx-builtup': ['builtup'],
   'ctx-majorrivers': ['majorrivers'], 'ctx-basins': ['basins'], 'ctx-dams': ['dams'],
   'ctx-blocks': ['blocks', 'groundwater'], 'ctx-assembly': ['constituencies'], 'ctx-monitors': ['monitors'], 'ctx-canals': ['canals'],
+  'ctx-seismic': ['seismic'], 'ctx-aquifers': ['aquifers'],
 }
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -174,6 +179,8 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   basins: ['ctx-basins-line', 'ctx-basins-label'],
   dams: ['ctx-dams', 'ctx-dams-label'],
   canals: ['ctx-canals-line'],
+  seismic: ['ctx-seismic-fill'],
+  aquifers: ['ctx-aquifers-fill'],
   groundwater: ['ctx-groundwater-fill'],
   monitors: ['ctx-monitors'],
   blocks: ['ctx-blocks-fill', 'ctx-blocks-line', 'ctx-blocks-label'],
@@ -195,7 +202,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 const CLICKABLE = ['ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
   'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
-  'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-districts-fill']
+  'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-aquifers-fill', 'ctx-seismic-fill', 'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -322,6 +329,12 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
   map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
+  map.addLayer({ id: 'ctx-seismic-fill', type: 'fill', source: SRC.seismic, layout: { visibility: vis('seismic') },
+    paint: { 'fill-color': ['match', ['get', 'zone'], 'II', '#FFE9A8', 'III', '#F9C46B', 'IV', '#F08A4B', 'V', '#D9534F', '#DDDDDD'], 'fill-opacity': 0.5 } })
+  map.addLayer({ id: 'ctx-aquifers-fill', type: 'fill', source: SRC.aquifers, layout: { visibility: vis('aquifers') },
+    paint: { 'fill-color': ['match', ['get', 'aquifer'], 'Sandstone', '#E8B77A', 'Alluvium', '#F2E08A', 'Gneiss', '#9CC5A1',
+      'Basement Gneissic Complex', '#9CC5A1', 'Schist', '#7FB69E', 'Basalt', '#6C7A89', 'Limestone', '#8EC9E8', 'Laterite', '#D98C5F',
+      '#B8A9C9'], 'fill-opacity': 0.55 } })
   map.addLayer({ id: 'ctx-groundwater-fill', type: 'fill', source: SRC.blocks, layout: { visibility: vis('groundwater') },
     paint: { 'fill-color': ['match', ['get', 'gw_class'], 'Safe', '#7CC576', 'Semi-Critical', '#F2D45C', 'Critical', '#F29B4B',
       'Over Exploited', '#D9534F', '#BDBDBD'], 'fill-opacity': 0.55 } })
@@ -602,6 +615,78 @@ function polygonAt(fc: FeatureCollection | undefined, lng: number, lat: number):
   return null
 }
 
+interface VillageDetails {
+  fields: string[]
+  water_sources: string[]
+  villages: Record<string, (string | number | null)[]>
+}
+const villageDetailsCache = new Map<string, Promise<VillageDetails | null>>()
+/** The Census village directory details (land use, water sources, ...), fetched once, the first time a village is clicked. */
+function loadVillageDetails(base: string): Promise<VillageDetails | null> {
+  let p = villageDetailsCache.get(base)
+  if (!p) {
+    p = fetch(`${base}/village_details.json`)
+      .then((r) => (r.ok && (r.headers.get('content-type') ?? '').includes('json') ? (r.json() as Promise<VillageDetails>) : null))
+      .catch(() => null)
+    villageDetailsCache.set(base, p)
+  }
+  return p
+}
+
+/** Fill the village popup's details section when the file is in. */
+function attachVillageDetails(node: HTMLElement, base: string) {
+  const slot = node.querySelector<HTMLElement>('[data-village-details]')
+  const code = slot?.dataset.villageDetails
+  if (!slot || !code) return
+  loadVillageDetails(base).then((d) => {
+    const row = d?.villages[code]
+    if (!d || !row) return
+    const v = (name: string) => row[d.fields.indexOf(name)]
+    const n = (x: unknown, dp = 0) => (x == null || x === '' ? null : Number(x).toLocaleString('en-IN', { maximumFractionDigits: dp }))
+    const line = (k: string, val: string) => {
+      const r = document.createElement('div')
+      r.className = 'flex items-baseline justify-between gap-3'
+      const a = document.createElement('span')
+      a.className = 'text-slate-500'
+      a.textContent = k
+      const b = document.createElement('span')
+      b.className = 'text-right font-medium text-slate-900'
+      b.textContent = val
+      r.append(a, b)
+      return r
+    }
+    const head = (t: string) => {
+      const h = document.createElement('p')
+      h.className = 'mt-2 border-t border-slate-200/80 pt-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-400'
+      h.textContent = t
+      return h
+    }
+    const box = document.createElement('div')
+    box.className = 'space-y-0.5'
+    if (v('gram_panchayat')) box.appendChild(line('Gram panchayat', String(v('gram_panchayat'))))
+    if (v('nearest_town')) box.appendChild(line('Nearest town', `${v('nearest_town')}${n(v('nearest_town_km')) ? `, ${n(v('nearest_town_km'))} km` : ''}`))
+    if (n(v('male')) && n(v('female'))) box.appendChild(line('Men / women', `${n(v('male'))} / ${n(v('female'))}`))
+    const land: [string, string][] = [['Net area sown', 'net_sown_ha'], ['Forest', 'forest_ha'], ['Irrigated', 'irrigated_ha'],
+      ['Fallow (current)', 'fallow_current_ha'], ['Fallow (other)', 'fallow_other_ha'], ['Culturable waste', 'culturable_waste_ha'],
+      ['Non-agricultural use', 'non_agricultural_ha'], ['Barren, uncultivable', 'barren_ha']]
+    const used = land.filter(([, f]) => Number(v(f)) > 0)
+    box.appendChild(head('Land use, hectares (Census 2011)'))
+    if (used.length) for (const [k, f] of used) box.appendChild(line(k, n(v(f)) ?? ''))
+    else box.appendChild(line('Recorded', 'none'))
+    const mask = Number(v('water_sources_mask'))
+    box.appendChild(head('Drinking water sources in the village'))
+    if (mask < 0) box.appendChild(line('Recorded', 'no'))
+    else {
+      const have = d.water_sources.filter((_, i) => (mask >> i) & 1)
+      const t = document.createElement('p')
+      t.className = 'text-slate-900'
+      t.textContent = have.length ? have.join(', ') : 'None of the listed sources'
+      box.appendChild(t)
+    }
+    slot.appendChild(box)
+  })
+}
+
 const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be incomplete or out of date.'
 
 /** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
@@ -662,6 +747,18 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
       note = 'No ground water assessment is listed for this block.'
     }
     source = 'Block boundary: India-WRIS. Ground water: Central Ground Water Board, Dynamic Ground Water Resources 2020, via India-WRIS.'
+  } else if (layerId === 'ctx-seismic-fill') {
+    eyebrow = 'Earthquake zone'
+    title = `Zone ${props.zone}`
+    if (props.intensity) rows.push(['Intensity', String(props.intensity)])
+    note = 'Zones run from II (lowest) to V (highest). A regional zoning, not a local hazard assessment.'
+    source = 'Seismic zones of India, via India-WRIS.'
+  } else if (layerId === 'ctx-aquifers-fill') {
+    eyebrow = 'Major aquifer'
+    title = String(props.aquifer || 'Aquifer')
+    if (props.detail && props.detail !== props.aquifer) rows.push(['Type', String(props.detail)])
+    note = 'The main aquifer rock type of the area: a generalised map, not a well-level survey.'
+    source = 'Central Ground Water Board aquifer map, via India-WRIS.'
   } else if (layerId === 'ctx-monitors') {
     const label: Record<string, string> = { groundwater_level: 'Ground water level station', water_quality: 'Water quality station', rainfall: 'Rainfall station', reservoir: 'Reservoir station' }
     eyebrow = label[String(props.kind)] ?? 'Monitoring station'
@@ -736,6 +833,11 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
       dl.appendChild(r)
     }
     el.appendChild(dl)
+  }
+  if (layerId === 'ctx-places-village') {
+    const slot = document.createElement('div')
+    slot.dataset.villageDetails = String(props.code ?? '')
+    el.appendChild(slot)
   }
   if (note) {
     const n = document.createElement('p')
@@ -1939,6 +2041,7 @@ export default function CityContextLayers({
         return
       }
       const node = popupNode(f.properties ?? {}, f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat), basinAt(data?.basins, e.lngLat.lng, e.lngLat.lat))
+      if (f.layer.id === 'ctx-places-village') attachVillageDetails(node, pack.base)
       if (in3D) showElevation(e, node)
       else popup.setLngLat(e.lngLat).setDOMContent(node).addTo(map)
     }

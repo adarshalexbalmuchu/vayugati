@@ -58,6 +58,21 @@ LAYERS: dict[str, dict] = {
         "station_code", "station_name", "station_type", "lat", "long", "agency_name", "district_name", "block_name", "basin_name"]),
     "stations_reservoir": dict(path=WIMS, layer=3, page=500, where="state_name='Jharkhand'", fields=[
         "station_code", "station_name", "station_type", "lat", "long", "agency_name", "district_name", "basin_name", "frl"]),
+    # Hazards and ground water
+    "seismic": dict(path="DataDownload/Extreme_Temperature_Rainfall_Data/FeatureServer", layer=3, page=100, simplify=0.002),
+    "aquifers": dict(path="DataDownload/Ground_Water_Layers/FeatureServer", layer=2, page=100, simplify=0.001),
+    # Census 2011 village directory details (no geometry; joined to the villages by code)
+    "village_details": dict(path=ADMIN, layer=2, page=2000, where="state_code=20", geometry=False, fields=[
+        "village_code", "gram_panchayat_name", "nearest_town_name", "nearest_town_distance_from_vill",
+        "total_male_population_of_villag", "total_female_population_of_vill",
+        "forest_area__in_hectares_", "area_under_non_agricultural_use", "barren___un_cultivable_land_are",
+        "permanent_pastures_and_other_gr", "land_under_miscellaneous_tree_c", "culturable_waste_land_area__in_",
+        "fallows_land_other_than_current", "current_fallows_area__in_hectar", "net_area_sown__in_hectares_",
+        "total_unirrigated_land_area__in", "area_irrigated_by_source__in_he", "canals_area__in_hectares_",
+        "wells_tube_wells_area__in_hecta", "tanks_lakes_area__in_hectares_",
+        "tap_water_treated__status_a_1__", "tap_water_untreated__status_a_1", "covered_well__status_a_1__na_2_",
+        "uncovered__well__status_a_1__na", "hand_pump__status_a_1__na_2__", "tube_wells_borehole__status_a_1",
+        "spring__status_a_1__na_2__", "river_canal__status_a_1__na_2__", "tank_pond_lake__status_a_1__na_"]),
     "canals": dict(path=WRP, layer=5, page=1000, simplify=0.0005),
 }
 
@@ -93,6 +108,8 @@ def fetch(name: str) -> dict:
                            "spatialRel": "esriSpatialRelIntersects"})
         if spec.get("simplify"):
             params["maxAllowableOffset"] = spec["simplify"]
+        if spec.get("geometry") is False:
+            params["returnGeometry"] = "false"
         d = _get(url, params)
         got = d.get("features", [])
         feats += got

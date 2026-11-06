@@ -998,7 +998,8 @@ def wris_census() -> None:
         p = f["properties"]
         ha = p.get("total_geographical_area__in_hec")
         places.append({"type": "Feature", "geometry": f["geometry"], "properties": {
-            "kind": "village", "name": (p.get("village_name") or "").strip(), "pop": p.get("total_population_of_village"),
+            "kind": "village", "code": p.get("village_code"), "name": (p.get("village_name") or "").strip(),
+            "pop": p.get("total_population_of_village"),
             "hh": p.get("total___households"), "km2": round(ha / 100, 2) if ha is not None else None,
             "block": (p.get("cd_block_name") or "").strip()}})
     _save("state_places_census.geojson", _fc(places))
@@ -1035,6 +1036,50 @@ def wris_census() -> None:
     print(f"blocks: {len(blocks)}, with ground water assessment: {withgw}; spelling differences / no match: {len(weak)}")
     for w in weak[:40]:
         print("   ", w)
+
+    # Earthquake zones and major aquifers, cut to the state.
+    seis = []
+    for f in load("seismic"):
+        zone = (f["properties"].get("seismic_zo") or "").strip()
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if zone and not g.is_empty:
+            seis.append(_feat(g, zone=zone.replace("Seismic Zone-", ""), intensity=(f["properties"].get("intensity_mm") or "").strip()))
+    _save("state_seismic.geojson", _fc(seis))
+    print("seismic zones:", sorted((x["properties"]["zone"] for x in seis)))
+    aq = []
+    for f in load("aquifers"):
+        p = f["properties"]
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if not g.is_empty:
+            aq.append(_feat(g, aquifer=(p.get("aquifer") or "").strip(), detail=(p.get("aquifer0") or "").strip().replace("\n", " "),
+                            code=(p.get("newcode14") or "").strip()))
+    _save("state_aquifers.geojson", _fc(aq))
+    print("aquifers:", len(aq), sorted({a["properties"]["aquifer"] for a in aq}))
+
+    # Village details (Census 2011 village directory), keyed by village code; loaded by the app when a village is clicked.
+    water = ["tap_water_treated__status_a_1__", "tap_water_untreated__status_a_1", "covered_well__status_a_1__na_2_",
+             "uncovered__well__status_a_1__na", "hand_pump__status_a_1__na_2__", "tube_wells_borehole__status_a_1",
+             "spring__status_a_1__na_2__", "river_canal__status_a_1__na_2__", "tank_pond_lake__status_a_1__na_"]
+    land = ["net_area_sown__in_hectares_", "forest_area__in_hectares_", "area_irrigated_by_source__in_he",
+            "fallows_land_other_than_current", "current_fallows_area__in_hectar", "culturable_waste_land_area__in_",
+            "area_under_non_agricultural_use", "barren___un_cultivable_land_are"]
+    rows = {}
+    for f in load("village_details"):
+        p = f["properties"]
+        mask = -1 if all(p.get(k) is None for k in water) else sum(1 << i for i, k in enumerate(water) if p.get(k) == 1)
+        rows[str(p["village_code"])] = [
+            (p.get("gram_panchayat_name") or "").strip().title(), (p.get("nearest_town_name") or "").strip().title(),
+            p.get("nearest_town_distance_from_vill"), p.get("total_male_population_of_villag"),
+            p.get("total_female_population_of_vill"), *[p.get(k) for k in land], mask]
+    doc = {"fields": ["gram_panchayat", "nearest_town", "nearest_town_km", "male", "female",
+                      "net_sown_ha", "forest_ha", "irrigated_ha", "fallow_other_ha", "fallow_current_ha",
+                      "culturable_waste_ha", "non_agricultural_ha", "barren_ha", "water_sources_mask"],
+           "water_sources": ["Tap water (treated)", "Tap water (untreated)", "Covered well", "Uncovered well", "Hand pump",
+                             "Tube well or borehole", "Spring", "River or canal", "Tank, pond or lake"],
+           "source": "Census of India 2011 village directory, via India-WRIS", "villages": rows}
+    with open(OUT / "village_details.json", "w") as fh:
+        json.dump(doc, fh, separators=(",", ":"), ensure_ascii=False)
+    print("village details:", len(rows))
 
     # Assembly constituencies.
     asm = [_feat(make_valid(shape(f["geometry"])).intersection(state), name=(f["properties"].get("ac_name") or "").strip())
@@ -1092,12 +1137,14 @@ def pack() -> None:
         shutil.copy(OUT / name, web / name)
     for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
                   "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers", "blocks", "assembly",
-                  "monitors", "canals"):
+                  "monitors", "canals", "seismic", "aquifers"):
         src = OUT / f"state_{layer}.geojson"
         if layer == "places" and (OUT / "state_places_census.geojson").exists():
             src = OUT / "state_places_census.geojson"  # Census 2011 list replaces the volunteer-mapped places
         if src.exists():
             shutil.copy(src, web / f"{layer}.geojson")
+    if (OUT / "village_details.json").exists():
+        shutil.copy(OUT / "village_details.json", web / "village_details.json")
 
 
 STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
