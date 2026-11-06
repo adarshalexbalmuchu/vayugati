@@ -657,7 +657,10 @@ function ensureSatellite(map: maplibregl.Map, visible = true) {
   const key = maptilerKey()
   if (!key || !alive(map)) return
   if (!map.getSource(SAT_SOURCE)) {
-    map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`, tileSize: 512 })
+    map.addSource(SAT_SOURCE, { type: 'raster', url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${key}`,
+      // The tiles are 512 px. Declaring 256 makes the map fetch one zoom level deeper, so each tile pixel lands on one
+      // screen pixel on a sharp (retina) display instead of being stretched two-fold.
+      tileSize: 256 })
   }
   if (!map.getLayer(SAT_LAYER)) {
     map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE,
@@ -859,7 +862,7 @@ class ViewControl implements maplibregl.IControl {
     const sum = document.createElement('summary')
     sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const st = document.createElement('span')
-    st.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    st.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     st.textContent = 'Map layers'
     const count = document.createElement('span')
     count.className = 'text-[11px] font-semibold tabular-nums text-slate-700'
@@ -887,7 +890,7 @@ class ViewControl implements maplibregl.IControl {
     for (const g of CONTEXT_GROUPS) {
       const sec = document.createElement('div')
       const gl = document.createElement('p')
-      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500'
       gl.textContent = g.label
       sec.appendChild(gl)
       for (const key of g.keys) {
@@ -929,7 +932,7 @@ class ViewControl implements maplibregl.IControl {
     head.className = 'flex items-center justify-between gap-2 px-3 py-2'
     const title = document.createElement('div')
     const t1 = document.createElement('p')
-    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     t1.textContent = 'Geospatial platform'
     const t2 = document.createElement('p')
     t2.className = 'text-xl font-bold leading-none text-slate-900'
@@ -954,7 +957,7 @@ class ViewControl implements maplibregl.IControl {
     const pick = document.createElement('label')
     pick.className = 'block'
     const pickText = document.createElement('span')
-    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     pickText.textContent = 'Go to district (opens in 3D)'
     const select = document.createElement('select')
     select.className = 'focus-ring w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900'
@@ -974,7 +977,7 @@ class ViewControl implements maplibregl.IControl {
     const rsum = document.createElement('summary')
     rsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const rst = document.createElement('span')
-    rst.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    rst.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     rst.textContent = 'Answers from the assistant'
     rsum.appendChild(rst)
     const rslot = document.createElement('div')
@@ -1004,7 +1007,7 @@ class ViewControl implements maplibregl.IControl {
     chatSlot.className = 'min-h-0 flex-1'
     dock.append(dockTabs, profile, chatSlot)
     map.getContainer().appendChild(dock)
-    glassify(dock, { tint: 0.55 })
+    glassify(dock, { tint: 0.78 })
     this.dock = dock
     this.dockTabs = dockTabs
     this.profileBox = profile
@@ -1014,7 +1017,7 @@ class ViewControl implements maplibregl.IControl {
     toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg px-3 py-2 text-xs text-slate-700 md:left-1/2 md:right-auto md:-translate-x-1/2'
     toolbar.style.display = 'none'
     map.getContainer().appendChild(toolbar)
-    glassify(toolbar, { tint: 0.5, distort: true })
+    glassify(toolbar, { tint: 0.78, distort: true })
     this.toolbar = toolbar
     loadProfiles(this.pack.base).then((d) => {
       this.profiles = d
@@ -1027,7 +1030,7 @@ class ViewControl implements maplibregl.IControl {
     panel.style.display = 'none'
     panel.title = 'Contours every 10–100 m with heights. Click the ground for its elevation. Right-drag or Ctrl-drag to tilt and turn.'
     const ph = document.createElement('p')
-    ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    ph.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     ph.textContent = '3D'
     const hRow = document.createElement('label')
     hRow.className = 'flex items-center gap-2'
@@ -1077,7 +1080,7 @@ class ViewControl implements maplibregl.IControl {
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
     const lst = document.createElement('span')
-    lst.className = 'text-[8px] font-bold uppercase tracking-widest text-slate-500'
+    lst.className = 'text-[9px] font-bold uppercase tracking-widest text-slate-700'
     lst.textContent = 'Legend'
     lsum.appendChild(lst)
     const lbody = document.createElement('div')
@@ -1089,7 +1092,7 @@ class ViewControl implements maplibregl.IControl {
     lbody.append(this.legendList, lc)
     legend.append(lsum, lbody)
     map.getContainer().appendChild(legend)
-    glassify(legend, { tint: 0.5, distort: true })
+    glassify(legend, { tint: 0.78, distort: true })
     this.lcLegend = lc
     this.renderLegend(this.wanted())
     loadLandcover(this.pack.base).then((m) => {
@@ -1099,7 +1102,7 @@ class ViewControl implements maplibregl.IControl {
 
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
-    glassify(el, { tint: 0.55 })
+    glassify(el, { tint: 0.78 })
     this.el = el
     return el
   }
@@ -1319,7 +1322,7 @@ class ViewControl implements maplibregl.IControl {
       if (text != null) n.textContent = text
       return n
     }
-    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400', t)
+    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500', t)
 
     const top = el('div', '-mx-3 -mt-3 mb-3 flex items-start justify-between gap-2 rounded-t-lg border-b border-slate-100 bg-white/50 px-3 pb-3 pt-3')
     const tt = el('div', 'min-w-0')
