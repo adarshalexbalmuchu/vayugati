@@ -71,9 +71,9 @@ const FILES = {
   kilns: 'kilns.geojson',
   builtup: 'builtup.geojson',
 } as const
-/** Files the map can do without (an older pack): they load as empty. */
-const OPTIONAL = new Set(['railways', 'rivers', 'water', 'forest', 'protected', 'places', 'facilities', 'landmarks',
-  'transport', 'power', 'kilns', 'builtup'])
+/** Files the code itself needs (the state mask, district lookup and heat-detection dates). Everything else is given to
+ *  MapLibre as a URL, so each layer loads on its own: one slow or missing file cannot hold up the rest. */
+const NEEDED = ['state', 'districts', 'fires'] as const
 
 interface LandcoverMeta {
   coordinates: [[number, number], [number, number], [number, number], [number, number]]
@@ -81,7 +81,7 @@ interface LandcoverMeta {
   source: string
 }
 
-type PackData = Record<keyof typeof FILES, FeatureCollection>
+type PackData = Record<(typeof NEEDED)[number], FeatureCollection>
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
@@ -103,14 +103,10 @@ function loadPack(base: string): Promise<PackData> {
   let p = cache.get(base)
   if (!p) {
     p = Promise.all(
-      Object.entries(FILES).map(async ([k, file]) => {
-        const res = await fetch(`${base}/${file}`).catch(() => null)
-        const ok = res?.ok && (res.headers.get('content-type') ?? '').includes('json')
-        if (!ok) {
-          if (OPTIONAL.has(k)) return [k, EMPTY_FC] as const
-          throw new Error(`${file}: HTTP ${res?.status ?? 'network error'}`)
-        }
-        return [k, (await res!.json()) as FeatureCollection] as const
+      NEEDED.map(async (k) => {
+        const res = await fetch(`${base}/${FILES[k]}`)
+        if (!res.ok) throw new Error(`${FILES[k]}: HTTP ${res.status}`)
+        return [k, (await res.json()) as FeatureCollection] as const
       }),
     ).then((entries) => Object.fromEntries(entries) as PackData)
     p.catch(() => cache.delete(base))
@@ -139,6 +135,14 @@ const SRC = {
   kilns: 'ctx-kilns',
   builtup: 'ctx-builtup',
 } as const
+
+/** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
+const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
+  'ctx-sources': ['mines', 'industry'], 'ctx-roads': ['roads'], 'ctx-fires': ['fires'], 'ctx-railways': ['railways'],
+  'ctx-transport': ['railways'], 'ctx-rivers': ['water'], 'ctx-water': ['water'], 'ctx-forest': ['forest'],
+  'ctx-protected': ['protected'], 'ctx-places': ['places'], 'ctx-facilities': ['facilities'],
+  'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'], 'ctx-kilns': ['kilns'], 'ctx-builtup': ['builtup'],
+}
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
 const LAYERS: Record<CityContextLayerKey, string[]> = {
@@ -264,7 +268,8 @@ function labelFont(map: maplibregl.Map): string[] | null {
 function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibility, landcover: LandcoverMeta | null, base: string) {
   if (map.getSource(SRC.sources)) return
   for (const [k, id] of Object.entries(SRC)) {
-    map.addSource(id, { type: 'geojson', data: data[k as keyof PackData] })
+    const needed = (NEEDED as readonly string[]).includes(k)
+    map.addSource(id, { type: 'geojson', data: needed ? data[k as keyof PackData] : `${base}/${FILES[k as keyof typeof FILES]}` })
   }
   const vis = (key: CityContextLayerKey) => (visible[key] ? 'visible' : 'none') as 'visible' | 'none'
   if (visible.districts) hideBasemapBoundaries(map)
@@ -789,17 +794,42 @@ class ViewControl implements maplibregl.IControl {
   ) {}
 
   private layerInputs: Partial<Record<CityContextLayerKey, HTMLInputElement>> = {}
+  private layerNotes: Partial<Record<CityContextLayerKey, HTMLSpanElement>> = {}
+  private srcState = new Map<string, 'loading' | 'ok' | 'failed'>()
   private layerCount: HTMLSpanElement | null = null
   private layersDetails: HTMLDetailsElement | null = null
   private legendList: HTMLDivElement | null = null
+  private legendWrap: HTMLDetailsElement | null = null
   private resultsWrap: HTMLDetailsElement | null = null
   /** Where the assistant's answers (rankings, facts, overview) render, in the left card under the layers. */
   resultsSlot: HTMLDivElement | null = null
+
+  /** Record a source's loading state and update the note next to the layers it feeds. */
+  setSourceState(sourceId: string, state: 'loading' | 'ok' | 'failed') {
+    this.srcState.set(sourceId, state)
+    for (const key of SRC_KEYS[sourceId] ?? []) this.updateNote(key)
+  }
+
+  private updateNote(key: CityContextLayerKey) {
+    const note = this.layerNotes[key]
+    if (!note) return
+    const ids = Object.entries(SRC_KEYS).filter(([, ks]) => ks.includes(key)).map(([id]) => id)
+    const states = ids.map((id) => this.srcState.get(id))
+    const on = this.wanted()[key]
+    if (states.includes('failed')) {
+      note.textContent = 'could not load'
+      note.className = 'shrink-0 text-[10px] font-semibold text-red-700'
+    } else if (on && states.some((x) => x !== 'ok')) {
+      note.textContent = 'loading…'
+      note.className = 'shrink-0 text-[10px] text-ink-500'
+    } else note.textContent = ''
+  }
 
   /** Sync the checkboxes with the current visibility. */
   setVisible(v: CityContextVisibility) {
     for (const [k, input] of Object.entries(this.layerInputs)) input.checked = v[k as CityContextLayerKey]
     this.renderLegend(v)
+    for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
     if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
   }
 
@@ -860,7 +890,10 @@ class ViewControl implements maplibregl.IControl {
         const tx = document.createElement('span')
         tx.className = 'min-w-0 flex-1 text-xs text-ink-900'
         tx.textContent = d.label
-        row.append(input, sw, tx)
+        const note = document.createElement('span')
+        note.className = 'shrink-0 text-[10px]'
+        this.layerNotes[key] = note
+        row.append(input, sw, tx, note)
         sec.appendChild(row)
       }
       inner.appendChild(sec)
@@ -1030,7 +1063,9 @@ class ViewControl implements maplibregl.IControl {
     // Legend: what the symbols of the layers that are on mean (the land-cover key appears here too)
     const legend = document.createElement('details')
     legend.open = true
-    legend.className = 'rounded-xl border border-ink-900/10 bg-white'
+    // A floating box on the map (like Delhi's legend), not part of the layers card.
+    legend.className = 'absolute bottom-24 left-2 z-10 w-[min(250px,calc(100vw-1rem))] overflow-hidden rounded-xl bg-cream/95 font-site text-xs text-ink-800 shadow-card ring-1 ring-ink-900/10 backdrop-blur-sm md:bottom-3 md:left-[348px]'
+    this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
     const lst = document.createElement('span')
@@ -1038,14 +1073,14 @@ class ViewControl implements maplibregl.IControl {
     lst.textContent = 'Legend'
     lsum.appendChild(lst)
     const lbody = document.createElement('div')
-    lbody.className = 'space-y-2.5 border-t border-ink-900/10 p-2.5'
+    lbody.className = 'max-h-[min(55svh,26rem)] space-y-2.5 overflow-y-auto border-t border-ink-900/10 p-2.5'
     this.legendList = document.createElement('div')
     this.legendList.className = 'space-y-1'
     const lc = document.createElement('div')
     lc.style.display = 'none'
     lbody.append(this.legendList, lc)
     legend.append(lsum, lbody)
-    body.appendChild(legend)
+    map.getContainer().appendChild(legend)
     this.lcLegend = lc
     this.renderLegend(this.wanted())
     loadLandcover(this.pack.base).then((m) => {
@@ -1139,6 +1174,7 @@ class ViewControl implements maplibregl.IControl {
   onRemove() {
     this.dock?.remove()
     this.toolbar?.remove()
+    this.legendWrap?.remove()
     this.stopPlay()
     this.map?.off('styledata', this.reapply)
     this.map?.off('style.load', this.onStyleLoad)
@@ -1191,12 +1227,8 @@ class ViewControl implements maplibregl.IControl {
         box.appendChild(row)
       }
     }
-    if (!any && !v.landcover) {
-      const p = document.createElement('p')
-      p.className = 'text-[11px] text-ink-500'
-      p.textContent = 'Switch a layer on to see what its symbols mean.'
-      box.appendChild(p)
-    }
+    // nothing to explain: hide the box
+    if (this.legendWrap) this.legendWrap.style.display = any || v.landcover ? '' : 'none'
   }
 
   /** Land-cover colour key, shown while that layer is on. */
@@ -1811,6 +1843,20 @@ export default function CityContextLayers({
     map.touchZoomRotate.enableRotation()
     map.touchPitch.enable()
     map.keyboard.enable()
+    // Per-layer loading state, shown next to each checkbox.
+    const onSourceData = (e: maplibregl.MapSourceDataEvent) => {
+      if (e.sourceId && SRC_KEYS[e.sourceId] && e.sourceDataType !== 'metadata' && map.isSourceLoaded(e.sourceId)) {
+        controlRef.current?.setSourceState(e.sourceId, 'ok')
+      }
+    }
+    const onMapError = (e: { sourceId?: string; error?: Error }) => {
+      if (e.sourceId && SRC_KEYS[e.sourceId]) {
+        console.warn('[CityContextLayers] could not load', e.sourceId, e.error?.message)
+        controlRef.current?.setSourceState(e.sourceId, 'failed')
+      }
+    }
+    map.on('sourcedata', onSourceData)
+    map.on('error', onMapError)
     map.on('style.load', ensure)
     map.on('styledata', ensure)
     map.on('click', onClick)
@@ -1819,6 +1865,8 @@ export default function CityContextLayers({
       cancelled = true
       map.off('style.load', ensure)
       map.off('styledata', ensure)
+      map.off('sourcedata', onSourceData)
+      map.off('error', onMapError)
       map.off('click', onClick)
       map.off('mousemove', onMove)
       popup.remove()
