@@ -124,3 +124,7 @@
   color: #64748b;
 }
 .ctx-popup .maplibregl-popup-close-button:hover { background: #f1f5f9; color: #0f172a; }
+
+/* Chat slot in the Jharkhand dock: a comfortable height until the panel is resized, then it fills the panel. */
+.jh-chat-slot { height: min(34rem, calc(100svh - 15rem)); }
+[data-sized="1"] .jh-chat-slot { height: auto; flex: 1 1 0%; min-height: 0; }
