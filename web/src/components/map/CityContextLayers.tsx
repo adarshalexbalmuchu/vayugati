@@ -28,7 +28,6 @@ import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEF
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 import { useState } from 'react'
 import MapAssistant from './MapAssistant'
-import { PanelLayout, type LayoutMode } from '../../lib/panelLayout'
 import type { ProfilesDoc as FactsDoc } from '../../lib/jhFacts'
 
 interface ContextPack {
@@ -829,9 +828,6 @@ class ViewControl implements maplibregl.IControl {
   private layersDetails: HTMLDetailsElement | null = null
   private legendList: HTMLDivElement | null = null
   private legendWrap: HTMLDetailsElement | null = null
-  private layout: PanelLayout | null = null
-  private layoutBar: HTMLDivElement | null = null
-  private stub: HTMLDivElement | null = null
   private resultsWrap: HTMLDetailsElement | null = null
   /** Where the assistant's answers (rankings, facts, overview) render, in the left card under the layers. */
   resultsSlot: HTMLDivElement | null = null
@@ -948,7 +944,7 @@ class ViewControl implements maplibregl.IControl {
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
-    el.className = 'absolute left-2.5 top-2.5 z-10 flex max-h-[calc(100svh-210px)] w-[min(320px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg text-xs text-slate-700'
+    el.className = 'maplibregl-ctrl relative w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-lg text-xs text-slate-700'
 
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
@@ -965,7 +961,7 @@ class ViewControl implements maplibregl.IControl {
     toggle.type = 'button'
     toggle.className = 'focus-ring rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
     const body = document.createElement('div')
-    body.className = 'min-h-0 flex-1 space-y-3 overflow-y-auto border-t border-slate-200 px-3 py-3'
+    body.className = 'max-h-[calc(100svh-210px)] space-y-3 overflow-y-auto border-t border-slate-200 px-3 py-3'
     const setOpen = (open: boolean) => {
       body.style.display = open ? '' : 'none'
       toggle.textContent = open ? 'Hide' : 'Show'
@@ -1027,12 +1023,8 @@ class ViewControl implements maplibregl.IControl {
     const profile = document.createElement('div')
     profile.className = 'min-h-0 flex-1 overflow-y-auto p-3'
     const chatSlot = document.createElement('div')
-    chatSlot.className = 'jh-chat-slot min-h-0 flex-1'
-    const dockGrip = document.createElement('div')
-    dockGrip.className = 'hidden h-3.5 shrink-0 items-center justify-center md:flex'
-    dockGrip.title = 'Drag to move'
-    dockGrip.innerHTML = '<svg viewBox="0 0 24 6" class="h-1.5 w-6 text-slate-300"><circle cx="4" cy="3" r="1.4" fill="currentColor"/><circle cx="9" cy="3" r="1.4" fill="currentColor"/><circle cx="14" cy="3" r="1.4" fill="currentColor"/><circle cx="19" cy="3" r="1.4" fill="currentColor"/></svg>'
-    dock.append(dockGrip, dockTabs, profile, chatSlot)
+    chatSlot.className = 'min-h-0 flex-1'
+    dock.append(dockTabs, profile, chatSlot)
     map.getContainer().appendChild(dock)
     glassify(dock, { tint: 0.55 })
     this.dock = dock
@@ -1151,27 +1143,8 @@ class ViewControl implements maplibregl.IControl {
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
     glassify(el, { tint: 0.55 })
-    map.getContainer().appendChild(el)
     this.el = el
-
-    // Movable, resizable panels and the pane layouts (free / two / three).
-    const layout = new PanelLayout(
-      map.getContainer(),
-      (pad) => { if (alive(this.map)) this.map.setPadding({ top: 0, bottom: 0, left: pad.left, right: pad.right }) },
-      (mode) => this.syncLayoutBar(mode),
-    )
-    this.layout = layout
-    layout.register('layers', el, { handles: [head], resizable: true })
-    if (this.dock) layout.register('dock', this.dock, { handles: [dockGrip], resizable: true })
-    if (this.legendWrap) layout.register('legend', this.legendWrap, { handles: [this.legendWrap] })
-    if (this.toolbar) layout.register('toolbar', this.toolbar, { handles: [this.toolbar] })
-    this.buildLayoutBar(map)
-    layout.apply()
-    // MapLibre needs a control element; the panels live in the map container.
-    const stub = document.createElement('div')
-    stub.style.display = 'none'
-    this.stub = stub
-    return stub
+    return el
   }
 
   private opened = false
@@ -1182,55 +1155,7 @@ class ViewControl implements maplibregl.IControl {
     this.opened = true
     map.resize()
     const [w, s, e, n] = this.pack.regionBounds
-    map.fitBounds([[w, s], [e, n]], { padding: this.fitPad(), duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
-  }
-
-  /** The layout switcher: free, two panes, three panes, reset. */
-  private buildLayoutBar(map: maplibregl.Map) {
-    const bar = document.createElement('div')
-    bar.className = 'absolute left-1/2 top-2.5 z-10 hidden -translate-x-1/2 items-center gap-1 rounded-lg p-1 text-xs text-slate-700 md:flex'
-    const icon = (rects: [number, number, number, number][]) =>
-      `<svg viewBox="0 0 24 16" class="h-4 w-6" fill="none" stroke="currentColor" stroke-width="1.2">${rects.map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1"/>`).join('')}</svg>`
-    const defs: { mode: LayoutMode | 'reset'; label: string; svg: string }[] = [
-      { mode: 'free', label: 'Free: drag and resize panels anywhere', svg: icon([[1, 1, 7, 6], [14, 2, 8, 5], [3, 9, 9, 6], [16, 10, 6, 5]]) },
-      { mode: 'two', label: 'Two panes: panels in one column, map beside it', svg: icon([[1, 1, 7, 6], [1, 9, 7, 6], [10, 1, 13, 14]]) },
-      { mode: 'three', label: 'Three panes: panels on both sides, map between', svg: icon([[1, 1, 6, 14], [9, 1, 7, 14], [18, 1, 5, 14]]) },
-    ]
-    for (const d of defs) {
-      const b = document.createElement('button')
-      b.type = 'button'
-      b.title = d.label
-      b.setAttribute('aria-label', d.label)
-      b.innerHTML = d.svg
-      b.dataset.mode = d.mode
-      b.addEventListener('click', () => this.layout?.setMode(d.mode as LayoutMode))
-      bar.appendChild(b)
-    }
-    const reset = document.createElement('button')
-    reset.type = 'button'
-    reset.title = 'Reset the layout'
-    reset.className = 'rounded-md px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-white/70'
-    reset.textContent = 'Reset'
-    reset.addEventListener('click', () => this.layout?.reset())
-    bar.appendChild(reset)
-    map.getContainer().appendChild(bar)
-    glassify(bar, { tint: 0.5, distort: true })
-    this.layoutBar = bar
-    this.syncLayoutBar(this.layout?.mode ?? 'free')
-  }
-
-  private syncLayoutBar(mode: LayoutMode) {
-    this.layoutBar?.querySelectorAll('button[data-mode]').forEach((b) => {
-      const on = (b as HTMLElement).dataset.mode === mode
-      b.className = `rounded-md px-1 py-1 transition ${on ? 'bg-accent-500 text-white' : 'text-slate-600 hover:bg-white/70'}`
-    })
-  }
-
-  /** Padding for fitBounds: the base margin plus whatever the panel layout reserves (a fit would otherwise wipe the
-   *  map's own padding). */
-  private fitPad(base = 30, extra: { top?: number; bottom?: number; left?: number; right?: number } = {}) {
-    const r = this.layout?.reserved() ?? { left: 0, right: 0 }
-    return { top: base + (extra.top ?? 0), bottom: base + (extra.bottom ?? 0), left: base + r.left + (extra.left ?? 0), right: base + r.right + (extra.right ?? 0) }
+    map.fitBounds([[w, s], [e, n]], { padding: 30, duration: 0, pitch: 0, bearing: 0, maxZoom: 8 })
   }
 
   /** Show the answers section (and fold the layers away), or hide it (and reopen the layers). */
@@ -1279,9 +1204,6 @@ class ViewControl implements maplibregl.IControl {
   }
 
   onRemove() {
-    this.layout?.destroy()
-    this.layoutBar?.remove()
-    this.stub?.remove()
     this.dock?.remove()
     this.toolbar?.remove()
     this.legendWrap?.remove()
@@ -1424,7 +1346,7 @@ class ViewControl implements maplibregl.IControl {
       if (this.on3D) this.leave3D()
       if (fly) {
         const [w, s, e, n] = this.pack.regionBounds
-        map.fitBounds([[w, s], [e, n]], { padding: this.fitPad(), pitch: 0, bearing: 0, duration: 1000 })
+        map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 0, bearing: 0, duration: 1000 })
       }
     }
   }
@@ -1701,9 +1623,8 @@ class ViewControl implements maplibregl.IControl {
     if (!alive(map)) return
     const c = map.getContainer()
     const wide = c.clientWidth >= 768
-    const columns = (this.layout?.mode ?? 'free') !== 'free'
     const padding = wide
-      ? this.fitPad(30, { top: 10, bottom: 80, right: columns ? 0 : 370 }) // free: leave room for the profile panel on the right; panes: the map is already padded
+      ? { top: 40, bottom: 110, left: 40, right: 400 } // right: docked profile panel + map buttons
       : { top: 60, bottom: Math.round(c.clientHeight * 0.55) + 20, left: 30, right: 30 } // bottom sheet
     const opts = { padding, pitch: 62, bearing: -25, maxZoom: 11.5 }
     const bounds: maplibregl.LngLatBoundsLike = [[w, s], [e, n]]

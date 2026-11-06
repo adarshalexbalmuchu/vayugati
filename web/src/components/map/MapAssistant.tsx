@@ -146,7 +146,7 @@ export default function MapAssistant({
   }
 
   const panel = (
-    <div className="flex h-full min-h-[16rem] flex-col">
+    <div className="flex h-[min(34rem,calc(100svh-15rem))] flex-col md:h-[min(34rem,calc(100svh-14rem))]">
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Ask the map</p>

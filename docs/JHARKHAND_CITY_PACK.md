@@ -167,12 +167,3 @@ for that reason, with the code and data deleted:
   day-by-day player remain on the map.
 
 The assistant is told the same: for these it answers that they are incomplete and offers the layer instead.
-
-## Panel layout (Jharkhand map)
-
-Panels (layers card, profile/chat dock, legend, toolbar) can be dragged by their top strip or header, the layers card and
-dock resized from the bottom-right corner, and arranged with the switcher at the top of the map: Free, Two panes (one
-column on the left, map beside it), Three panes (layers left, dock right, map between; the map is padded to the free
-space), and Reset. Dragging from a pane layout turns it into the free layout. The arrangement is remembered in
-localStorage (`vg-jh-layout-v1`). Off below 768 px, where the CSS bottom-sheet layout applies. Geometry is pure and tested
-(`web/src/lib/panelLayout.ts`); the DOM wiring is `PanelLayout` in the same file.
