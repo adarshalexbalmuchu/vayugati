@@ -131,6 +131,11 @@ const EMPTY_DATA: [WardSummary[], StationMarker[], Incident[], Report[], Station
 ]
 
 const EMPTY_BOUNDARIES: WardBoundary[] = []
+/** No ward polygons, but the layers still exist (MapView adds other layers just below them). */
+const EMPTY_WARD_COLLECTION: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon, WardBoundaryFeatureProps> = {
+  type: 'FeatureCollection',
+  features: [],
+}
 const EMPTY_FORECASTS: Map<number, WardForecastSummary> = new Map()
 const EMPTY_AQI_FORECASTS: Map<number, AqiForecastPoint> = new Map()
 
@@ -1350,7 +1355,7 @@ export default function MapPage() {
                 onMarkerClick={handleMarkerClick}
                 fitBoundsTo={fitBoundsTo}
                 // Map-first city: the database's ward cells (Dhanbad's old grid) and Delhi-style markers are not drawn.
-                wardBoundaries={mapFirst ? undefined : wardBoundaryCollection}
+                wardBoundaries={mapFirst ? EMPTY_WARD_COLLECTION : wardBoundaryCollection}
                 showWardBoundaries={!mapFirst && layers.wardBoundaries && wardBoundariesAvailable}
                 selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
                 onBoundaryClick={handleBoundaryClick}
