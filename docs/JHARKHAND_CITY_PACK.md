@@ -144,11 +144,12 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
 
 ## Data still to request (checked 6 Nov 2026)
 
-- **Coal mines with names and owners.** Government sources only (decided 7 Nov 2026; Global Energy Monitor data was
-  tried and removed). data.gov.in has a table of 42 captive and commercial coal mines under production (allottee and
-  capacity, Rajya Sabha answer of 25 Nov 2024) but no state or coordinates, so it cannot be mapped; the Ministry of Coal
-  lists blocks for auction (name, state, exploration status) without coordinates; the Coal Directory is image-only. The
-  official lease and project lists are held by Coal India subsidiaries (BCCL, CCL, ECL) and CMPDI.
+- **Coal mines with names and owners.** Global Energy Monitor's tracker is used for the mines it places exactly (91 of 151;
+  see the Standard). Official sources checked 7 Nov 2026: data.gov.in has a table of 42 captive and commercial coal mines
+  under production (allottee and capacity, Rajya Sabha answer of 25 Nov 2024) without state or coordinates, so it cannot be
+  mapped but agrees with the tracker's owners where they overlap; the Ministry of Coal lists blocks for auction without
+  coordinates; the Coal Directory is image-only. The official lease and project lists are held by Coal India subsidiaries
+  (BCCL, CCL, ECL) and CMPDI.
 - **Industries.** CPCB / JSPCB lists of highly polluting industry categories (consent records).
 - **Coal-fire map of Jharia.** NRSC/ISRO, quarterly under the October 2025 MoU with BCCL and CMPDI.
 - **District poverty / clean cooking fuel.** NITI's district MPI was not found as a download; NFHS-5 district fact sheets
@@ -181,3 +182,15 @@ protected areas (India-WRIS), towns and villages (Census 2011). Rule: a default 
 authoritative source, and teaches one basic fact about it (how it is divided, what covers it, where water flows, what is
 protected, where people live). Heat detections (a changing snapshot), mines, kilns, roads, railways, power, schools,
 night lights (2016) and the volunteer-mapped streams start off. Towns and villages are now the Census 2011 lists.
+
+## Credibility rule (7 Nov 2026)
+
+A fact is shown only if it can be stated without a mistake: an official source, or a research data set that cites its
+sources, and then only the records it is confident about. Applied so far:
+
+- Global Energy Monitor coal mines and plants: only positions rated Exact are drawn (91 of 151 mines; all 15 plants); 60
+  mines rated Approximate (seen 5 to 24 km from any mapped mine) and 2 with coordinates outside the state are left out.
+- Removed as incomplete and easily read as the whole picture: mapped forest (use land cover and ISFR), mapped built-up
+  areas (use land cover), schools and hospitals (246 schools against tens of thousands) and brick kilns.
+- Kept with their source named, because what they show is physical and not a count: OpenStreetMap mining and industrial
+  areas, roads of the main classes, railways, power lines, streams, peaks and waterfalls.

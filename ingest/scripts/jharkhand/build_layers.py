@@ -1168,7 +1168,7 @@ def gem() -> None:
     by_id: dict[str, list] = {}
     for r in jh:
         by_id.setdefault(r["GEM Mine ID"], []).append(r)
-    feats, outside = [], []
+    feats, outside, approx = [], [], []
     for mid, group in by_id.items():
         # one mine, possibly with an expansion listed as a second row: the existing mine row leads.
         group.sort(key=lambda r: (r.get("Status") != "Operating", r.get("Status") != "Mothballed"))
@@ -1176,6 +1176,11 @@ def gem() -> None:
         exp = next((g for g in group[1:] if g.get("Status") == "Proposed"), None)
         lon, lat = num(r, "Longitude", 6), num(r, "Latitude", 6)
         if lon is None or lat is None:
+            continue
+        # A position the tracker rates only 'Approximate' can be kilometres off (seen: 5 to 24 km from any mapped mine area),
+        # so such mines are not drawn: nothing on the map should look more certain than it is.
+        if val(r, "Location Accuracy") != "Exact":
+            approx.append(r["Mine Name"])
             continue
         pt = Point(lon, lat)
         if not state.contains(pt):
@@ -1194,6 +1199,9 @@ def gem() -> None:
         lon, lat = num(r, "Longitude", 6), num(r, "Latitude", 6)
         if lon is None or lat is None or not state.contains(Point(lon, lat)):
             continue
+        if val(r, "Location Accuracy") != "Exact":
+            approx.append(r["Mine Name"])
+            continue
         feats.append(_feat(Point(lon, lat), id=r["GEM Mine ID"], name=str(r["Mine Name"]).strip(), status="Closed",
                            status_detail=val(r, "Reason for Closure"), owner=_gem_owner(r.get("Owners")),
                            capacity_mtpa=num(r, "Capacity (Mtpa)"), output_mt=num(r, "Production (Mtpa)"),
@@ -1203,7 +1211,8 @@ def gem() -> None:
                            closed=int(float(r["Closing Year"])) if val(r, "Closing Year") else None,
                            coalfield=val(r, "Coalfield"), accuracy=val(r, "Location Accuracy")))
     _save("state_coalmines.geojson", _fc(feats))
-    print("GEM coal mines:", dict(collections.Counter(f["properties"]["status"] for f in feats)), "outside the state, dropped:", outside)
+    print("GEM coal mines:", dict(collections.Counter(f["properties"]["status"] for f in feats)), "outside the state, dropped:", outside,
+          "| approximate position, not drawn:", len(approx))
 
     ids = {f["properties"]["id"]: f["properties"]["name"] for f in feats}
     bounds = []
@@ -1239,6 +1248,9 @@ def gem() -> None:
     for lid, us in plants.items():
         u0 = us[0]
         pt = Point(float(u0["Longitude"]), float(u0["Latitude"]))
+        if str(u0.get("Location accuracy")).lower() != "exact":
+            pout.append(f"{u0['Plant name']} (approximate position)")
+            continue
         if not state.contains(pt):
             pout.append(u0["Plant name"])
             continue
@@ -1280,8 +1292,8 @@ def pack() -> None:
         print(f"pack {out_name}: {len(feats)} in Jharkhand + {len(across)} across the border")
     for name in ("state.geojson", "districts.geojson", "fires_firms_5d.geojson", "stations.geojson"):
         shutil.copy(OUT / name, web / name)
-    for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
-                  "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers", "blocks", "assembly",
+    for layer in ("railways", "rivers", "water", "protected", "places", "landmarks",
+                  "transport", "power", "dams", "basins", "majorrivers", "blocks", "assembly",
                   "monitors", "canals", "seismic", "aquifers", "coalmines", "coalboundaries", "coalplants"):
         src = OUT / f"state_{layer}.geojson"
         if layer == "places" and (OUT / "state_places_census.geojson").exists():

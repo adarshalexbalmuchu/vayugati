@@ -25,8 +25,6 @@ export const CONTEXT_LAYER_DEFS = [
   { key: 'satellite', label: 'Satellite imagery', on: false, note: 'MapTiler satellite imagery.' },
   { key: 'relief', label: 'Shaded relief and contours', on: false,
     note: 'Hill shading from the MapTiler elevation model, with contour lines every 10 to 100 m (from zoom 9).' },
-  { key: 'forest', label: 'Forest areas (mapped)', on: false,
-    note: 'Forest and woodland drawn in OpenStreetMap (data as of 3 Nov 2026), areas over 0.5 km². Official forest cover per district is in the district profile (ISFR 2023).' },
   { key: 'protected', label: 'Protected areas', on: true,
     note: 'The 11 wildlife sanctuaries and the national park of Jharkhand, from the India-WRIS list (Central Water Commission, Ministry of Jal Shakti), with notification year and notified area. Outlines are approximate and can differ from the notified area; click one to compare.' },
   { key: 'majorrivers', label: 'Major rivers (India-WRIS)', on: true,
@@ -47,10 +45,6 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Large dams in the National Register of Large Dams (Central Water Commission), via India-WRIS: height, year, reservoir size, purpose and owner. Smaller dams are not in the register.' },
   { key: 'places', label: 'Towns and villages (Census 2011)', on: true,
     note: 'The 229 towns and 32,073 villages of the Census of India 2011, with population, households and area, as published in India-WRIS (Ministry of Jal Shakti). Villages appear from zoom 10. Points are village centres and approximate.' },
-  { key: 'builtup', label: 'Built-up areas (mapped)', on: false,
-    note: 'Residential areas drawn in OpenStreetMap, over 0.05 km². Incomplete; ESA land cover shows built-up land everywhere.' },
-  { key: 'facilities', label: 'Schools and hospitals', on: false,
-    note: 'Schools, colleges, hospitals and clinics in OpenStreetMap (3 Nov 2026), from zoom 10. Many are missing.' },
   { key: 'railways', label: 'Railways and stations', on: false,
     note: 'Railway lines, coal sidings and stations from OpenStreetMap (3 Nov 2026).' },
   { key: 'roads', label: 'Main roads', on: false,
@@ -58,15 +52,13 @@ export const CONTEXT_LAYER_DEFS = [
   { key: 'power', label: 'Power lines and substations', on: false,
     note: 'Transmission lines and substations from OpenStreetMap (3 Nov 2026).' },
   { key: 'coalmines', label: 'Coal mines (Global Energy Monitor)', on: false,
-    note: 'The 151 coal mines of Jharkhand in Global Energy Monitor\u2019s Global Coal Mine Tracker (August 2026 release, CC BY 4.0): owner, status, capacity and output. It covers mines of 1 million tonnes a year or more and some smaller ones, so it is not a complete list. Positions GEM rates Approximate may be off; mine boundaries are shown where GEM has them.' },
+    note: '91 of the 151 Jharkhand coal mines in Global Energy Monitor\u2019s Global Coal Mine Tracker (August 2026 release, CC BY 4.0): owner, status, capacity and output. Only mines the tracker places exactly are drawn; the 60 it places only approximately are left out, and 2 rows with coordinates outside the state were dropped. It lists mines of 1 million tonnes a year or more and some smaller ones, so it is not a complete list. Mine boundaries are shown where the tracker has them.' },
   { key: 'coalplants', label: 'Coal power plants (Global Energy Monitor)', on: false,
     note: 'The 15 coal-fired power plants of Jharkhand in Global Energy Monitor\u2019s Global Coal Plant Tracker (July 2026 release, CC BY 4.0), with owner, unit capacities and start years. Includes captive plants of steel and other works.' },
   { key: 'mines', label: 'Mining and quarry areas', on: false,
     note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (3 Nov 2026). Not official lease boundaries; many are missing (e.g. large parts of the North Karanpura coalfield).' },
   { key: 'industry', label: 'Industry and power plants', on: false,
     note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026).' },
-  { key: 'kilns', label: 'Brick kilns', on: false,
-    note: 'Brick kilns mapped in OpenStreetMap. Far from complete: most kilns are not mapped.' },
   { key: 'fires', label: 'Satellite heat detections', on: false,
     note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, last 5 days. Each dot is a 375 m pixel that read unusually hot: a surface coal fire, industrial heat or open burning. Not a measured fire area.' },
   { key: 'seismic', label: 'Earthquake zones', on: false,
@@ -99,21 +91,21 @@ export function isContextPanelKey(k: string): k is ContextPanelKey {
 export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = [
   { label: 'Boundaries', keys: ['districts', 'blocks', 'constituencies'] },
   { label: 'Imagery and terrain', keys: ['satellite', 'relief', 'landcover', 'nightlights'] },
-  { label: 'Nature', keys: ['forest', 'protected', 'landmarks'] },
+  { label: 'Nature', keys: ['protected', 'landmarks'] },
   { label: 'Rivers and water', keys: ['majorrivers', 'basins', 'water', 'canals', 'dams', 'groundwater', 'aquifers', 'monitors'] },
   { label: 'Hazards', keys: ['seismic'] },
-  { label: 'People', keys: ['places', 'builtup', 'facilities'] },
+  { label: 'People', keys: ['places'] },
   { label: 'Transport and energy', keys: ['railways', 'roads', 'power'] },
-  { label: 'Industry and fires', keys: ['coalmines', 'coalplants', 'mines', 'industry', 'kilns', 'fires'] },
+  { label: 'Industry and fires', keys: ['coalmines', 'coalplants', 'mines', 'industry', 'fires'] },
 ]
 
 export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   districts: '#2E2219', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
-  nightlights: '#E9B949', forest: '#2F7D3A', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
+  nightlights: '#E9B949', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
   majorrivers: '#1D6FB8', basins: '#5B7FA6', dams: '#0B3C7D',
   canals: '#4FA3D9', coalmines: '#212121', coalplants: '#B23A48', aquifers: '#8FB8A8', seismic: '#F08A4B', groundwater: '#E8B93C', monitors: '#00796B', blocks: '#7A7A7A', constituencies: '#7E57C2',
-  places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
-  power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',
+  places: '#5B4A3A', railways: '#2B2B2B', roads: '#C0392B',
+  power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', fires: '#E4572E',
 }
 
 /** What a layer's symbols mean on the map. Colours match the renderer (CityContextLayers.tsx). */
@@ -129,7 +121,6 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
   nightlights: [{ shape: 'ramp', color: 'linear-gradient(90deg,#0b0b12,#f5d76e,#ffffff)', label: 'Lights at night: dark to bright' }],
   satellite: [],
   relief: [{ shape: 'line', color: '#6B4F2E', label: 'Contour line (10 to 100 m)' }],
-  forest: [{ shape: 'area', color: '#2F7D3A', label: 'Forest or woodland' }],
   protected: [{ shape: 'dash', color: '#1B5E20', label: 'Protected area (national park, sanctuary)' }],
   water: [
     { shape: 'area', color: '#3B82C4', label: 'Lake or reservoir (mapped)' },
@@ -180,11 +171,6 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
   ],
   blocks: [{ shape: 'dash', color: '#7A7A7A', label: 'Block boundary' }],
   constituencies: [{ shape: 'dash', color: '#7E57C2', label: 'Assembly constituency boundary' }],
-  builtup: [{ shape: 'area', color: '#C8663E', label: 'Built-up area (mapped)' }],
-  facilities: [
-    { shape: 'dot', color: '#1E88E5', label: 'School or college' },
-    { shape: 'dot', color: '#D62D20', label: 'Hospital or clinic' },
-  ],
   railways: [
     { shape: 'line', color: '#2B2B2B', label: 'Railway line' },
     { shape: 'line', color: '#7A4E2D', label: 'Siding or yard' },
@@ -200,7 +186,6 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
     { shape: 'area', color: '#9B6BD1', label: 'Industrial land (mapped)' },
     { shape: 'dot', color: '#FFBF00', label: 'Power plant or large works (checked)' },
   ],
-  kilns: [{ shape: 'dot', color: '#A0522D', label: 'Brick kiln (mapped)' }],
   fires: [{ shape: 'dot', color: '#E4572E', label: 'Satellite heat detection' }],
   landmarks: [
     { shape: 'dot', color: '#6D4C41', label: 'Hill peak' },

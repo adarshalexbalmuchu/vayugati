@@ -7,9 +7,9 @@ import { elevationAt } from '../../lib/elevation'
 /**
  * Static context layers for a city pack. For Jharkhand the pack covers the
  * whole state, every district: outlines; ESA land cover; NASA night lights;
- * satellite imagery and relief; forests, protected areas, rivers and water;
+ * satellite imagery and relief; protected areas, rivers and water;
  * towns, villages, built-up areas, schools and hospitals; railways, roads,
- * power lines; mines, industry, checked power plants, brick kilns; satellite
+ * power lines; mines, industry, checked power plants, satellite
  * heat detections; peaks, waterfalls and dams. The list and its notes live
  * in lib/contextLayers.ts.
  *
@@ -61,15 +61,11 @@ const FILES = {
   railways: 'railways.geojson',
   rivers: 'rivers.geojson',
   water: 'water.geojson',
-  forest: 'forest.geojson',
   protected: 'protected.geojson',
   places: 'places.geojson',
-  facilities: 'facilities.geojson',
   landmarks: 'landmarks.geojson',
   transport: 'transport.geojson',
   power: 'power.geojson',
-  kilns: 'kilns.geojson',
-  builtup: 'builtup.geojson',
   majorrivers: 'majorrivers.geojson',
   basins: 'basins.geojson',
   dams: 'dams.geojson',
@@ -137,15 +133,11 @@ const SRC = {
   railways: 'ctx-railways',
   rivers: 'ctx-rivers',
   water: 'ctx-water',
-  forest: 'ctx-forest',
   protected: 'ctx-protected',
   places: 'ctx-places',
-  facilities: 'ctx-facilities',
   landmarks: 'ctx-landmarks',
   transport: 'ctx-transport',
   power: 'ctx-power',
-  kilns: 'ctx-kilns',
-  builtup: 'ctx-builtup',
   majorrivers: 'ctx-majorrivers',
   basins: 'ctx-basins',
   dams: 'ctx-dams',
@@ -163,9 +155,9 @@ const SRC = {
 /** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
 const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
   'ctx-sources': ['mines', 'industry'], 'ctx-roads': ['roads'], 'ctx-fires': ['fires'], 'ctx-railways': ['railways'],
-  'ctx-transport': ['railways'], 'ctx-rivers': ['water'], 'ctx-water': ['water'], 'ctx-forest': ['forest'],
-  'ctx-protected': ['protected'], 'ctx-places': ['places'], 'ctx-facilities': ['facilities'],
-  'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'], 'ctx-kilns': ['kilns'], 'ctx-builtup': ['builtup'],
+  'ctx-transport': ['railways'], 'ctx-rivers': ['water'], 'ctx-water': ['water'], 
+  'ctx-protected': ['protected'], 'ctx-places': ['places'],
+  'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'],
   'ctx-majorrivers': ['majorrivers'], 'ctx-basins': ['basins'], 'ctx-dams': ['dams'],
   'ctx-blocks': ['blocks', 'groundwater'], 'ctx-assembly': ['constituencies'], 'ctx-monitors': ['monitors'], 'ctx-canals': ['canals'],
   'ctx-seismic': ['seismic'], 'ctx-aquifers': ['aquifers'],
@@ -179,7 +171,6 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   nightlights: ['ctx-nightlights'],
   satellite: [], // added and removed on demand (see ensureSatellite)
   relief: [], // added and removed on demand (see ensureRelief)
-  forest: ['ctx-forest-fill'],
   protected: ['ctx-protected-fill', 'ctx-protected-line'],
   water: ['ctx-water-fill', 'ctx-rivers-line'],
   majorrivers: ['ctx-majorrivers-line', 'ctx-majorrivers-label'],
@@ -195,23 +186,19 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   blocks: ['ctx-blocks-fill', 'ctx-blocks-line', 'ctx-blocks-label'],
   constituencies: ['ctx-assembly-line', 'ctx-assembly-label'],
   places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
-  builtup: ['ctx-builtup-fill'],
-  facilities: ['ctx-facilities'],
   railways: ['ctx-railways-main', 'ctx-railways-siding', 'ctx-transport'],
   roads: ['ctx-roads-line'],
   power: ['ctx-power-line', 'ctx-power-sub'],
   industry: ['ctx-industry-fill', 'ctx-plants'],
   mines: ['ctx-mines-fill', 'ctx-mines-line'],
-  kilns: ['ctx-kilns'],
   fires: ['ctx-fires'],
   landmarks: ['ctx-landmarks', 'ctx-landmarks-label'],
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-coalplants', 'ctx-coalmines', 'ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
+const CLICKABLE = ['ctx-coalplants', 'ctx-coalmines', 'ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-landmarks', 'ctx-transport',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-coalboundaries-fill', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
-  'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
-  'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-aquifers-fill', 'ctx-seismic-fill', 'ctx-districts-fill']
+  'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill',   'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-aquifers-fill', 'ctx-seismic-fill', 'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -282,7 +269,6 @@ const KIND_LABEL: Record<string, string> = {
   airport: 'Airport or airstrip',
   substation: 'Electricity substation',
   line: 'Power line',
-  brick_kiln: 'Brick kiln',
   built_up: 'Built-up area',
   forest: 'Forest or woodland',
   protected: 'Protected area',
@@ -330,14 +316,10 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-nightlights', type: 'raster', source: 'ctx-nightlights', layout: { visibility: vis('nightlights') },
     paint: { 'raster-opacity': 0.85 } })
   // Areas
-  map.addLayer({ id: 'ctx-forest-fill', type: 'fill', source: SRC.forest, layout: { visibility: vis('forest') },
-    paint: { 'fill-color': '#2F7D3A', 'fill-opacity': 0.35 } })
   map.addLayer({ id: 'ctx-protected-fill', type: 'fill', source: SRC.protected, layout: { visibility: vis('protected') },
     paint: { 'fill-color': '#1B5E20', 'fill-opacity': 0.12 } })
   map.addLayer({ id: 'ctx-protected-line', type: 'line', source: SRC.protected, layout: { visibility: vis('protected') },
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
-  map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
-    paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
   map.addLayer({ id: 'ctx-coalboundaries-fill', type: 'fill', source: SRC.coalboundaries, layout: { visibility: vis('coalmines') },
     paint: { 'fill-color': '#212121', 'fill-opacity': 0.22 } })
   map.addLayer({ id: 'ctx-coalboundaries-line', type: 'line', source: SRC.coalboundaries, layout: { visibility: vis('coalmines') },
@@ -433,9 +415,6 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-power-sub', type: 'circle', source: SRC.power, filter: ['==', ['get', 'kind'], 'substation'],
     minzoom: 8, layout: { visibility: vis('power') },
     paint: { 'circle-radius': 3.5, 'circle-color': '#8E44AD', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } })
-  map.addLayer({ id: 'ctx-facilities', type: 'circle', source: SRC.facilities, minzoom: 10, layout: { visibility: vis('facilities') },
-    paint: { 'circle-radius': 3.5, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
-      'circle-color': ['match', ['get', 'kind'], ['hospital', 'clinic'], '#D62D20', '#1E88E5'] } })
   map.addLayer({ id: 'ctx-places-village', type: 'circle', source: SRC.places, filter: ['==', ['get', 'kind'], 'village'],
     minzoom: 10, layout: { visibility: vis('places') },
     paint: { 'circle-radius': 2.2, 'circle-color': '#5B4A3A', 'circle-opacity': 0.8 } })
@@ -446,9 +425,6 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-transport', type: 'circle', source: SRC.transport, minzoom: 8, layout: { visibility: vis('railways') },
     paint: { 'circle-radius': ['match', ['get', 'kind'], 'airport', 5, 3], 'circle-color': ['match', ['get', 'kind'], 'airport', '#00796B', '#2B2B2B'],
       'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } })
-  map.addLayer({ id: 'ctx-kilns', type: 'circle', source: SRC.kilns, layout: { visibility: vis('kilns') },
-    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 2, 11, 4.5], 'circle-color': '#A0522D',
-      'circle-stroke-color': '#fff', 'circle-stroke-width': 0.8 } })
   map.addLayer({ id: 'ctx-landmarks', type: 'circle', source: SRC.landmarks, minzoom: 7, layout: { visibility: vis('landmarks') },
     paint: { 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
       'circle-color': ['match', ['get', 'kind'], 'peak', '#6D4C41', 'waterfall', '#0288D1', '#455A64'] } })
@@ -870,7 +846,7 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     if (props.kind === 'line' && props.voltage) rows.push(['Voltage as mapped', `${props.voltage} V`])
     if (district) rows.push(['District', district])
     if (basin && (layerId === 'ctx-rivers-line' || layerId === 'ctx-water-fill')) rows.push(['River basin', basin])
-    const polygonLayers = ['ctx-mines-fill', 'ctx-industry-fill', 'ctx-forest-fill', 'ctx-builtup-fill', 'ctx-protected-fill', 'ctx-water-fill']
+    const polygonLayers = ['ctx-mines-fill', 'ctx-industry-fill', 'ctx-protected-fill', 'ctx-water-fill']
     if (['ctx-mines-fill', 'ctx-industry-fill'].includes(layerId)) note = 'Not an official lease or land-use boundary, and some areas are missing.'
     else if (polygonLayers.includes(layerId)) note = 'Outline as drawn by volunteers; approximate.'
     source = OSM_SOURCE
@@ -980,7 +956,7 @@ function ensureSatellite(map: maplibregl.Map, visible = true) {
   }
   if (!map.getLayer(SAT_LAYER)) {
     map.addLayer({ id: SAT_LAYER, type: 'raster', source: SAT_SOURCE,
-      paint: { 'raster-saturation': 0.1, 'raster-contrast': 0.12 } }, anchorBelow(map, 'ctx-forest-fill'))
+      paint: { 'raster-saturation': 0.1, 'raster-contrast': 0.12 } }, anchorBelow(map, 'ctx-protected-fill'))
   }
   map.setLayoutProperty(SAT_LAYER, 'visibility', visible ? 'visible' : 'none')
 }
@@ -998,7 +974,7 @@ function ensureRelief(map: maplibregl.Map, strong: boolean, onSatellite: boolean
   if (!map.getLayer(HILLSHADE_LAYER)) {
     map.addLayer({ id: HILLSHADE_LAYER, type: 'hillshade', source: HILLSHADE_SOURCE, paint: {
       'hillshade-illumination-direction': 315, 'hillshade-shadow-color': '#2B2218',
-      'hillshade-highlight-color': '#FFFFFF', 'hillshade-accent-color': '#5C4B3A' } }, anchorBelow(map, 'ctx-forest-fill'))
+      'hillshade-highlight-color': '#FFFFFF', 'hillshade-accent-color': '#5C4B3A' } }, anchorBelow(map, 'ctx-protected-fill'))
   }
   map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', strong ? 0.85 : 0.4)
   if (key && !map.getSource(CONTOUR_SOURCE)) {
