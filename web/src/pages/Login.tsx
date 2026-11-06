@@ -55,11 +55,11 @@ export default function Login() {
     'auth-input h-11 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/15'
 
   return (
-    <div className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-[#CFE4F6] via-[#E3EFF8] to-[#F6F1E4] px-4 pb-44 pt-10 sm:pb-52">
+    <div className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-[#CFE4F6] via-[#E3EFF8] to-[#F6F1E4] px-4 pb-24 pt-8">
       {/* The same illustrated Delhi skyline as the app header, fading up into the sky. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[clamp(110px,16vw,230px)] bg-cover bg-bottom bg-no-repeat"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[clamp(90px,12vw,170px)] bg-cover bg-bottom bg-no-repeat"
         style={{
           backgroundImage: `url(${headerSkyline})`,
           WebkitMaskImage: 'linear-gradient(to top, #000 55%, transparent)',
@@ -67,20 +67,20 @@ export default function Login() {
         }}
       />
       <div className="relative z-10 w-full max-w-[400px] animate-fade-in">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <LogoWordmark className="h-auto w-[120px] sm:w-[140px]" />
-          <p className="mt-4 text-sm font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
+        <div className="mb-6 flex flex-col items-center text-center [@media(max-height:700px)]:mb-4">
+          <LogoWordmark className="h-auto w-[104px] sm:w-[116px] [@media(max-height:700px)]:w-[84px]" />
+          <p className="mt-3 text-sm font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
           <p className="mt-0.5 text-xs text-[#422B1B]/60">From information to action</p>
         </div>
 
         <form
           onSubmit={signIn}
-          className="rounded-2xl border border-white/80 bg-white/95 p-7 shadow-[0_1px_2px_rgba(66,43,27,0.06),0_16px_40px_-12px_rgba(66,43,27,0.18)] sm:p-8"
+          className="rounded-2xl border border-white/80 bg-white/95 p-6 shadow-[0_1px_2px_rgba(66,43,27,0.06),0_16px_40px_-12px_rgba(66,43,27,0.18)] sm:p-7"
         >
           <h1 className="text-lg font-semibold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500">Use your work email to continue.</p>
+          <p className="mt-1 text-sm text-slate-500 [@media(max-height:700px)]:hidden">Use your work email to continue.</p>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-5 space-y-3.5">
             <div>
               <label htmlFor={emailId} className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Email
@@ -142,12 +142,12 @@ export default function Login() {
           <button
             type="submit"
             disabled={busy}
-            className="focus-ring mt-6 h-11 w-full rounded-lg bg-[#422B1B] px-4 text-sm font-semibold text-white transition hover:bg-[#341f14] disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring mt-5 h-11 w-full rounded-lg bg-[#422B1B] px-4 text-sm font-semibold text-white transition hover:bg-[#341f14] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? 'Please wait…' : 'Sign in'}
           </button>
 
-          <p className="mt-5 text-center text-sm text-slate-500">
+          <p className="mt-4 text-center text-sm text-slate-500">
             No account yet?{' '}
             <button
               type="button"
@@ -160,7 +160,7 @@ export default function Login() {
           </p>
         </form>
 
-        <p className="mt-6 text-center text-xs text-[#422B1B]/60">
+        <p className="mt-5 text-center text-xs text-[#422B1B]/60 [@media(max-height:760px)]:hidden">
           Vayu Gati · air quality and geospatial data for city and district teams
         </p>
       </div>
