@@ -14,13 +14,10 @@ export interface DistrictProfile {
   forest_pct: number | null
   elevation_median_m: number | null
   elevation_max_m: number | null
-  heat_detections: number | null
   monitors_continuous_in_feed: number | null
   monitors_manual_namp: number | null
   monitors_planned_jspcb: number | null
   landcover_pct?: Record<string, number> | null
-  osm_counts?: Record<string, number> | null
-  exposure?: Record<string, number> | null
   climate?: {
     rain_annual_mm: number
     rain_monsoon_pct: number | null
@@ -34,20 +31,14 @@ export interface DistrictProfile {
 
 export interface ProfilesDoc {
   sources: Record<string, string>
-  /** State-level exposure totals (district_profiles.json: "state_exposure"). */
-  exposure?: Record<string, number>
-  heat_detection_dates: string[]
   districts: Record<string, DistrictProfile>
 }
 
 export type FactField =
-  | 'area' | 'population' | 'forest_pct' | 'forest_km2' | 'highest_point' | 'typical_height' | 'heat_detections'
+  | 'area' | 'population' | 'forest_pct' | 'forest_km2' | 'highest_point' | 'typical_height'
   | 'tree_cover_pct' | 'cropland_pct' | 'builtup_pct' | 'water_pct'
   | 'monitors_continuous' | 'monitors_manual' | 'monitors_planned'
-  | 'n_mining_areas' | 'n_industrial_areas' | 'n_brick_kilns' | 'n_schools' | 'n_hospitals' | 'n_rail_stations'
-  | 'n_peaks' | 'n_substations' | 'n_towns' | 'n_villages'
   | 'annual_rainfall' | 'monsoon_rain_pct' | 'winter_wind_speed' | 'winter_wind_from' | 'monsoon_wind_from'
-  | 'near_mines_2km_pct' | 'near_mines_5km_pct' | 'near_kilns_2km_pct' | 'near_plants_5km_pct'
 
 interface FieldDef {
   /** A text value (e.g. a compass direction); such fields cannot be ranked. */
@@ -64,13 +55,6 @@ const ESA = 'ESA WorldCover 2021 (satellite, 10 m); shares computed by Vayu Gati
 const DEM = 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati'
 
 const ERA5 = 'ERA5 reanalysis (ECMWF / Copernicus), 2015-2024, about a 30 km grid: the area\'s climate, not a town\'s'
-const WORLDPOP = 'WorldPop 2020 (1 km model estimate; share of the estimated population) with the map\'s mapped sites (OpenStreetMap, incomplete). Living near a site is not a measure of exposure'
-const expo = (key: string, label: string): FieldDef => ({ label, unit: '%', get: (p) => p.exposure?.[key], decimals: 1, source: WORLDPOP })
-
-const OSM = 'OpenStreetMap, mapped by volunteers (3 Nov 2026): what is mapped, not a complete count'
-const osmCount = (key: string, label: string): FieldDef => ({
-  label, unit: '', get: (p) => p.osm_counts?.[key], source: OSM,
-})
 
 export const FIELD_DEFS: Record<FactField, FieldDef> = {
   area: { label: 'Area', unit: ' km²', get: (p) => p.area_km2, source: 'Survey of India area in ISFR 2023 (Kodarma, Hazaribagh: district website)' },
@@ -79,7 +63,6 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   forest_km2: { label: 'Forest area', unit: ' km²', get: (p) => p.forest_km2, decimals: 0, source: ISFR },
   highest_point: { label: 'Highest point', unit: ' m', get: (p) => p.elevation_max_m, source: DEM },
   typical_height: { label: 'Typical ground height', unit: ' m', get: (p) => p.elevation_median_m, source: DEM },
-  heat_detections: { label: 'Satellite heat detections', unit: '', get: (p) => p.heat_detections, source: 'NASA FIRMS (VIIRS), last 5 days in the map data' },
   tree_cover_pct: { label: 'Tree cover (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Tree cover'], decimals: 1, source: ESA },
   cropland_pct: { label: 'Cropland (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Cropland'], decimals: 1, source: ESA },
   builtup_pct: { label: 'Built-up land (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Built-up'], decimals: 1, source: ESA },
@@ -89,23 +72,9 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   monitors_planned: { label: 'Continuous monitors planned', unit: '', get: (p) => p.monitors_planned_jspcb, source: 'JSPCB tender, 6 Dec 2025' },
   winter_wind_from: { label: 'Winter wind mostly from (Dec-Feb)', unit: '', get: () => null, text: (p) => p.climate?.wind_from?.winter, source: ERA5 },
   monsoon_wind_from: { label: 'Monsoon wind mostly from (Jun-Sep)', unit: '', get: () => null, text: (p) => p.climate?.wind_from?.monsoon, source: ERA5 },
-  near_mines_2km_pct: expo('mines_2km_pct', 'People within 2 km of a mapped mining area'),
-  near_mines_5km_pct: expo('mines_5km_pct', 'People within 5 km of a mapped mining area'),
-  near_kilns_2km_pct: expo('kilns_2km_pct', 'People within 2 km of a mapped brick kiln'),
-  near_plants_5km_pct: expo('plants_5km_pct', 'People within 5 km of a checked power plant or large works'),
   annual_rainfall: { label: 'Average yearly rainfall', unit: ' mm', get: (p) => p.climate?.rain_annual_mm, source: ERA5 },
   monsoon_rain_pct: { label: 'Share of rain in the monsoon (Jun-Sep)', unit: '%', get: (p) => p.climate?.rain_monsoon_pct, decimals: 1, source: ERA5 },
   winter_wind_speed: { label: 'Average winter wind speed (Dec-Feb)', unit: ' m/s', get: (p) => p.climate?.wind_mean_ms?.winter, decimals: 1, source: ERA5 },
-  n_mining_areas: osmCount('mining_areas', 'Mapped mining and quarry areas'),
-  n_industrial_areas: osmCount('industrial_areas', 'Mapped industrial areas'),
-  n_brick_kilns: osmCount('brick_kilns', 'Mapped brick kilns'),
-  n_schools: osmCount('schools', 'Mapped schools and colleges'),
-  n_hospitals: osmCount('hospitals', 'Mapped hospitals and clinics'),
-  n_rail_stations: osmCount('rail_stations', 'Mapped railway stations'),
-  n_peaks: osmCount('peaks', 'Mapped hill peaks'),
-  n_substations: osmCount('substations', 'Mapped electricity substations'),
-  n_towns: osmCount('towns', 'Mapped cities and towns'),
-  n_villages: osmCount('villages', 'Mapped villages'),
 }
 
 export function formatValue(f: FactField, v: number | null | undefined): string {
@@ -171,11 +140,6 @@ export function stateOverview(doc: ProfilesDoc): OverviewRow[] {
     { label: 'Highest point', value: `${fmt(top[1].elevation_max_m ?? 0)} m, in ${top[0]}`, source: DEM },
     { label: 'Most populous district', value: most((p) => p.population_2011), source: FIELD_DEFS.population.source },
     { label: 'Most forest', value: most((p) => p.forest_km2), source: ISFR },
-    ...(doc.exposure ? [
-      { label: 'People within 2 km of a mapped mining area', value: `${fmt(doc.exposure.mines_2km_pct, 1)}% (${fmt(doc.exposure.mines_2km_people / 1e6, 1)} million)`, source: WORLDPOP },
-      { label: 'People within 2 km of a mapped brick kiln', value: `${fmt(doc.exposure.kilns_2km_pct, 1)}% (${fmt(doc.exposure.kilns_2km_people / 1e6, 1)} million)`, source: WORLDPOP },
-    ] : []),
-    { label: 'Satellite heat detections', value: `${fmt(sum((p) => p.heat_detections))}, most in ${most((p) => p.heat_detections)}`, source: FIELD_DEFS.heat_detections.source },
     { label: 'Continuous air monitors in the CPCB feed', value: fmt(sum((p) => p.monitors_continuous_in_feed)), source: FIELD_DEFS.monitors_continuous.source },
   ]
   return rows

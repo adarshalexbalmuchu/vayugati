@@ -26,8 +26,6 @@ Jharkhand before those nodes exist, using the official stations and open source 
 | `district_profiles.json` | One profile per district for the map's district panel: area and forest (FSI ISFR 2023, area by Survey of India), population (Census 2011 A-02), highest point and median height (Copernicus DEM GLO-90, computed), heat detections (FIRMS), checked plants, public monitors; `null` (shown as NA) where no verified figure exists, e.g. mining area. Built by `scripts/jharkhand/district_profiles.py` from the tables in `data/jharkhand/sources/` | see `data/jharkhand/sources/README.md` |
 | `state_{railways,rivers,water,forest,protected,places,builtup,facilities,transport,power,kilns,landmarks}.geojson` | Statewide base layers for every district (`osm_base` step): railways and sidings, stations and airports, rivers and canals, lakes and reservoirs, forest areas, the 12 protected areas (Betla NP + 11 WLS, matching the official list), towns and villages, built-up areas, schools and hospitals, power lines and substations, brick kilns, peaks, waterfalls and dams | OpenStreetMap, 3 Nov 2026 |
 | `landcover_districts.json` + web `landcover_2021.png` | ESA WorldCover 2021 land cover, cut to the state (`landcover` step), and each district's class shares | ESA WorldCover 10 m v200 (CC BY 4.0) |
-| `town_grids_3km.geojson` (web `town_grids.geojson`) | 3 km grids over 29 main towns (district HQs plus Jamshedpur, Adityapur, Bokaro, Chas, Phusro, Ramgarh and others; Dhanbad's own grid is separate), 291 cells chosen where at least 4% is built-up land; ids `JH-row-col`. A working grid, NOT wards. Dumka's centre point is manual (missing from OSM places). `towngrids` step | ESA WorldCover 2021 |
-| `district_exposure.json` | Share and number of people within 2 and 5 km of the mapped mining and quarry areas, brick kilns and checked power plants/works, per district (`district_exposure.py`). Population is WorldPop 2020 (1 km grid, CC BY 4.0), a model estimate (state total 40.0 million vs Census 2011 33.0 million; Sahibganj 1.57x its Census figure), so shares are of the WorldPop population. Mapped sites are incomplete, so these are minimums; proximity is not exposure. State: 14.2% within 2 km of a mapped mining area, 34.0% within 5 km | WorldPop (Univ. of Southampton); sites from the map's layers |
 | `district_climate.json` | Rain (annual, monthly, monsoon share) and wind (mean speed and prevailing direction by season, 8-sector rose) per district, ERA5 hourly 2015-2024 via the Open-Meteo archive API (`district_climate.py`). About a 30 km grid: area climate, not a town's weather | ECMWF / Copernicus ERA5 (CC BY 4.0); Open-Meteo |
 | `sources/wri_gppd_jharkhand_area_plants.csv` | Power plants in the Jharkhand area from the WRI Global Power Plant Database v1.3 (built from the Central Electricity Authority list; capacity data about 2019-20). Used only for capacity (MW) of checked plants matched by exact name (`WRI_NAME`); Bokaro (split entries), Godda and North Karanpura (newer than the release) and Raghunathpur (not listed) get none | WRI, CC BY 4.0 |
 | `openaq_locations.json` | Every OpenAQ location in the Jharkhand box, for station matching | OpenAQ v3 |
@@ -137,17 +135,8 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
   (mines, industry, power, kilns, heat detections, rail, roads) instead.
 - Needs `ANTHROPIC_API_KEY` in `ingest/.env` and the web pack files readable at `JH_PACK_DIR` (default
   `web/public/city-packs/jharkhand`). Tests: `ingest/tests/test_jh_assistant.py`, `web/src/lib/jhFacts.test.ts`.
-- `near`: counts and lists mapped features within a radius (1-50 km) of a named place, computed in the browser from the
-  map's own files (`web/src/lib/jhNear.ts`): mines, industrial areas, plants, kilns, schools, hospitals, towns,
-  villages, heat detections, peaks, rail stations, substations. `rank` with `open_top` also flies to the winner.
-  The `n_*` fields are counts of OpenStreetMap-mapped features per district (`osm_counts` in the profiles): what is
-  mapped, not complete totals (e.g. Simdega shows 1 school).
-- **Screen context.** Every message carries what is on screen (layers on, open district, zoom, 3D) and each layer's
-  note, so "I can't see it", "do it again", "tell me about this" make sense; plus `zoom` and `overview` actions
-  (the state overview is summed from the profiles and equals the official totals: 3,29,88,134 people, 79,716 km2,
-  23,766 km2 of forest). Cost control: the default model is Haiku 5.5 (the cheapest); Sonnet 5.5 was tried and
-  rejected on cost. Switch with `JH_ASSISTANT_MODEL`.
-- Limits: it cannot chain on an arbitrary result beyond `open_top`; it holds no air-quality readings.
+- Limits: it cannot chain on an arbitrary result beyond `open_top`; it holds no air-quality readings, and no counts, rankings or
+  "near" searches on volunteer-mapped features (see the standard below).
 
 ## Data still to request (checked 6 Nov 2026)
 
@@ -160,3 +149,21 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
 - **District poverty / clean cooking fuel.** NITI's district MPI was not found as a download; NFHS-5 district fact sheets
   (IIPS) report clean cooking fuel by district.
 - **Municipal wards, blocks, villages** (see above).
+
+## Standard: what the platform does not show (decided 6 Nov 2026)
+
+A figure, ranking or shape appears only if its source is authoritative and complete enough to support it. Removed
+for that reason, with the code and data deleted:
+
+- **Counts and rankings of volunteer-mapped features** (schools, hospitals, kilns, mines, stations ...): mapping is
+  incomplete and uneven across districts (Simdega had 1 mapped school), so a count or "which district has the most"
+  would show mapping effort, not reality. The layers stay on the map as visuals with their caveats.
+- **"What is within N km of a place" counts**, built on the same data.
+- **People living near mapped sources** (WorldPop x mapped mines/kilns): the sites are incomplete, quarries were mixed
+  with mines, and WorldPop's state total (40.0 million) does not match the Census (33.0 million). Revisit with an
+  official coal-mine list and Census-scaled population.
+- **Generated 3 km town grids**: they were not data, and Jharkhand's real ward boundaries are not published.
+- **The 5-day heat-detection count per district**: too short a window to compare districts. The dots and the
+  day-by-day player remain on the map.
+
+The assistant is told the same: for these it answers that they are incomplete and offers the layer instead.

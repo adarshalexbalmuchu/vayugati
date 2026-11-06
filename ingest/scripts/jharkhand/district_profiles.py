@@ -12,8 +12,9 @@ labelled as such. Anything without one is written as null and shown as "NA".
     highest/lowest    Copernicus DEM GLO-90 (ESA / EU Copernicus programme, 90 m), from the public AWS
                       bucket; median and highest cell inside the district outline, computed by Vayu Gati.
                       (AWS Terrain Tiles were tried first and rejected: spike artefacts of hundreds of metres.)
-    heat detections   NASA FIRMS VIIRS, the 5 days in processed/fires_firms_5d.geojson
     power plants      the checked sites in processed/state_sources_osm.geojson (CHECKED_SITES)
+    NOT included, deliberately: counts of volunteer-mapped features, people living near mapped sites, and per-district
+    the 5-day heat count per district: the window is too short to compare districts. (Heat detections stay on the map.)
     air monitors      CPCB feed (continuous), CPCB NAMP list 19.11.2024 (manual), JSPCB tender 6.12.2025 (planned)
     mining area       null: no official district-wise figure found (OpenStreetMap areas are not official)
 
@@ -91,48 +92,11 @@ AREA_NOTES = {
 }
 
 
-# Counts of mapped OpenStreetMap features per district (volunteer-mapped, 3 Nov 2026: incomplete, not official).
-OSM_COUNTS = {
-    "mining_areas": ("sources.geojson", lambda p: p.get("kind") == "mine"),
-    "industrial_areas": ("sources.geojson", lambda p: p.get("kind") == "industrial"),
-    "brick_kilns": ("kilns.geojson", lambda p: True),
-    "schools": ("facilities.geojson", lambda p: p.get("kind") in ("school", "college", "university")),
-    "hospitals": ("facilities.geojson", lambda p: p.get("kind") in ("hospital", "clinic")),
-    "rail_stations": ("transport.geojson", lambda p: p.get("kind") == "rail_station"),
-    "peaks": ("landmarks.geojson", lambda p: p.get("kind") == "peak"),
-    "substations": ("power.geojson", lambda p: p.get("kind") == "substation"),
-    "towns": ("places.geojson", lambda p: p.get("kind") in ("city", "town")),
-    "villages": ("places.geojson", lambda p: p.get("kind") == "village"),
-}
-
-
-def osm_counts(district_geoms: dict) -> dict:
-    from shapely.prepared import prep
-
-    prepared = {n: prep(g) for n, g in district_geoms.items()}
-    out = {n: {k: 0 for k in OSM_COUNTS} for n in district_geoms}
-    cache: dict[str, list] = {}
-    for key, (fname, pred) in OSM_COUNTS.items():
-        if fname not in cache:
-            cache[fname] = json.load(open(WEB / fname))["features"]
-        for f in cache[fname]:
-            if not pred(f["properties"]):
-                continue
-            pt = shape(f["geometry"]).representative_point()
-            for n, pg in prepared.items():
-                if pg.contains(pt):
-                    out[n][key] += 1
-                    break
-    return out
-
-
 def main() -> None:
     districts = json.load(open(OUT / "districts.geojson"))["features"]
     isfr = {r["district"]: r for r in csv.DictReader(open(SRC / "isfr2023_district_forest.csv"))}
     census = {r["district"]: int(r["population_2011"]) for r in csv.DictReader(open(SRC / "census2011_population.csv"))
               if r["district_code"] != "000"}
-    fires = json.load(open(OUT / "fires_firms_5d.geojson"))["features"]
-    fire_dates = sorted({f["properties"]["date"] for f in fires})
     plants = [f for f in json.load(open(OUT / "state_sources_osm.geojson"))["features"]
               if f["properties"].get("checked")]
     missing = [d["properties"]["name"] for d in districts if d["properties"]["name"] not in isfr or
@@ -143,19 +107,12 @@ def main() -> None:
     landcover = json.load(open(lc_path))["districts"] if lc_path.exists() else {}
     clim_path = OUT / "district_climate.json"
     climate = json.load(open(clim_path)) if clim_path.exists() else {"districts": {}, "source": None}
-    exp_path = OUT / "district_exposure.json"
-    exposure = json.load(open(exp_path)) if exp_path.exists() else {"districts": {}, "source": None}
-    geoms_for_counts = {d["properties"]["name"]: make_valid(shape(d["geometry"])) for d in districts}
-    counts = osm_counts(geoms_for_counts)
     profiles = {}
     for d in districts:
         p = d["properties"]
         name = p["name"]
         g = make_valid(shape(d["geometry"]))
         med, hi = _elevation_stats(g)
-        fx = np.array([f["geometry"]["coordinates"][0] for f in fires])
-        fy = np.array([f["geometry"]["coordinates"][1] for f in fires])
-        n_fires = int(shapely.contains_xy(g, fx, fy).sum()) if len(fires) else 0
         in_plants = [pl["properties"] for pl in plants
                      if g.contains(shape(pl["geometry"]))]
         f = isfr[name]
@@ -173,7 +130,6 @@ def main() -> None:
             "forest_open_km2": float(f["open_forest_km2"]),
             "elevation_median_m": med,
             "elevation_max_m": hi,
-            "heat_detections": n_fires,
             "power_plants": [{"name": x["name"], "operator": x["operator"]} for x in in_plants if x["kind"] == "power_plant"],
             "large_works": [{"name": x["name"], "operator": x["operator"]} for x in in_plants if x["kind"] == "works"],
             "monitors_continuous_in_feed": p.get("continuous_in_feed"),
@@ -181,12 +137,10 @@ def main() -> None:
             "monitors_planned_jspcb": p.get("planned_caaqms"),
             "mining_area_km2": None,
             "landcover_pct": landcover.get(name),
-            "osm_counts": counts[name],
-            "exposure": exposure["districts"].get(name),
             "climate": {k: v for k, v in climate["districts"].get(name, {}).items() if k not in ("lat", "lng")} or None,
         }
         print(f"{name:22s} area {f['area_km2_soi']:>5}  pop {census[name]:>8}  median {med:>4} m, highest {hi:>4} m  "
-              f"fires {n_fires:>3}  plants {len(in_plants)}")
+              f"plants {len(in_plants)}")
 
     doc = {
         "sources": {
@@ -197,23 +151,16 @@ def main() -> None:
             "elevation": "Copernicus DEM GLO-90 (ESA), 90 m grid; median and highest cell inside the district "
                          "outline, computed by Vayu Gati. Checked: Giridih 1,361 m (Parasnath, about 1,350-1,365 m), "
                          "Bokaro 975 m (Lugu, about 980 m)",
-            "heat_detections": f"NASA FIRMS VIIRS (S-NPP and NOAA-20), {fire_dates[0]} to {fire_dates[-1]} (UTC)"
-                               if fire_dates else "NASA FIRMS VIIRS",
             "power_plants": "Power plants and large works whose names and operators were checked by Vayu Gati, Nov 2026; "
                             "locations from OpenStreetMap",
             "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); "
                         "JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
             "mining_area_km2": "No official district-wise figure found",
             "climate": climate["source"],
-            "exposure": exposure["source"],
-            "osm_counts": "Counts of features mapped in OpenStreetMap by volunteers (3 Nov 2026), by the feature's "
-                          "position. Incomplete: a count is what is mapped, not what exists",
             "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at "
                          "about 180 m over the district outline",
             "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file",
         },
-        "exposure": exposure.get("state"),
-        "heat_detection_dates": fire_dates,
         "districts": profiles,
     }
     with open(OUT / "district_profiles.json", "w") as fh:

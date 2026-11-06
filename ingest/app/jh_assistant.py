@@ -36,29 +36,19 @@ MAX_REPLY_CHARS = 280
 
 PACK_DIR = Path(os.getenv("JH_PACK_DIR", str(Path(__file__).resolve().parents[2] / "web" / "public" / "city-packs" / "jharkhand")))
 
+# Only figures from authoritative, complete sources: Census, ISFR (FSI), ESA WorldCover, Copernicus DEM, CPCB/JSPCB
+# station lists, ERA5. Counts of volunteer-mapped features, "people near sites" and the 5-day heat count are NOT here:
+# they are incomplete or too short to compare districts, and would mislead.
 FIELDS = (
-    "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
-    "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
-    "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
-    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages", "annual_rainfall", "monsoon_rain_pct",
-    "winter_wind_speed", "winter_wind_from", "monsoon_wind_from", "near_mines_2km_pct", "near_mines_5km_pct",
-    "near_kilns_2km_pct", "near_plants_5km_pct",
+    "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "tree_cover_pct",
+    "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual", "monitors_planned",
+    "annual_rainfall", "monsoon_rain_pct", "winter_wind_speed", "winter_wind_from", "monsoon_wind_from",
 )
 FieldName = Literal[
-    "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "heat_detections",
-    "tree_cover_pct", "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual",
-    "monitors_planned", "n_mining_areas", "n_industrial_areas", "n_brick_kilns", "n_schools", "n_hospitals",
-    "n_rail_stations", "n_peaks", "n_substations", "n_towns", "n_villages", "annual_rainfall", "monsoon_rain_pct",
-    "winter_wind_speed", "winter_wind_from", "monsoon_wind_from", "near_mines_2km_pct", "near_mines_5km_pct",
-    "near_kilns_2km_pct", "near_plants_5km_pct",
+    "area", "population", "forest_pct", "forest_km2", "highest_point", "typical_height", "tree_cover_pct",
+    "cropland_pct", "builtup_pct", "water_pct", "monitors_continuous", "monitors_manual", "monitors_planned",
+    "annual_rainfall", "monsoon_rain_pct", "winter_wind_speed", "winter_wind_from", "monsoon_wind_from",
 ]
-NEAR_WHAT = ("mines", "industrial", "plants", "kilns", "schools", "hospitals", "towns", "villages", "heat",
-             "peaks", "rail_stations", "substations")
-NearWhat = Literal["mines", "industrial", "plants", "kilns", "schools", "hospitals", "towns", "villages", "heat",
-                   "peaks", "rail_stations", "substations"]
-MIN_NEAR_KM, MAX_NEAR_KM = 1.0, 50.0
-
-
 class SetLayersAction(BaseModel):
     type: Literal["set_layers"]
     on: list[str] = Field(default_factory=list, max_length=20)
@@ -84,17 +74,6 @@ class RankAction(BaseModel):
     open_top: bool = False
 
 
-class NearAction(BaseModel):
-    type: Literal["near"]
-    place: str  # a named place; resolved by the server
-    radius_km: float = Field(default=10.0, ge=0.1, le=100.0)
-    what: NearWhat
-    # filled by validate(): the resolved place
-    place_name: str | None = None
-    lng: float | None = None
-    lat: float | None = None
-
-
 class FactsAction(BaseModel):
     type: Literal["facts"]
     district: str
@@ -116,7 +95,7 @@ class UnsupportedAction(BaseModel):
     reason: str
 
 
-Action = SetLayersAction | GoToAction | RankAction | NearAction | FactsAction | ZoomAction | OverviewAction | UnsupportedAction
+Action = SetLayersAction | GoToAction | RankAction | FactsAction | ZoomAction | OverviewAction | UnsupportedAction
 
 
 class AssistantResponse(BaseModel):
@@ -225,8 +204,6 @@ _NEUTRAL_REPLY = "Here is what I found."
 def _default_reply(actions: list) -> str:
     """A digit-free sentence built from the actions themselves, used when the model's own wording is unusable."""
     for a in actions:
-        if isinstance(a, NearAction) and a.place_name:
-            return f"Searching around {a.place_name} for mapped {a.what.replace('_', ' ')}."
         if isinstance(a, RankAction):
             return "Ranking the districts on the checked data."
         if isinstance(a, FactsAction):
@@ -270,13 +247,6 @@ def validate(parsed: AssistantResponse, layer_keys: set[str]) -> AssistantRespon
             d = resolve_district(a.district)
             out.append(FactsAction(type="facts", district=d, fields=list(dict.fromkeys(a.fields))) if d else
                        UnsupportedAction(type="unsupported", reason="I don't know that district."))
-        elif isinstance(a, NearAction):
-            p = resolve_place(a.place)
-            if not p:
-                out.append(UnsupportedAction(type="unsupported", reason="I couldn't find that place on the map. Try a nearby town."))
-            else:
-                r = min(max(a.radius_km, MIN_NEAR_KM), MAX_NEAR_KM)
-                out.append(NearAction(type="near", place=a.place, radius_km=r, what=a.what, place_name=p["name"], lng=p["lng"], lat=p["lat"]))
         elif isinstance(a, (RankAction, ZoomAction, OverviewAction)):
             out.append(a)
         else:
@@ -317,17 +287,12 @@ Turn the user's message (and the short conversation so far) into up to {MAX_ACTI
 - set_layers: turn map layers on or off by key (from the list you are given). Use only=true to show just those layers.
 - go_to: fly to the whole state, a district (kind "district", name one of the 24), or a named place \
 (kind "place", the name as people write it, e.g. "Jhumri Tilaiya").
-- facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}. The n_* fields are \
-counts of features volunteers have mapped in OpenStreetMap (incomplete); they are not official totals. The near_* \\
-fields are the share of a district's WorldPop-estimated people living within 2 or 5 km of a mapped site: a \\
-proximity estimate, never a measure of exposure or health risk. annual_rainfall, monsoon_rain_pct and \\
-winter_wind_speed, winter_wind_from and monsoon_wind_from (a compass direction the wind blows FROM) are ERA5 area \\
+- facts: show chosen facts about one district. Fields: {", ".join(FIELDS)}. annual_rainfall, monsoon_rain_pct, \
+winter_wind_speed, winter_wind_from and monsoon_wind_from (a compass direction the wind blows FROM) are ERA5 area \
 climate (not a town's weather). Rank only on numeric fields; the wind-direction fields are for facts.
 - rank: rank all districts by one field (desc/asc, limit up to 10). open_top defaults to FALSE: a plain question \
 ("which district has the most forest?") only ranks and must not move the map. Set open_top=true only when the \
 user explicitly asks to see or go to the winner ("show it", "take me there", "open it").
-- near: count and list mapped features within a radius of a named place. what is one of: {", ".join(NEAR_WHAT)}. \
-Radius 1 to 50 km (default 10).
 - zoom: zoom the map in or out one step (direction in/out).
 - overview: a summary of the whole state from the checked data (the app computes the figures).
 - unsupported: when the request can't be done, with a short honest reason.
@@ -346,10 +311,12 @@ reading and say what you chose.
 Kodarma, Hazaribagh, Sahibganj ...).
 5. Combine actions when natural: e.g. "show mines and rivers in Hazaribagh" is go_to(district Hazaribagh) then \
 set_layers(on mines, water). "Which district has the most forest?" is rank(forest_km2 desc). "Tell me about \
-Ranchi" is go_to(district) plus facts(area, population, forest_pct, highest_point, heat_detections).
-6. "Mines" and "industrial" are mapped areas, "plants" are the checked power plants and large works. Questions \
-like "how many schools are within 10 km of Ranchi" are near actions; "which district has the most schools" is a \
-rank on n_schools. Never present mapped counts as complete.
+Ranchi" is go_to(district) plus facts(area, population, forest_pct, highest_point).
+6. The map layers for mines, industry, kilns, schools and so on show what volunteers have mapped in OpenStreetMap. \
+That is incomplete and uneven, so you have NO counts, rankings or "how many" for them: if asked how many mines, \
+kilns, schools or hospitals there are, or which district has the most, use unsupported and explain that these \
+are mapped features that are incomplete, then offer to show the layer. Likewise there is no "people near a mine" \
+or "what is within N km of a place" figure, and no ranking on the five-day heat detections.
 7. You are told what is on the screen right now (layers on, open district, zoom). Use it. "I can't see it" or \
 "where is it" usually means the layer is off, or it is too small at this zoom: switch it on and, for small things \
 (peaks, kilns, schools, villages, substations, heat detections), also use zoom in; mention in the reply what the \

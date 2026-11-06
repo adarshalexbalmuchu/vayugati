@@ -4,38 +4,13 @@
   "forest": "Forest Survey of India, India State of Forest Report 2023 (published Dec 2024), Jharkhand Table 10.11.3",
   "population_2011": "Census of India 2011, Table A-02 (Office of the Registrar General & Census Commissioner)",
   "elevation": "Copernicus DEM GLO-90 (ESA), 90 m grid; median and highest cell inside the district outline, computed by Vayu Gati. Checked: Giridih 1,361 m (Parasnath, about 1,350-1,365 m), Bokaro 975 m (Lugu, about 980 m)",
-  "heat_detections": "NASA FIRMS VIIRS (S-NPP and NOAA-20), 2026-11-01 to 2026-11-05 (UTC)",
   "power_plants": "Power plants and large works whose names and operators were checked by Vayu Gati, Nov 2026; locations from OpenStreetMap",
   "monitors": "CPCB real-time feed (continuous, 5 Nov 2026); CPCB NAMP station list 19.11.2024 (manual); JSPCB tender JSPCB/CAAQMS/2025-26 of 6.12.2025 (planned)",
   "mining_area_km2": "No official district-wise figure found",
   "climate": "ERA5 reanalysis (ECMWF / Copernicus Climate Change Service), hourly 10 m wind and precipitation, 2015-2024, via Open-Meteo archive API. About a 30 km grid: the climate of the area, not a measurement at a town. Wind direction is where the wind blows FROM.",
-  "exposure": "Population: WorldPop 2020, 1 km grid, University of Southampton (CC BY 4.0), a model estimate (state total 40.0 million vs Census 2011 33.0 million). Sites: the map's own layers (OpenStreetMap, 3 Nov 2026, volunteer-mapped and incomplete; checked power plants and works). A 1 km cell counts if its centre is within the distance of a site: an indication, not an exact count.",
-  "osm_counts": "Counts of features mapped in OpenStreetMap by volunteers (3 Nov 2026), by the feature's position. Incomplete: a count is what is mapped, not what exists",
   "landcover": "ESA WorldCover 10 m 2021 v200 (European Space Agency); shares computed by Vayu Gati at about 180 m over the district outline",
   "outline": "District outlines: open data from Datameet (India district map, Census 2011; CC BY 2.5 India), OpenStreetMap (ODbL) and geoBoundaries, chosen per district to match official areas (ISFR 2023, or the district website's own figure for Kodarma and Hazaribagh; mean difference 0.9%, largest 4.1%) and 42 towns of known district. Not Survey of India's own file"
  },
- "exposure": {
-  "population_worldpop_2020": 40005424,
-  "mines_2km_people": 5693418,
-  "mines_2km_pct": 14.2,
-  "mines_5km_people": 13603914,
-  "mines_5km_pct": 34.0,
-  "kilns_2km_people": 2010056,
-  "kilns_2km_pct": 5.0,
-  "kilns_5km_people": 7597648,
-  "kilns_5km_pct": 19.0,
-  "plants_2km_people": 330947,
-  "plants_2km_pct": 0.8,
-  "plants_5km_people": 1236848,
-  "plants_5km_pct": 3.1
- },
- "heat_detection_dates": [
-  "2026-11-01",
-  "2026-11-02",
-  "2026-11-03",
-  "2026-11-04",
-  "2026-11-05"
- ],
  "districts": {
   "Bokaro": {
    "area_km2": 2883,
@@ -49,7 +24,6 @@
    "forest_open_km2": 281.97,
    "elevation_median_m": 274,
    "elevation_max_m": 975,
-   "heat_detections": 12,
    "power_plants": [
     {
      "name": "Chandrapura Thermal Power Station",
@@ -77,33 +51,6 @@
     "Built-up": 2.6,
     "Bare / sparse vegetation": 0.5,
     "Permanent water": 2.4
-   },
-   "osm_counts": {
-    "mining_areas": 92,
-    "industrial_areas": 70,
-    "brick_kilns": 37,
-    "schools": 12,
-    "hospitals": 59,
-    "rail_stations": 24,
-    "peaks": 1,
-    "substations": 23,
-    "towns": 8,
-    "villages": 14
-   },
-   "exposure": {
-    "population_worldpop_2020": 2424423,
-    "mines_2km_people": 579601,
-    "mines_2km_pct": 23.9,
-    "mines_5km_people": 1063542,
-    "mines_5km_pct": 43.9,
-    "kilns_2km_people": 51416,
-    "kilns_2km_pct": 2.1,
-    "kilns_5km_people": 183816,
-    "kilns_5km_pct": 7.6,
-    "plants_2km_people": 111897,
-    "plants_2km_pct": 4.6,
-    "plants_5km_people": 340452,
-    "plants_5km_pct": 14.0
    },
    "climate": {
     "rain_annual_mm": 1456,
@@ -168,7 +115,6 @@
    "forest_open_km2": 706.9,
    "elevation_median_m": 412,
    "elevation_max_m": 819,
-   "heat_detections": 8,
    "power_plants": [
     {
      "name": "North Karanpura Super Thermal Power Project",
@@ -188,33 +134,6 @@
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.3
-   },
-   "osm_counts": {
-    "mining_areas": 5,
-    "industrial_areas": 1,
-    "brick_kilns": 0,
-    "schools": 1,
-    "hospitals": 10,
-    "rail_stations": 1,
-    "peaks": 21,
-    "substations": 2,
-    "towns": 1,
-    "villages": 31
-   },
-   "exposure": {
-    "population_worldpop_2020": 1315103,
-    "mines_2km_people": 67911,
-    "mines_2km_pct": 5.2,
-    "mines_5km_people": 104930,
-    "mines_5km_pct": 8.0,
-    "kilns_2km_people": 0,
-    "kilns_2km_pct": 0.0,
-    "kilns_5km_people": 10023,
-    "kilns_5km_pct": 0.8,
-    "plants_2km_people": 11454,
-    "plants_2km_pct": 0.9,
-    "plants_5km_people": 30694,
-    "plants_5km_pct": 2.3
    },
    "climate": {
     "rain_annual_mm": 1225,
@@ -279,7 +198,6 @@
    "forest_open_km2": 192.45,
    "elevation_median_m": 234,
    "elevation_max_m": 726,
-   "heat_detections": 3,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -294,33 +212,6 @@
     "Built-up": 1.5,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 1.2
-   },
-   "osm_counts": {
-    "mining_areas": 33,
-    "industrial_areas": 15,
-    "brick_kilns": 6,
-    "schools": 8,
-    "hospitals": 70,
-    "rail_stations": 16,
-    "peaks": 11,
-    "substations": 6,
-    "towns": 6,
-    "villages": 11
-   },
-   "exposure": {
-    "population_worldpop_2020": 1873734,
-    "mines_2km_people": 144152,
-    "mines_2km_pct": 7.7,
-    "mines_5km_people": 565031,
-    "mines_5km_pct": 30.2,
-    "kilns_2km_people": 46349,
-    "kilns_2km_pct": 2.5,
-    "kilns_5km_people": 256064,
-    "kilns_5km_pct": 13.7,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1274,
@@ -385,7 +276,6 @@
    "forest_open_km2": 177.58,
    "elevation_median_m": 203,
    "elevation_max_m": 723,
-   "heat_detections": 135,
    "power_plants": [
     {
      "name": "Maithon Right Bank Thermal Power Station",
@@ -414,33 +304,6 @@
     "Built-up": 5.1,
     "Bare / sparse vegetation": 1.5,
     "Permanent water": 2.7
-   },
-   "osm_counts": {
-    "mining_areas": 151,
-    "industrial_areas": 61,
-    "brick_kilns": 101,
-    "schools": 42,
-    "hospitals": 116,
-    "rail_stations": 43,
-    "peaks": 2,
-    "substations": 24,
-    "towns": 12,
-    "villages": 17
-   },
-   "exposure": {
-    "population_worldpop_2020": 3009513,
-    "mines_2km_people": 1586637,
-    "mines_2km_pct": 52.7,
-    "mines_5km_people": 2210838,
-    "mines_5km_pct": 73.5,
-    "kilns_2km_people": 263856,
-    "kilns_2km_pct": 8.8,
-    "kilns_5km_people": 1115798,
-    "kilns_5km_pct": 37.1,
-    "plants_2km_people": 53366,
-    "plants_2km_pct": 1.8,
-    "plants_5km_people": 171869,
-    "plants_5km_pct": 5.7
    },
    "climate": {
     "rain_annual_mm": 1505,
@@ -505,7 +368,6 @@
    "forest_open_km2": 336.28,
    "elevation_median_m": 169,
    "elevation_max_m": 498,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -520,33 +382,6 @@
     "Built-up": 0.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 1.3
-   },
-   "osm_counts": {
-    "mining_areas": 23,
-    "industrial_areas": 5,
-    "brick_kilns": 1,
-    "schools": 6,
-    "hospitals": 31,
-    "rail_stations": 16,
-    "peaks": 7,
-    "substations": 5,
-    "towns": 1,
-    "villages": 25
-   },
-   "exposure": {
-    "population_worldpop_2020": 1525775,
-    "mines_2km_people": 59144,
-    "mines_2km_pct": 3.9,
-    "mines_5km_people": 258997,
-    "mines_5km_pct": 17.0,
-    "kilns_2km_people": 7115,
-    "kilns_2km_pct": 0.5,
-    "kilns_5km_people": 38042,
-    "kilns_5km_pct": 2.5,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1385,
@@ -611,7 +446,6 @@
    "forest_open_km2": 906.31,
    "elevation_median_m": 299,
    "elevation_max_m": 1160,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -626,33 +460,6 @@
     "Built-up": 0.4,
     "Bare / sparse vegetation": 0.7,
     "Permanent water": 1.6
-   },
-   "osm_counts": {
-    "mining_areas": 20,
-    "industrial_areas": 12,
-    "brick_kilns": 10,
-    "schools": 1,
-    "hospitals": 22,
-    "rail_stations": 4,
-    "peaks": 37,
-    "substations": 3,
-    "towns": 3,
-    "villages": 22
-   },
-   "exposure": {
-    "population_worldpop_2020": 1692409,
-    "mines_2km_people": 104067,
-    "mines_2km_pct": 6.1,
-    "mines_5km_people": 307213,
-    "mines_5km_pct": 18.2,
-    "kilns_2km_people": 73948,
-    "kilns_2km_pct": 4.4,
-    "kilns_5km_people": 236363,
-    "kilns_5km_pct": 14.0,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1353,
@@ -717,7 +524,6 @@
    "forest_open_km2": 489.61,
    "elevation_median_m": 317,
    "elevation_max_m": 1361,
-   "heat_detections": 1,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -732,33 +538,6 @@
     "Built-up": 1.2,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.5
-   },
-   "osm_counts": {
-    "mining_areas": 14,
-    "industrial_areas": 10,
-    "brick_kilns": 1,
-    "schools": 3,
-    "hospitals": 54,
-    "rail_stations": 19,
-    "peaks": 6,
-    "substations": 11,
-    "towns": 6,
-    "villages": 20
-   },
-   "exposure": {
-    "population_worldpop_2020": 3010243,
-    "mines_2km_people": 180161,
-    "mines_2km_pct": 6.0,
-    "mines_5km_people": 663603,
-    "mines_5km_pct": 22.0,
-    "kilns_2km_people": 11307,
-    "kilns_2km_pct": 0.4,
-    "kilns_5km_people": 33114,
-    "kilns_5km_pct": 1.1,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1192,
@@ -823,7 +602,6 @@
    "forest_open_km2": 141.87,
    "elevation_median_m": 114,
    "elevation_max_m": 570,
-   "heat_detections": 5,
    "power_plants": [
     {
      "name": "Godda Ultra Supercritical Thermal Power Plant",
@@ -843,33 +621,6 @@
     "Built-up": 1.3,
     "Bare / sparse vegetation": 0.3,
     "Permanent water": 0.2
-   },
-   "osm_counts": {
-    "mining_areas": 9,
-    "industrial_areas": 2,
-    "brick_kilns": 2,
-    "schools": 2,
-    "hospitals": 37,
-    "rail_stations": 6,
-    "peaks": 3,
-    "substations": 9,
-    "towns": 3,
-    "villages": 24
-   },
-   "exposure": {
-    "population_worldpop_2020": 1552776,
-    "mines_2km_people": 94284,
-    "mines_2km_pct": 6.1,
-    "mines_5km_people": 296610,
-    "mines_5km_pct": 19.1,
-    "kilns_2km_people": 12846,
-    "kilns_2km_pct": 0.8,
-    "kilns_5km_people": 87317,
-    "kilns_5km_pct": 5.6,
-    "plants_2km_people": 11226,
-    "plants_2km_pct": 0.7,
-    "plants_5km_people": 84087,
-    "plants_5km_pct": 5.4
    },
    "climate": {
     "rain_annual_mm": 1244,
@@ -934,7 +685,6 @@
    "forest_open_km2": 559.79,
    "elevation_median_m": 641,
    "elevation_max_m": 1121,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -949,33 +699,6 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.5,
     "Permanent water": 0.6
-   },
-   "osm_counts": {
-    "mining_areas": 12,
-    "industrial_areas": 3,
-    "brick_kilns": 3,
-    "schools": 1,
-    "hospitals": 16,
-    "rail_stations": 3,
-    "peaks": 1,
-    "substations": 3,
-    "towns": 1,
-    "villages": 15
-   },
-   "exposure": {
-    "population_worldpop_2020": 1271830,
-    "mines_2km_people": 35077,
-    "mines_2km_pct": 2.8,
-    "mines_5km_people": 158189,
-    "mines_5km_pct": 12.4,
-    "kilns_2km_people": 7498,
-    "kilns_2km_pct": 0.6,
-    "kilns_5km_people": 39408,
-    "kilns_5km_pct": 3.1,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1474,
@@ -1040,7 +763,6 @@
    "forest_open_km2": 941.28,
    "elevation_median_m": 442,
    "elevation_max_m": 845,
-   "heat_detections": 11,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1055,33 +777,6 @@
     "Built-up": 1.8,
     "Bare / sparse vegetation": 0.3,
     "Permanent water": 1.0
-   },
-   "osm_counts": {
-    "mining_areas": 122,
-    "industrial_areas": 57,
-    "brick_kilns": 55,
-    "schools": 17,
-    "hospitals": 67,
-    "rail_stations": 12,
-    "peaks": 7,
-    "substations": 12,
-    "towns": 6,
-    "villages": 19
-   },
-   "exposure": {
-    "population_worldpop_2020": 2151539,
-    "mines_2km_people": 293012,
-    "mines_2km_pct": 13.6,
-    "mines_5km_people": 619050,
-    "mines_5km_pct": 28.8,
-    "kilns_2km_people": 145651,
-    "kilns_2km_pct": 6.8,
-    "kilns_5km_people": 353314,
-    "kilns_5km_pct": 16.4,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 5032,
-    "plants_5km_pct": 0.2
    },
    "climate": {
     "rain_annual_mm": 1275,
@@ -1146,7 +841,6 @@
    "forest_open_km2": 87.21,
    "elevation_median_m": 167,
    "elevation_max_m": 354,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1161,33 +855,6 @@
     "Built-up": 0.6,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 2.0
-   },
-   "osm_counts": {
-    "mining_areas": 0,
-    "industrial_areas": 1,
-    "brick_kilns": 0,
-    "schools": 0,
-    "hospitals": 17,
-    "rail_stations": 6,
-    "peaks": 0,
-    "substations": 4,
-    "towns": 4,
-    "villages": 10
-   },
-   "exposure": {
-    "population_worldpop_2020": 923736,
-    "mines_2km_people": 2033,
-    "mines_2km_pct": 0.2,
-    "mines_5km_people": 19510,
-    "mines_5km_pct": 2.1,
-    "kilns_2km_people": 1518,
-    "kilns_2km_pct": 0.2,
-    "kilns_5km_people": 18825,
-    "kilns_5km_pct": 2.0,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 205,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1413,
@@ -1252,7 +919,6 @@
    "forest_open_km2": 515.92,
    "elevation_median_m": 540,
    "elevation_max_m": 867,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1267,33 +933,6 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.2
-   },
-   "osm_counts": {
-    "mining_areas": 0,
-    "industrial_areas": 1,
-    "brick_kilns": 1,
-    "schools": 3,
-    "hospitals": 11,
-    "rail_stations": 5,
-    "peaks": 10,
-    "substations": 4,
-    "towns": 3,
-    "villages": 106
-   },
-   "exposure": {
-    "population_worldpop_2020": 635215,
-    "mines_2km_people": 0,
-    "mines_2km_pct": 0.0,
-    "mines_5km_people": 2546,
-    "mines_5km_pct": 0.4,
-    "kilns_2km_people": 2876,
-    "kilns_2km_pct": 0.5,
-    "kilns_5km_people": 23109,
-    "kilns_5km_pct": 3.6,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1472,
@@ -1358,7 +997,6 @@
    "forest_open_km2": 258.89,
    "elevation_median_m": 353,
    "elevation_max_m": 670,
-   "heat_detections": 0,
    "power_plants": [
     {
      "name": "Koderma Thermal Power Station",
@@ -1378,33 +1016,6 @@
     "Built-up": 2.1,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 1.1
-   },
-   "osm_counts": {
-    "mining_areas": 26,
-    "industrial_areas": 14,
-    "brick_kilns": 4,
-    "schools": 3,
-    "hospitals": 37,
-    "rail_stations": 13,
-    "peaks": 9,
-    "substations": 6,
-    "towns": 4,
-    "villages": 10
-   },
-   "exposure": {
-    "population_worldpop_2020": 891030,
-    "mines_2km_people": 99014,
-    "mines_2km_pct": 11.1,
-    "mines_5km_people": 329085,
-    "mines_5km_pct": 36.9,
-    "kilns_2km_people": 16846,
-    "kilns_2km_pct": 1.9,
-    "kilns_5km_people": 45689,
-    "kilns_5km_pct": 5.1,
-    "plants_2km_people": 21578,
-    "plants_2km_pct": 2.4,
-    "plants_5km_people": 53273,
-    "plants_5km_pct": 6.0
    },
    "climate": {
     "rain_annual_mm": 1173,
@@ -1469,7 +1080,6 @@
    "forest_open_km2": 606.49,
    "elevation_median_m": 491,
    "elevation_max_m": 1152,
-   "heat_detections": 1,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1484,33 +1094,6 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.4
-   },
-   "osm_counts": {
-    "mining_areas": 37,
-    "industrial_areas": 18,
-    "brick_kilns": 24,
-    "schools": 1,
-    "hospitals": 11,
-    "rail_stations": 19,
-    "peaks": 10,
-    "substations": 6,
-    "towns": 3,
-    "villages": 46
-   },
-   "exposure": {
-    "population_worldpop_2020": 975694,
-    "mines_2km_people": 74173,
-    "mines_2km_pct": 7.6,
-    "mines_5km_people": 255422,
-    "mines_5km_pct": 26.2,
-    "kilns_2km_people": 49905,
-    "kilns_2km_pct": 5.1,
-    "kilns_5km_people": 225960,
-    "kilns_5km_pct": 23.2,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1312,
@@ -1575,7 +1158,6 @@
    "forest_open_km2": 113.18,
    "elevation_median_m": 677,
    "elevation_max_m": 1112,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1590,33 +1172,6 @@
     "Built-up": 0.7,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 0.2
-   },
-   "osm_counts": {
-    "mining_areas": 37,
-    "industrial_areas": 18,
-    "brick_kilns": 17,
-    "schools": 0,
-    "hospitals": 15,
-    "rail_stations": 6,
-    "peaks": 7,
-    "substations": 3,
-    "towns": 1,
-    "villages": 8
-   },
-   "exposure": {
-    "population_worldpop_2020": 575695,
-    "mines_2km_people": 95228,
-    "mines_2km_pct": 16.5,
-    "mines_5km_people": 249384,
-    "mines_5km_pct": 43.3,
-    "kilns_2km_people": 91792,
-    "kilns_2km_pct": 15.9,
-    "kilns_5km_people": 225726,
-    "kilns_5km_pct": 39.2,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1399,
@@ -1681,7 +1236,6 @@
    "forest_open_km2": 114.53,
    "elevation_median_m": 70,
    "elevation_max_m": 585,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1697,33 +1251,6 @@
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.3,
     "Herbaceous wetland": 0.0
-   },
-   "osm_counts": {
-    "mining_areas": 32,
-    "industrial_areas": 1,
-    "brick_kilns": 1,
-    "schools": 0,
-    "hospitals": 11,
-    "rail_stations": 3,
-    "peaks": 2,
-    "substations": 3,
-    "towns": 3,
-    "villages": 6
-   },
-   "exposure": {
-    "population_worldpop_2020": 1089636,
-    "mines_2km_people": 207441,
-    "mines_2km_pct": 19.0,
-    "mines_5km_people": 480130,
-    "mines_5km_pct": 44.1,
-    "kilns_2km_people": 9795,
-    "kilns_2km_pct": 0.9,
-    "kilns_5km_people": 37987,
-    "kilns_5km_pct": 3.5,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1598,
@@ -1788,7 +1315,6 @@
    "forest_open_km2": 605.76,
    "elevation_median_m": 261,
    "elevation_max_m": 659,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1803,33 +1329,6 @@
     "Built-up": 0.9,
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 1.3
-   },
-   "osm_counts": {
-    "mining_areas": 94,
-    "industrial_areas": 45,
-    "brick_kilns": 42,
-    "schools": 11,
-    "hospitals": 47,
-    "rail_stations": 16,
-    "peaks": 28,
-    "substations": 10,
-    "towns": 4,
-    "villages": 25
-   },
-   "exposure": {
-    "population_worldpop_2020": 2297476,
-    "mines_2km_people": 159204,
-    "mines_2km_pct": 6.9,
-    "mines_5km_people": 530610,
-    "mines_5km_pct": 23.1,
-    "kilns_2km_people": 110605,
-    "kilns_2km_pct": 4.8,
-    "kilns_5km_people": 425062,
-    "kilns_5km_pct": 18.5,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1265,
@@ -1894,7 +1393,6 @@
    "forest_open_km2": 1561.77,
    "elevation_median_m": 386,
    "elevation_max_m": 942,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -1909,33 +1407,6 @@
     "Built-up": 0.2,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.3
-   },
-   "osm_counts": {
-    "mining_areas": 41,
-    "industrial_areas": 8,
-    "brick_kilns": 2,
-    "schools": 24,
-    "hospitals": 14,
-    "rail_stations": 26,
-    "peaks": 72,
-    "substations": 19,
-    "towns": 6,
-    "villages": 47
-   },
-   "exposure": {
-    "population_worldpop_2020": 1742846,
-    "mines_2km_people": 117574,
-    "mines_2km_pct": 6.7,
-    "mines_5km_people": 331854,
-    "mines_5km_pct": 19.0,
-    "kilns_2km_people": 14706,
-    "kilns_2km_pct": 0.8,
-    "kilns_5km_people": 122582,
-    "kilns_5km_pct": 7.0,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1583,
@@ -2000,7 +1471,6 @@
    "forest_open_km2": 428.26,
    "elevation_median_m": 150,
    "elevation_max_m": 916,
-   "heat_detections": 3,
    "power_plants": [
     {
      "name": "Jojobera Power Plant",
@@ -2020,33 +1490,6 @@
     "Built-up": 1.8,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 1.0
-   },
-   "osm_counts": {
-    "mining_areas": 65,
-    "industrial_areas": 78,
-    "brick_kilns": 59,
-    "schools": 38,
-    "hospitals": 38,
-    "rail_stations": 14,
-    "peaks": 26,
-    "substations": 26,
-    "towns": 4,
-    "villages": 33
-   },
-   "exposure": {
-    "population_worldpop_2020": 2788569,
-    "mines_2km_people": 350410,
-    "mines_2km_pct": 12.6,
-    "mines_5km_people": 1668485,
-    "mines_5km_pct": 59.8,
-    "kilns_2km_people": 313797,
-    "kilns_2km_pct": 11.3,
-    "kilns_5km_people": 1623272,
-    "kilns_5km_pct": 58.2,
-    "plants_2km_people": 121426,
-    "plants_2km_pct": 4.4,
-    "plants_5km_people": 551236,
-    "plants_5km_pct": 19.8
    },
    "climate": {
     "rain_annual_mm": 1553,
@@ -2111,7 +1554,6 @@
    "forest_open_km2": 197.09,
    "elevation_median_m": 371,
    "elevation_max_m": 1041,
-   "heat_detections": 19,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -2126,33 +1568,6 @@
     "Built-up": 3.0,
     "Bare / sparse vegetation": 0.7,
     "Permanent water": 1.4
-   },
-   "osm_counts": {
-    "mining_areas": 179,
-    "industrial_areas": 65,
-    "brick_kilns": 43,
-    "schools": 5,
-    "hospitals": 32,
-    "rail_stations": 20,
-    "peaks": 4,
-    "substations": 8,
-    "towns": 6,
-    "villages": 8
-   },
-   "exposure": {
-    "population_worldpop_2020": 1037478,
-    "mines_2km_people": 460550,
-    "mines_2km_pct": 44.4,
-    "mines_5km_people": 806747,
-    "mines_5km_pct": 77.8,
-    "kilns_2km_people": 193123,
-    "kilns_2km_pct": 18.6,
-    "kilns_5km_people": 487828,
-    "kilns_5km_pct": 47.0,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1351,
@@ -2217,7 +1632,6 @@
    "forest_open_km2": 727.13,
    "elevation_median_m": 594,
    "elevation_max_m": 1043,
-   "heat_detections": 7,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -2232,33 +1646,6 @@
     "Built-up": 2.5,
     "Bare / sparse vegetation": 0.1,
     "Permanent water": 0.8
-   },
-   "osm_counts": {
-    "mining_areas": 105,
-    "industrial_areas": 96,
-    "brick_kilns": 77,
-    "schools": 116,
-    "hospitals": 253,
-    "rail_stations": 24,
-    "peaks": 12,
-    "substations": 21,
-    "towns": 7,
-    "villages": 39
-   },
-   "exposure": {
-    "population_worldpop_2020": 3566195,
-    "mines_2km_people": 185841,
-    "mines_2km_pct": 5.2,
-    "mines_5km_people": 615903,
-    "mines_5km_pct": 17.3,
-    "kilns_2km_people": 148596,
-    "kilns_2km_pct": 4.2,
-    "kilns_5km_people": 472930,
-    "kilns_5km_pct": 13.3,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1457,
@@ -2323,7 +1710,6 @@
    "forest_open_km2": 311.9,
    "elevation_median_m": 57,
    "elevation_max_m": 459,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -2339,33 +1725,6 @@
     "Bare / sparse vegetation": 0.6,
     "Permanent water": 3.8,
     "Herbaceous wetland": 0.6
-   },
-   "osm_counts": {
-    "mining_areas": 142,
-    "industrial_areas": 48,
-    "brick_kilns": 34,
-    "schools": 29,
-    "hospitals": 30,
-    "rail_stations": 17,
-    "peaks": 18,
-    "substations": 9,
-    "towns": 6,
-    "villages": 224
-   },
-   "exposure": {
-    "population_worldpop_2020": 1809286,
-    "mines_2km_people": 570430,
-    "mines_2km_pct": 31.5,
-    "mines_5km_people": 1385468,
-    "mines_5km_pct": 76.6,
-    "kilns_2km_people": 275190,
-    "kilns_2km_pct": 15.2,
-    "kilns_5km_people": 944562,
-    "kilns_5km_pct": 52.2,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1501,
@@ -2430,7 +1789,6 @@
    "forest_open_km2": 345.82,
    "elevation_median_m": 203,
    "elevation_max_m": 913,
-   "heat_detections": 4,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -2445,33 +1803,6 @@
     "Built-up": 0.9,
     "Bare / sparse vegetation": 0.2,
     "Permanent water": 3.2
-   },
-   "osm_counts": {
-    "mining_areas": 125,
-    "industrial_areas": 79,
-    "brick_kilns": 39,
-    "schools": 3,
-    "hospitals": 19,
-    "rail_stations": 18,
-    "peaks": 27,
-    "substations": 16,
-    "towns": 4,
-    "villages": 15
-   },
-   "exposure": {
-    "population_worldpop_2020": 1164093,
-    "mines_2km_people": 218481,
-    "mines_2km_pct": 18.8,
-    "mines_5km_people": 646028,
-    "mines_5km_pct": 55.5,
-    "kilns_2km_people": 150990,
-    "kilns_2km_pct": 13.0,
-    "kilns_5km_people": 551413,
-    "kilns_5km_pct": 47.4,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1648,
@@ -2536,7 +1867,6 @@
    "forest_open_km2": 881.45,
    "elevation_median_m": 413,
    "elevation_max_m": 755,
-   "heat_detections": 0,
    "power_plants": [],
    "large_works": [],
    "monitors_continuous_in_feed": 0,
@@ -2550,33 +1880,6 @@
     "Built-up": 0.1,
     "Bare / sparse vegetation": 0.4,
     "Permanent water": 0.8
-   },
-   "osm_counts": {
-    "mining_areas": 8,
-    "industrial_areas": 4,
-    "brick_kilns": 4,
-    "schools": 1,
-    "hospitals": 10,
-    "rail_stations": 6,
-    "peaks": 3,
-    "substations": 2,
-    "towns": 0,
-    "villages": 16
-   },
-   "exposure": {
-    "population_worldpop_2020": 681130,
-    "mines_2km_people": 8993,
-    "mines_2km_pct": 1.3,
-    "mines_5km_people": 34739,
-    "mines_5km_pct": 5.1,
-    "kilns_2km_people": 10331,
-    "kilns_2km_pct": 1.5,
-    "kilns_5km_people": 39444,
-    "kilns_5km_pct": 5.8,
-    "plants_2km_people": 0,
-    "plants_2km_pct": 0.0,
-    "plants_5km_people": 0,
-    "plants_5km_pct": 0.0
    },
    "climate": {
     "rain_annual_mm": 1701,

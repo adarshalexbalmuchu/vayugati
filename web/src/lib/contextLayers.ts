@@ -33,8 +33,6 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Rivers, canals, lakes and reservoirs from OpenStreetMap (3 Nov 2026).' },
   { key: 'places', label: 'Towns and villages', on: true,
     note: 'Cities, towns and villages with a name in OpenStreetMap (3 Nov 2026). Villages appear from zoom 10.' },
-  { key: 'towngrid', label: 'Town grids (3 km, not wards)', on: false,
-    note: 'A 3 km grid over 29 main towns, covering their built-up land (ESA WorldCover 2021). It is a Vayu Gati working grid, NOT ward or municipal boundaries: Jharkhand ward maps are not published as GIS. Dhanbad district has its own grid.' },
   { key: 'builtup', label: 'Built-up areas (mapped)', on: false,
     note: 'Residential areas drawn in OpenStreetMap, over 0.05 km². Incomplete; ESA land cover shows built-up land everywhere.' },
   { key: 'facilities', label: 'Schools and hospitals', on: false,
@@ -75,7 +73,7 @@ export function isContextPanelKey(k: string): k is ContextPanelKey {
 
 /** Themes for the on-map layer control, and a colour swatch per layer. */
 export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = [
-  { label: 'Boundaries', keys: ['districts', 'towngrid'] },
+  { label: 'Boundaries', keys: ['districts'] },
   { label: 'Imagery and terrain', keys: ['satellite', 'relief', 'landcover', 'nightlights'] },
   { label: 'Nature', keys: ['forest', 'protected', 'water', 'landmarks'] },
   { label: 'People', keys: ['places', 'builtup', 'facilities'] },
@@ -84,7 +82,7 @@ export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = 
 ]
 
 export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
-  districts: '#2E2219', towngrid: '#1F6F8B', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
+  districts: '#2E2219', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
   nightlights: '#E9B949', forest: '#2F7D3A', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
   places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
   power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',

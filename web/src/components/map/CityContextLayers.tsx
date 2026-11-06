@@ -70,11 +70,10 @@ const FILES = {
   power: 'power.geojson',
   kilns: 'kilns.geojson',
   builtup: 'builtup.geojson',
-  towngrid: 'town_grids.geojson',
 } as const
 /** Files the map can do without (an older pack): they load as empty. */
 const OPTIONAL = new Set(['railways', 'rivers', 'water', 'forest', 'protected', 'places', 'facilities', 'landmarks',
-  'transport', 'power', 'kilns', 'builtup', 'towngrid'])
+  'transport', 'power', 'kilns', 'builtup'])
 
 interface LandcoverMeta {
   coordinates: [[number, number], [number, number], [number, number], [number, number]]
@@ -139,7 +138,6 @@ const SRC = {
   power: 'ctx-power',
   kilns: 'ctx-kilns',
   builtup: 'ctx-builtup',
-  towngrid: 'ctx-towngrid',
 } as const
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -154,7 +152,6 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   water: ['ctx-water-fill', 'ctx-rivers-line'],
   places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
   builtup: ['ctx-builtup-fill'],
-  towngrid: ['ctx-towngrid-fill', 'ctx-towngrid-line'],
   facilities: ['ctx-facilities'],
   railways: ['ctx-railways-main', 'ctx-railways-siding', 'ctx-transport'],
   roads: ['ctx-roads-line'],
@@ -170,7 +167,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
   'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
-  'ctx-towngrid-fill', 'ctx-districts-fill']
+  'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
  *  ward cells and mapped features in the city view. */
@@ -294,10 +291,6 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'fill-color': '#1B5E20', 'fill-opacity': 0.12 } })
   map.addLayer({ id: 'ctx-protected-line', type: 'line', source: SRC.protected, layout: { visibility: vis('protected') },
     paint: { 'line-color': '#1B5E20', 'line-width': 1.4, 'line-dasharray': [3, 2] } })
-  map.addLayer({ id: 'ctx-towngrid-fill', type: 'fill', source: SRC.towngrid, layout: { visibility: vis('towngrid') },
-    paint: { 'fill-color': '#1F6F8B', 'fill-opacity': 0.08 } })
-  map.addLayer({ id: 'ctx-towngrid-line', type: 'line', source: SRC.towngrid, layout: { visibility: vis('towngrid') },
-    paint: { 'line-color': '#1F6F8B', 'line-width': 1, 'line-dasharray': [2, 1.5] } })
   map.addLayer({ id: 'ctx-builtup-fill', type: 'fill', source: SRC.builtup, layout: { visibility: vis('builtup') },
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
   map.addLayer({ id: 'ctx-water-fill', type: 'fill', source: SRC.water, layout: { visibility: vis('water') },
@@ -511,13 +504,7 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
   let note = ''
   let source = ''
   const kind = KIND_LABEL[String(props.kind)] ?? ''
-  if (layerId === 'ctx-towngrid-fill') {
-    eyebrow = 'Working grid cell'
-    title = `${props.town} · ${props.id}`
-    rows.push(['District', String(props.district)], ['Area', `${props.area_km2} km²`], ['Built-up land', `${props.builtup_pct}%`])
-    note = 'A 3 km grid by Vayu Gati. It is not a ward or municipal boundary.'
-    source = 'Built-up share: ESA WorldCover 2021'
-  } else if (layerId === 'ctx-fires') {
+  if (layerId === 'ctx-fires') {
     eyebrow = 'Satellite heat detection'
     title = String(props.date ?? 'Heat spot')
     rows.push(['Time', props.daynight === 'N' ? 'Night pass' : 'Day pass'], ['Fire radiative power', `${props.frp ?? '—'} MW`])
@@ -709,7 +696,6 @@ interface DistrictProfile {
   forest_open_km2: number | null
   elevation_median_m: number | null
   elevation_max_m: number | null
-  heat_detections: number | null
   power_plants: { name: string; operator: string }[]
   large_works: { name: string; operator: string }[]
   monitors_continuous_in_feed: number | null
@@ -717,7 +703,6 @@ interface DistrictProfile {
   monitors_planned_jspcb: number | null
   mining_area_km2: number | null
   landcover_pct?: Record<string, number> | null
-  exposure?: Record<string, number> | null
   climate?: {
     rain_annual_mm: number
     rain_monsoon_pct: number | null
@@ -730,7 +715,6 @@ interface DistrictProfile {
 }
 interface ProfilesDoc {
   sources: Record<string, string>
-  heat_detection_dates: string[]
   districts: Record<string, DistrictProfile>
 }
 
@@ -1424,8 +1408,6 @@ class ViewControl implements maplibregl.IControl {
 
     // In the district
     const rows = el('div', 'mt-3 divide-y divide-ink-900/10 rounded-xl border border-ink-900/10 bg-white')
-    const dates = doc?.heat_detection_dates ?? []
-    const span = dates.length ? `${fmtDay(dates[0])}–${fmtDay(dates[dates.length - 1])}` : ''
     const row = (k: string, v: string, sub?: string) => {
       const r = el('div', 'px-2.5 py-1.5')
       const line = el('div', 'flex items-baseline justify-between gap-2')
@@ -1434,7 +1416,6 @@ class ViewControl implements maplibregl.IControl {
       if (sub) r.appendChild(el('p', 'mt-0.5 text-right text-[10px] leading-snug text-ink-600', sub))
       rows.appendChild(r)
     }
-    row(`Heat detections${span ? ` (${span})` : ''}`, num(p.heat_detections))
     const sites = [...p.power_plants, ...p.large_works]
     row('Power plants and works', sites.length ? String(sites.length) : 'None checked', sites.map((x) => x.name).join(' · ') || undefined)
     row('Public air monitors', p.monitors_continuous_in_feed == null ? NA : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
@@ -1442,35 +1423,6 @@ class ViewControl implements maplibregl.IControl {
     row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), p.mining_area_km2 == null ? 'No official district figure' : undefined)
     panes.overview.appendChild(rows)
 
-    // People living near mapped sources (WorldPop 2020 x the map's own layers)
-    const ex = p.exposure
-    if (ex) {
-      const esec = el('div', 'mt-3')
-      esec.appendChild(label('People living near mapped sources'))
-      const exRows = el('div', 'divide-y divide-ink-900/10 rounded-xl border border-ink-900/10 bg-white')
-      const exRow = (k: string, key: string) => {
-        const r = el('div', 'px-2.5 py-1.5')
-        const line = el('div', 'flex items-baseline justify-between gap-2')
-        const pct = ex[`${key}_pct`]
-        const ppl = ex[`${key}_people`]
-        line.append(el('span', 'text-ink-600', k), el('span', 'text-right font-semibold tabular-nums text-ink-900', `${nf1.format(pct)}%`))
-        r.appendChild(line)
-        const bar = el('div', 'mt-1 h-1.5 rounded-full bg-ink-100')
-        const fill = el('div', 'h-1.5 rounded-full bg-ink-700')
-        fill.style.width = `${Math.min(100, Math.max(1, pct))}%`
-        bar.appendChild(fill)
-        r.appendChild(bar)
-        r.appendChild(el('p', 'mt-0.5 text-right text-[10px] text-ink-500', `about ${nf.format(Math.round(ppl / 1000) * 1000)} people`))
-        exRows.appendChild(r)
-      }
-      exRow('Within 2 km of a mapped mine or quarry', 'mines_2km')
-      exRow('Within 5 km of a mapped mine or quarry', 'mines_5km')
-      exRow('Within 2 km of a mapped brick kiln', 'kilns_2km')
-      exRow('Within 5 km of a power plant or large works', 'plants_5km')
-      esec.appendChild(exRows)
-      esec.appendChild(el('p', 'mt-1 text-[10px] leading-snug text-ink-500', 'Shares of the district’s population as estimated by WorldPop 2020 (1 km grid). Only mapped sites count, and the map is incomplete, so these are minimums. Living near a site is not a measure of exposure or harm.'))
-      panes.overview.appendChild(esec)
-    }
 
     // Sources, folded away
     const src = doc?.sources ?? {}
@@ -1478,8 +1430,8 @@ class ViewControl implements maplibregl.IControl {
     det.appendChild(label('Where each figure comes from'))
     const ul = el('ul', 'space-y-2 text-[11px] leading-snug text-ink-600')
     for (const [k, lab] of [['area_km2', 'Area'], ['population_2011', 'Population'], ['forest', 'Forest'], ['elevation', 'Elevation'],
-      ['landcover', 'Land cover'], ['heat_detections', 'Heat detections'], ['power_plants', 'Plants and works'],
-      ['monitors', 'Monitors'], ['exposure', 'People near sources'], ['climate', 'Rain and wind'], ['outline', 'Outline']] as const) {
+      ['landcover', 'Land cover'], ['power_plants', 'Plants and works'],
+      ['monitors', 'Monitors'], ['climate', 'Rain and wind'], ['outline', 'Outline']] as const) {
       if (src[k]) {
         const li = el('li', '')
         li.append(el('span', 'font-semibold text-ink-700', `${lab}: `), document.createTextNode(src[k]))
@@ -1855,7 +1807,6 @@ export default function CityContextLayers({
           view3d: controlRef.current?.is3D === true,
         }),
         zoom: (direction) => (direction === 'in' ? map.zoomIn({ duration: 600 }) : map.zoomOut({ duration: 600 })),
-        getFile: async (file) => (await loadPack(pack.base).catch(() => null))?.[file] ?? null,
       }}
     />
   )

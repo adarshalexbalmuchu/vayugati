@@ -43,6 +43,11 @@ describe('Jharkhand assistant facts (read from the checked profiles)', () => {
   it('leaves out districts with no value', () => {
     expect(rankDistricts(doc, 'monitors_continuous', 'desc', 10)[0].district).toBe('Dhanbad')
   })
+
+  it('has no field built on volunteer-mapped counts, people-near-sites or the 5-day heat count', async () => {
+    const { FIELD_DEFS } = await import('./jhFacts')
+    expect(Object.keys(FIELD_DEFS).filter((k) => /^(n_|near_|heat)/.test(k))).toEqual([])
+  })
 })
 
 describe('state overview', () => {
@@ -57,10 +62,6 @@ describe('state overview', () => {
 })
 
 describe('exposure and climate fields', () => {
-  it('ranks districts by people near mapped mines (Dhanbad is among the highest)', () => {
-    const top = rankDistricts(doc, 'near_mines_2km_pct', 'desc', 5).map((r) => r.district)
-    expect(top).toContain('Dhanbad')
-  })
 
   it('formats rainfall and wind', () => {
     const rows = factsFor(doc, 'Ranchi', ['annual_rainfall', 'monsoon_rain_pct', 'winter_wind_speed'])!
@@ -70,11 +71,6 @@ describe('exposure and climate fields', () => {
     expect(rows.every((r) => r.source.length > 10)).toBe(true)
   })
 
-  it('the state overview includes the population near mapped mines', async () => {
-    const { stateOverview } = await import('./jhFacts')
-    const rows = Object.fromEntries(stateOverview(doc).map((r) => [r.label, r.value]))
-    expect(rows['People within 2 km of a mapped mining area']).toMatch(/^\d+\.\d% \(\d+\.\d million\)$/)
-  })
 })
 
 describe('wind direction (text field)', () => {

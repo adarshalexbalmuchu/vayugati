@@ -2,33 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUp, MessageCircle, X } from 'lucide-react'
 import { askAssistant, type AssistantAction, type AssistantTurn, type MapStateForAssistant } from '../../lib/jhAssistant'
-import type { FeatureCollection } from 'geojson'
 import { factsFor, fieldSource, FIELD_DEFS, rankDistricts, stateOverview, type FactRow, type FactField, type OverviewRow, type ProfilesDoc, type RankRow } from '../../lib/jhFacts'
-import { near, NEAR_SPECS, type NearHit, type NearWhat, type NearSpec } from '../../lib/jhNear'
 
 /** What the assistant's actions do on the map; supplied by CityContextLayers. */
 export interface AssistantHandlers {
   setLayers: (patch: Record<string, boolean>) => void
   goDistrict: (name: string | null) => void
   goPlace: (lng: number, lat: number, name: string, zoom?: number) => void
-  /** A data file of the map's pack ('sources', 'facilities', 'places' ...). */
-  getFile: (file: NearSpec['file']) => Promise<FeatureCollection | null>
   /** What is on screen now, sent with every message so "I can't see it" and "this" make sense. */
   getState: () => MapStateForAssistant
   zoom: (direction: 'in' | 'out') => void
 }
 
-/** The map layer that shows what a "near" question counts. */
-const NEAR_LAYER: Record<NearWhat, string> = {
-  mines: 'mines', industrial: 'industry', plants: 'industry', kilns: 'kilns', schools: 'facilities',
-  hospitals: 'facilities', towns: 'places', villages: 'places', heat: 'fires', peaks: 'landmarks',
-  rail_stations: 'railways', substations: 'power',
-}
 
 type Card =
   | { kind: 'facts'; district: string; rows: FactRow[] }
   | { kind: 'rank'; field: FactField; order: 'desc' | 'asc'; rows: RankRow[] }
-  | { kind: 'near'; place: string; radiusKm: number; count: number; nearest: NearHit[]; spec: NearSpec }
   | { kind: 'overview'; rows: OverviewRow[] }
   | { kind: 'note'; text: string }
   | { kind: 'done'; text: string }
@@ -44,8 +33,8 @@ const SUGGESTIONS = [
   'Which district has the most forest?',
   'Tell me about Ranchi',
   'Likely pollution sources around Bokaro',
-  'How many schools are within 10 km of Ranchi?',
-  'Which district has the most brick kilns? Show it',
+  'Which district gets the most rain?',
+  'Winter wind direction in Ranchi',
   'Take me to Jhumri Tilaiya',
 ]
 
@@ -100,15 +89,6 @@ export default function MapAssistant({
         const rows = profiles ? rankDistricts(profiles, a.field, a.order, a.limit) : []
         cards.push(rows.length ? { kind: 'rank', field: a.field, order: a.order, rows } : { kind: 'note', text: 'No data to rank for that.' })
         if (a.open_top && rows.length) { handlers.goDistrict(rows[0].district); cards.push({ kind: 'done', text: `Showing ${rows[0].district} district in 3D` }) }
-      } else if (a.type === 'near') {
-        if (a.lng == null || a.lat == null || !a.place_name) continue
-        const spec = NEAR_SPECS[a.what]
-        const fc = await handlers.getFile(spec.file)
-        if (!fc) { cards.push({ kind: 'note', text: 'The map data has not loaded yet. Please try again.' }); continue }
-        const r = near(fc, a.what, a.lng, a.lat, a.radius_km)
-        handlers.setLayers({ [NEAR_LAYER[a.what]]: true })
-        handlers.goPlace(a.lng, a.lat, a.place_name, Math.min(14, Math.max(8.5, 14.9 - Math.log2(a.radius_km))))
-        cards.push({ kind: 'near', place: a.place_name, radiusKm: a.radius_km, count: r.count, nearest: r.nearest, spec })
       } else if (a.type === 'zoom') {
         handlers.zoom(a.direction)
         cards.push({ kind: 'done', text: `Zoomed ${a.direction}` })
@@ -236,28 +216,6 @@ function ResultCard({ card }: { card: Card }) {
             </div>
           ))}
         </dl>
-      </div>
-    )
-  }
-  if (card.kind === 'near') {
-    return (
-      <div className="rounded-xl border border-ink-900/10 bg-white px-2.5 py-2">
-        <p className="text-ink-600">Within {card.radiusKm} km of {card.place}</p>
-        <p className="mt-0.5 flex items-baseline gap-1.5">
-          <span className="font-display text-3xl leading-none text-ink-900">{card.count}</span>
-          <span className="text-ink-700">{card.spec.label}</span>
-        </p>
-        {card.nearest.length > 0 && (
-          <ul className="mt-1.5 divide-y divide-ink-900/10 text-ink-800">
-            {card.nearest.map((h, i) => (
-              <li key={i} className="flex items-baseline justify-between gap-2 py-1">
-                <span className="min-w-0 truncate">{h.name || `(unnamed ${h.kind.replace('_', ' ')})`}</span>
-                <span className="shrink-0 tabular-nums text-ink-600">{h.km.toFixed(1)} km</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-1.5 text-[10px] leading-snug text-ink-500">{card.spec.source} Distances are straight-line to the feature's centre.</p>
       </div>
     )
   }

@@ -103,34 +103,24 @@ def test_no_api_key_gives_an_honest_unsupported(monkeypatch):
     assert r.actions[0].type == "unsupported"
 
 
-def test_near_resolves_place_and_clamps_radius():
-    r = ja.validate(resp("Looking.", ja.NearAction(type="near", place="bokaro", radius_km=100, what="schools")), LAYERS)
-    a = r.actions[0]
-    assert a.type == "near" and a.radius_km == ja.MAX_NEAR_KM and a.what == "schools"
-    assert a.place_name and 85 < a.lng < 87 and 23 < a.lat < 24.5
 
 
-def test_near_with_unknown_place_is_unsupported():
-    r = ja.validate(resp("Looking.", ja.NearAction(type="near", place="Xyzzyville", radius_km=10, what="mines")), LAYERS)
-    assert r.actions[0].type == "unsupported"
 
 
-def test_near_rejects_unknown_feature_type():
-    import pytest
-    from pydantic import ValidationError
-    with pytest.raises(ValidationError):
-        ja.NearAction(type="near", place="Ranchi", radius_km=5, what="banks")
+
+
+
 
 
 def test_open_top_is_stripped_unless_the_user_asked_to_see_it():
-    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="n_brick_kilns", open_top=True)])
+    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="forest_km2", open_top=True)])
     assert ja.enforce_open_top(r, "Which district has the most brick kilns?").actions[0].open_top is False
-    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="n_brick_kilns", open_top=True)])
+    r = ja.AssistantResponse(reply="Ranking.", actions=[ja.RankAction(type="rank", field="forest_km2", open_top=True)])
     assert ja.enforce_open_top(r, "Which district has the most brick kilns? Show it").actions[0].open_top is True
 
 
 def test_rank_can_open_the_winner():
-    r = ja.validate(resp("Ranking.", ja.RankAction(type="rank", field="n_schools", order="desc", limit=3, open_top=True)), LAYERS)
+    r = ja.validate(resp("Ranking.", ja.RankAction(type="rank", field="forest_km2", order="desc", limit=3, open_top=True)), LAYERS)
     assert r.actions[0].open_top is True
 
 
@@ -147,3 +137,10 @@ def test_state_block_names_layers_district_and_view():
     assert "Mining areas" in block and "Ranchi" in block and "a district" in block and "3D" in block
     assert ja._state_block(None, layers) == ""
     assert "whole state" in ja._state_block(ja.MapState(zoom=6.0), layers)
+
+
+def test_fields_are_only_authoritative_ones():
+    """No counts of volunteer-mapped features, no "people near sites", no 5-day heat count."""
+    forbidden = ("n_", "near_", "heat")
+    assert not [f for f in ja.FIELDS if f.startswith(forbidden)]
+    assert not hasattr(ja, "NearAction")

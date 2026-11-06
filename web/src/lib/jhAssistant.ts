@@ -1,12 +1,10 @@
 import type { FactField } from './jhFacts'
-import type { NearWhat } from './jhNear'
 
 /** Actions the Jharkhand assistant backend returns (ingest/app/jh_assistant.py). */
 export type AssistantAction =
   | { type: 'set_layers'; on: string[]; off: string[]; only: boolean }
   | { type: 'go_to'; kind: 'state' | 'district' | 'place'; name?: string | null; lng?: number | null; lat?: number | null }
   | { type: 'rank'; field: FactField; order: 'desc' | 'asc'; limit: number; open_top?: boolean }
-  | { type: 'near'; place: string; radius_km: number; what: NearWhat; place_name?: string | null; lng?: number | null; lat?: number | null }
   | { type: 'facts'; district: string; fields: FactField[] }
   | { type: 'zoom'; direction: 'in' | 'out' }
   | { type: 'overview' }
