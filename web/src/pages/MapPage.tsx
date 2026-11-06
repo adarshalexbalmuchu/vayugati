@@ -1342,15 +1342,16 @@ export default function MapPage() {
           <>
             <div className="relative min-h-0 flex-1">
               <MapView
-                markers={allMarkers}
+                markers={mapFirst ? [] : allMarkers}
                 center={city.center}
                 zoom={city.defaultZoom}
                 styleUrl={resolveStyleUrl(basemap)}
                 showScaleBar
                 onMarkerClick={handleMarkerClick}
                 fitBoundsTo={fitBoundsTo}
-                wardBoundaries={wardBoundaryCollection}
-                showWardBoundaries={layers.wardBoundaries && wardBoundariesAvailable}
+                // Map-first city: the database's ward cells (Dhanbad's old grid) and Delhi-style markers are not drawn.
+                wardBoundaries={mapFirst ? undefined : wardBoundaryCollection}
+                showWardBoundaries={!mapFirst && layers.wardBoundaries && wardBoundariesAvailable}
                 selectedBoundaryId={selection?.kind === 'wardBoundary' ? selection.id : null}
                 onBoundaryClick={handleBoundaryClick}
                 selectedMarkerId={selection?.kind === 'station' ? `station-${selection.id}` : null}
