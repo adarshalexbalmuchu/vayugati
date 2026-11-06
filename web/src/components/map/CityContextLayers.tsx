@@ -70,10 +70,13 @@ const FILES = {
   power: 'power.geojson',
   kilns: 'kilns.geojson',
   builtup: 'builtup.geojson',
+  majorrivers: 'majorrivers.geojson',
+  basins: 'basins.geojson',
+  dams: 'dams.geojson',
 } as const
 /** Files the code itself needs (the state mask, district lookup and heat-detection dates). Everything else is given to
  *  MapLibre as a URL, so each layer loads on its own: one slow or missing file cannot hold up the rest. */
-const NEEDED = ['state', 'districts', 'fires'] as const
+const NEEDED = ['state', 'districts', 'fires', 'basins'] as const
 
 interface LandcoverMeta {
   coordinates: [[number, number], [number, number], [number, number], [number, number]]
@@ -134,6 +137,9 @@ const SRC = {
   power: 'ctx-power',
   kilns: 'ctx-kilns',
   builtup: 'ctx-builtup',
+  majorrivers: 'ctx-majorrivers',
+  basins: 'ctx-basins',
+  dams: 'ctx-dams',
 } as const
 
 /** Which layer toggles a source feeds (for the loading / failed note next to a checkbox). */
@@ -142,6 +148,7 @@ const SRC_KEYS: Record<string, CityContextLayerKey[]> = {
   'ctx-transport': ['railways'], 'ctx-rivers': ['water'], 'ctx-water': ['water'], 'ctx-forest': ['forest'],
   'ctx-protected': ['protected'], 'ctx-places': ['places'], 'ctx-facilities': ['facilities'],
   'ctx-landmarks': ['landmarks'], 'ctx-power': ['power'], 'ctx-kilns': ['kilns'], 'ctx-builtup': ['builtup'],
+  'ctx-majorrivers': ['majorrivers'], 'ctx-basins': ['basins'], 'ctx-dams': ['dams'],
 }
 
 /** Layer ids per toggle. The state outline goes with the districts toggle. */
@@ -154,6 +161,9 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   forest: ['ctx-forest-fill'],
   protected: ['ctx-protected-fill', 'ctx-protected-line'],
   water: ['ctx-water-fill', 'ctx-rivers-line'],
+  majorrivers: ['ctx-majorrivers-line', 'ctx-majorrivers-label'],
+  basins: ['ctx-basins-line', 'ctx-basins-label'],
+  dams: ['ctx-dams', 'ctx-dams-label'],
   places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
   builtup: ['ctx-builtup-fill'],
   facilities: ['ctx-facilities'],
@@ -168,9 +178,9 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
 }
 
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-plants', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
+const CLICKABLE = ['ctx-plants', 'ctx-dams', 'ctx-fires', 'ctx-kilns', 'ctx-landmarks', 'ctx-transport', 'ctx-facilities',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-mines-fill', 'ctx-industry-fill', 'ctx-railways-main',
-  'ctx-railways-siding', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
+  'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill', 'ctx-forest-fill', 'ctx-builtup-fill',
   'ctx-districts-fill']
 
 /** District shading is only clickable zoomed out, so it never competes with
@@ -300,9 +310,13 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'fill-color': '#C8663E', 'fill-opacity': 0.35 } })
   map.addLayer({ id: 'ctx-water-fill', type: 'fill', source: SRC.water, layout: { visibility: vis('water') },
     paint: { 'fill-color': '#3B82C4', 'fill-opacity': 0.75 } })
+  map.addLayer({ id: 'ctx-basins-line', type: 'line', source: SRC.basins, layout: { visibility: vis('basins') },
+    paint: { 'line-color': '#5B7FA6', 'line-width': 1.1, 'line-opacity': 0.85, 'line-dasharray': [4, 3] } })
   map.addLayer({ id: 'ctx-rivers-line', type: 'line', source: SRC.rivers, layout: { visibility: vis('water') },
     paint: { 'line-color': '#3B82C4', 'line-width': ['interpolate', ['linear'], ['zoom'], 6,
       ['match', ['get', 'kind'], 'river', 0.8, 0.4], 11, ['match', ['get', 'kind'], 'river', 2.4, 1.2]] } })
+  map.addLayer({ id: 'ctx-majorrivers-line', type: 'line', source: SRC.majorrivers, layout: { visibility: vis('majorrivers'), 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#1D6FB8', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 11, 3.2] } })
   map.addLayer({
     id: 'ctx-districts-fill',
     type: 'fill',
@@ -387,7 +401,22 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   map.addLayer({ id: 'ctx-landmarks', type: 'circle', source: SRC.landmarks, minzoom: 7, layout: { visibility: vis('landmarks') },
     paint: { 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1,
       'circle-color': ['match', ['get', 'kind'], 'peak', '#6D4C41', 'waterfall', '#0288D1', '#455A64'] } })
+  map.addLayer({ id: 'ctx-dams', type: 'circle', source: SRC.dams, layout: { visibility: vis('dams') },
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6.5], 'circle-color': '#0B3C7D',
+      'circle-stroke-color': '#fff', 'circle-stroke-width': 1.3 } })
   if (font) {
+    map.addLayer({ id: 'ctx-basins-label', type: 'symbol', source: SRC.basins, minzoom: 6,
+      filter: ['!=', ['get', 'sub_basin'], ''], layout: { visibility: vis('basins'),
+        'text-field': ['get', 'sub_basin'], 'text-font': font, 'text-size': 10, 'text-max-width': 8, 'text-optional': true },
+      paint: { 'text-color': '#3F5F86', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2, 'text-opacity': 0.9 } })
+    map.addLayer({ id: 'ctx-majorrivers-label', type: 'symbol', source: SRC.majorrivers, minzoom: 7,
+      layout: { visibility: vis('majorrivers'), 'symbol-placement': 'line', 'text-field': ['get', 'name'], 'text-font': font,
+        'text-size': 11, 'text-letter-spacing': 0.08, 'text-optional': true },
+      paint: { 'text-color': '#154F85', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.4 } })
+    map.addLayer({ id: 'ctx-dams-label', type: 'symbol', source: SRC.dams, minzoom: 8,
+      filter: ['!=', ['get', 'name'], ''], layout: { visibility: vis('dams'), 'text-field': ['get', 'name'], 'text-font': font,
+        'text-size': 10, 'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-optional': true },
+      paint: { 'text-color': '#0B3C7D', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
     map.addLayer({ id: 'ctx-places-label-town', type: 'symbol', source: SRC.places,
       filter: ['in', ['get', 'kind'], ['literal', ['city', 'town']]], minzoom: 6.5, layout: { visibility: vis('places'),
         'text-field': ['get', 'name'], 'text-font': font, 'text-size': ['match', ['get', 'kind'], 'city', 13, 11],
@@ -506,6 +535,19 @@ function glassify(shell: HTMLElement, { tint = 0.5, distort = false }: { tint?: 
 
 /** Which district a point is in (ray casting over the district outlines). */
 function districtAt(fc: FeatureCollection | undefined, lng: number, lat: number): string | null {
+  const p = polygonAt(fc, lng, lat)
+  return p ? String(p.name ?? '') : null
+}
+
+/** The river basin and sub-basin at a point, as one line ("Damodar sub-basin, Ganga basin"). */
+function basinAt(fc: FeatureCollection | undefined, lng: number, lat: number): string | null {
+  const p = polygonAt(fc, lng, lat)
+  if (!p) return null
+  return [p.sub_basin ? `${p.sub_basin} sub-basin` : '', p.basin ? `${p.basin} basin` : ''].filter(Boolean).join(', ') || null
+}
+
+/** Properties of the first polygon of a collection that contains the point (ray casting). */
+function polygonAt(fc: FeatureCollection | undefined, lng: number, lat: number): Record<string, unknown> | null {
   if (!fc) return null
   const inRing = (ring: number[][]) => {
     let inside = false
@@ -520,7 +562,7 @@ function districtAt(fc: FeatureCollection | undefined, lng: number, lat: number)
   for (const f of fc.features) {
     const g = f.geometry
     const hit = g.type === 'Polygon' ? inPoly(g.coordinates) : g.type === 'MultiPolygon' ? g.coordinates.some(inPoly) : false
-    if (hit) return String(f.properties?.name ?? '')
+    if (hit) return f.properties ?? {}
   }
   return null
 }
@@ -528,7 +570,7 @@ function districtAt(fc: FeatureCollection | undefined, lng: number, lat: number)
 const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be incomplete or out of date.'
 
 /** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
-function popupNode(props: Record<string, unknown>, layerId: string, district: string | null): HTMLElement {
+function popupNode(props: Record<string, unknown>, layerId: string, district: string | null, basin: string | null = null): HTMLElement {
   const el = document.createElement('div')
   el.className = 'min-w-[180px] max-w-[250px] py-2.5 pl-3 pr-3 text-xs text-slate-700'
   let eyebrow = ''
@@ -544,6 +586,32 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     if (district) rows.push(['District', district])
     note = 'A 375 m pixel that was unusually hot: a coal fire, industrial heat, or crop or forest burning. Not a measured fire area.'
     source = 'NASA FIRMS (VIIRS), dates in UTC'
+  } else if (layerId === 'ctx-dams') {
+    eyebrow = 'Large dam'
+    title = String(props.name || 'Large dam')
+    if (props.river) rows.push(['River', String(props.river)])
+    if (district) rows.push(['District', district])
+    if (props.height_m != null && props.height_m !== '') rows.push(['Height', `${props.height_m} m`])
+    if (props.storage_mcm != null && props.storage_mcm !== '') rows.push(['Reservoir capacity', `${props.storage_mcm} million m³`])
+    if (props.year) rows.push(['Completed', String(props.year)])
+    if (props.purpose) rows.push(['Purpose', String(props.purpose)])
+    if (props.owner) rows.push(['Managed by', String(props.owner)])
+    note = 'Large dams only; smaller dams are not in the register.'
+    source = `National Register of Large Dams (Central Water Commission), via India-WRIS${props.nrld ? `; register no. ${props.nrld}` : ''}.`
+  } else if (layerId === 'ctx-majorrivers-line') {
+    eyebrow = 'Major river'
+    title = String(props.name || 'River')
+    if (props.basin) rows.push(['River basin', `${props.basin}`])
+    if (props.sub_basin) rows.push(['Sub-basin', String(props.sub_basin)])
+    source = 'India-WRIS (Central Water Commission, Ministry of Jal Shakti).'
+  } else if (layerId === 'ctx-protected-fill' && props.category) {
+    eyebrow = `${props.category}${props.tiger_reserve === true || props.tiger_reserve === 'true' ? ' · Tiger reserve' : ''}`
+    title = String(props.name)
+    if (props.year) rows.push(['Notified', String(props.year)])
+    if (props.notified_km2 != null && props.notified_km2 !== '') rows.push(['Notified area', `${Number(props.notified_km2).toLocaleString('en-IN')} km²`])
+    if (district) rows.push(['District', district])
+    note = 'The outline is approximate and can cover more or less than the notified area.'
+    source = 'India-WRIS (Central Water Commission): list of wildlife sanctuaries and national parks.'
   } else if (props.checked) {
     eyebrow = kind || 'Checked site'
     title = String(props.name)
@@ -559,6 +627,7 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     if (props.kind === 'peak' && props.ele) rows.push(['Height as mapped', `${props.ele} m`])
     if (props.kind === 'line' && props.voltage) rows.push(['Voltage as mapped', `${props.voltage} V`])
     if (district) rows.push(['District', district])
+    if (basin && (layerId === 'ctx-rivers-line' || layerId === 'ctx-water-fill')) rows.push(['River basin', basin])
     const polygonLayers = ['ctx-mines-fill', 'ctx-industry-fill', 'ctx-forest-fill', 'ctx-builtup-fill', 'ctx-protected-fill', 'ctx-water-fill']
     if (['ctx-mines-fill', 'ctx-industry-fill'].includes(layerId)) note = 'Not an official lease or land-use boundary, and some areas are missing.'
     else if (polygonLayers.includes(layerId)) note = 'Outline as drawn by volunteers; approximate.'
@@ -1768,7 +1837,7 @@ export default function CityContextLayers({
         controlRef.current.selectDistrict(String(f.properties?.name))
         return
       }
-      const node = popupNode(f.properties ?? {}, f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat))
+      const node = popupNode(f.properties ?? {}, f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat), basinAt(data?.basins, e.lngLat.lng, e.lngLat.lat))
       if (in3D) showElevation(e, node)
       else popup.setLngLat(e.lngLat).setDOMContent(node).addTo(map)
     }

@@ -18,7 +18,7 @@ export interface ContextLayerDef {
 export const CONTEXT_LAYER_DEFS = [
   { key: 'districts', label: 'State and district outlines', on: true,
     note: 'Jharkhand and its 24 districts. Outlines combine three open datasets (Datameet / Census 2011, OpenStreetMap, geoBoundaries), chosen per district to match official areas and 42 towns of known district (0.9% mean difference, 4.1% at most). Not Survey of India’s own file. Click a district, or pick one, to see it in 3D with its profile.' },
-  { key: 'landcover', label: 'Land cover (ESA WorldCover 2021)', on: false,
+  { key: 'landcover', label: 'Land cover (ESA WorldCover 2021)', on: true,
     note: 'Satellite-mapped land cover at 10 m by the European Space Agency (2021), shown at about 150 m: tree cover, cropland, built-up, bare ground and mines, water.' },
   { key: 'nightlights', label: 'Night lights (NASA Black Marble 2016)', on: false,
     note: 'Lights at night from NASA’s VIIRS satellite, 2016 composite (the latest global one NASA serves as map tiles). Towns, mines and industry glow.' },
@@ -28,9 +28,15 @@ export const CONTEXT_LAYER_DEFS = [
   { key: 'forest', label: 'Forest areas (mapped)', on: false,
     note: 'Forest and woodland drawn in OpenStreetMap (data as of 3 Nov 2026), areas over 0.5 km². Official forest cover per district is in the district profile (ISFR 2023).' },
   { key: 'protected', label: 'Protected areas', on: true,
-    note: 'National park, wildlife sanctuaries and reserves as drawn in OpenStreetMap; boundaries are approximate, not the notified ones.' },
-  { key: 'water', label: 'Rivers and water bodies', on: true,
-    note: 'Rivers, canals, lakes and reservoirs from OpenStreetMap (3 Nov 2026).' },
+    note: 'The 11 wildlife sanctuaries and the national park of Jharkhand, from the India-WRIS list (Central Water Commission, Ministry of Jal Shakti), with notification year and notified area. Outlines are approximate and can differ from the notified area; click one to compare.' },
+  { key: 'majorrivers', label: 'Major rivers (India-WRIS)', on: true,
+    note: 'The main rivers India-WRIS (Central Water Commission, Ministry of Jal Shakti) maps in Jharkhand, with the basin each belongs to. Smaller streams are in the OpenStreetMap layer below.' },
+  { key: 'basins', label: 'River basins and sub-basins', on: true,
+    note: 'Basins and sub-basins of the Central Water Commission, from India-WRIS: the river system each area drains into.' },
+  { key: 'water', label: 'Streams, canals and lakes (mapped)', on: false,
+    note: 'Rivers, streams, canals, lakes and reservoirs drawn in OpenStreetMap (3 Nov 2026). Volunteer-mapped, so incomplete; most lines have no name.' },
+  { key: 'dams', label: 'Large dams', on: false,
+    note: 'Large dams in the National Register of Large Dams (Central Water Commission), via India-WRIS: height, year, reservoir size, purpose and owner. Smaller dams are not in the register.' },
   { key: 'places', label: 'Towns and villages', on: true,
     note: 'Cities, towns and villages with a name in OpenStreetMap (3 Nov 2026). Villages appear from zoom 10.' },
   { key: 'builtup', label: 'Built-up areas (mapped)', on: false,
@@ -49,10 +55,10 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026).' },
   { key: 'kilns', label: 'Brick kilns', on: false,
     note: 'Brick kilns mapped in OpenStreetMap. Far from complete: most kilns are not mapped.' },
-  { key: 'fires', label: 'Satellite heat detections', on: true,
+  { key: 'fires', label: 'Satellite heat detections', on: false,
     note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, last 5 days. Each dot is a 375 m pixel that read unusually hot: a surface coal fire, industrial heat or open burning. Not a measured fire area.' },
-  { key: 'landmarks', label: 'Peaks, waterfalls and dams', on: false,
-    note: 'Hill peaks (with height where mapped), waterfalls and dams from OpenStreetMap.' },
+  { key: 'landmarks', label: 'Peaks and waterfalls', on: false,
+    note: 'Hill peaks (with height where mapped) and waterfalls from OpenStreetMap.' },
 ] as const satisfies readonly ContextLayerDef[]
 
 export type CityContextLayerKey = (typeof CONTEXT_LAYER_DEFS)[number]['key']
@@ -75,7 +81,8 @@ export function isContextPanelKey(k: string): k is ContextPanelKey {
 export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = [
   { label: 'Boundaries', keys: ['districts'] },
   { label: 'Imagery and terrain', keys: ['satellite', 'relief', 'landcover', 'nightlights'] },
-  { label: 'Nature', keys: ['forest', 'protected', 'water', 'landmarks'] },
+  { label: 'Nature', keys: ['forest', 'protected', 'landmarks'] },
+  { label: 'Rivers and water', keys: ['majorrivers', 'basins', 'water', 'dams'] },
   { label: 'People', keys: ['places', 'builtup', 'facilities'] },
   { label: 'Transport and energy', keys: ['railways', 'roads', 'power'] },
   { label: 'Industry and fires', keys: ['mines', 'industry', 'kilns', 'fires'] },
@@ -84,6 +91,7 @@ export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = 
 export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   districts: '#2E2219', satellite: '#4A5D3A', relief: '#A9814F', landcover: '#006400',
   nightlights: '#E9B949', forest: '#2F7D3A', protected: '#1B5E20', water: '#3B82C4', landmarks: '#6D4C41',
+  majorrivers: '#1D6FB8', basins: '#5B7FA6', dams: '#0B3C7D',
   places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
   power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',
 }
@@ -104,9 +112,12 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
   forest: [{ shape: 'area', color: '#2F7D3A', label: 'Forest or woodland' }],
   protected: [{ shape: 'dash', color: '#1B5E20', label: 'Protected area (national park, sanctuary)' }],
   water: [
-    { shape: 'area', color: '#3B82C4', label: 'Lake or reservoir' },
-    { shape: 'line', color: '#3B82C4', label: 'River or canal' },
+    { shape: 'area', color: '#3B82C4', label: 'Lake or reservoir (mapped)' },
+    { shape: 'line', color: '#3B82C4', label: 'River, stream or canal (mapped)' },
   ],
+  majorrivers: [{ shape: 'line', color: '#1D6FB8', label: 'Major river' }],
+  basins: [{ shape: 'dash', color: '#5B7FA6', label: 'River basin or sub-basin boundary' }],
+  dams: [{ shape: 'dot', color: '#0B3C7D', label: 'Large dam' }],
   places: [
     { shape: 'ring', color: '#2E2219', label: 'City or town' },
     { shape: 'dot', color: '#5B4A3A', label: 'Village' },
@@ -136,6 +147,5 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
   landmarks: [
     { shape: 'dot', color: '#6D4C41', label: 'Hill peak' },
     { shape: 'dot', color: '#0288D1', label: 'Waterfall' },
-    { shape: 'dot', color: '#455A64', label: 'Dam' },
   ],
 }

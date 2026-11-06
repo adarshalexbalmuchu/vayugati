@@ -25,6 +25,7 @@ Jharkhand before those nodes exist, using the official stations and open source 
 | `state_sources_osm.geojson`, `state_roads.geojson` | The same layers for all of Jharkhand, clipped to the state outline (1,373 mining and quarry areas, 712 industrial areas, 8 checked power plants; roads trunk to secondary) | OpenStreetMap, data as of 3 Nov 2026 |
 | `district_profiles.json` | One profile per district for the map's district panel: area and forest (FSI ISFR 2023, area by Survey of India), population (Census 2011 A-02), highest point and median height (Copernicus DEM GLO-90, computed), heat detections (FIRMS), checked plants, public monitors; `null` (shown as NA) where no verified figure exists, e.g. mining area. Built by `scripts/jharkhand/district_profiles.py` from the tables in `data/jharkhand/sources/` | see `data/jharkhand/sources/README.md` |
 | `state_{railways,rivers,water,forest,protected,places,builtup,facilities,transport,power,kilns,landmarks}.geojson` | Statewide base layers for every district (`osm_base` step): railways and sidings, stations and airports, rivers and canals, lakes and reservoirs, forest areas, the 12 protected areas (Betla NP + 11 WLS, matching the official list), towns and villages, built-up areas, schools and hospitals, power lines and substations, brick kilns, peaks, waterfalls and dams | OpenStreetMap, 3 Nov 2026 |
+| `state_{dams,basins,majorrivers}.geojson`, `state_protected.geojson` (`wris` step) | Official water and conservation layers from India-WRIS (Central Water Commission / NWIC, Ministry of Jal Shakti), fetched by `scripts/jharkhand/wris_fetch.py` into `data/jharkhand/sources/wris/`: the 71 large dams of the National Register of Large Dams in the state (height, year, reservoir capacity, purpose, owner), the 8 CWC sub-basins covering the state, the 25 major rivers India-WRIS maps here (name and basin only: its free-text origin and tributary fields are partly outdated and are not shown), and the 12 notified wildlife sanctuaries and national parks (notification year, notified area). The protected layer replaces the volunteer-drawn outlines. India-WRIS publishes these openly; terms of reuse not separately confirmed, so each popup credits the source. | India-WRIS, fetched 6 Nov 2026 |
 | `landcover_districts.json` + web `landcover_2021.png` | ESA WorldCover 2021 land cover, cut to the state (`landcover` step), and each district's class shares | ESA WorldCover 10 m v200 (CC BY 4.0) |
 | `district_climate.json` | Rain (annual, monthly, monsoon share) and wind (mean speed and prevailing direction by season, 8-sector rose) per district, ERA5 hourly 2015-2024 via the Open-Meteo archive API (`district_climate.py`). About a 30 km grid: area climate, not a town's weather | ECMWF / Copernicus ERA5 (CC BY 4.0); Open-Meteo |
 | `sources/wri_gppd_jharkhand_area_plants.csv` | Power plants in the Jharkhand area from the WRI Global Power Plant Database v1.3 (built from the Central Electricity Authority list; capacity data about 2019-20). Used only for capacity (MW) of checked plants matched by exact name (`WRI_NAME`); Bokaro (split entries), Godda and North Karanpura (newer than the release) and Raghunathpur (not listed) get none | WRI, CC BY 4.0 |
@@ -167,3 +168,13 @@ for that reason, with the code and data deleted:
   day-by-day player remain on the map.
 
 The assistant is told the same: for these it answers that they are incomplete and offers the layer instead.
+
+
+## Default layers (6 Nov 2026)
+
+On at first: state and district outlines, land cover (ESA WorldCover), major rivers and river basins (India-WRIS),
+protected areas (India-WRIS), towns and villages. Rule: a default layer is complete for the whole state, from an
+authoritative source, and teaches one basic fact about it (how it is divided, what covers it, where water flows, what is
+protected, where people live). Heat detections (a changing snapshot), mines, kilns, roads, railways, power, schools,
+night lights (2016) and the volunteer-mapped streams start off. Towns and villages are still OpenStreetMap; the Census 2011
+town list is the planned replacement.

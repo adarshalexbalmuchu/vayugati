@@ -685,7 +685,7 @@ def osm_base() -> None:
                 self.f["facilities"].append(_feat(pt, kind=amen, name=t.get("name", "")))
             elif t.get("natural") == "peak":
                 self.f["landmarks"].append(_feat(pt, kind="peak", name=t.get("name", ""), ele=t.get("ele", "")))
-            elif t.get("waterway") in ("waterfall", "dam") or t.get("natural") == "waterfall":
+            elif t.get("waterway") == "waterfall" or t.get("natural") == "waterfall":  # dams: see wris()
                 self.f["landmarks"].append(_feat(pt, kind="waterfall" if "fall" in (t.get("waterway", "") + t.get("natural", "")) else "dam",
                                                  name=t.get("name", "")))
             elif t.get("railway") in ("station", "halt"):
@@ -856,6 +856,99 @@ def landcover() -> None:
     print(f"landcover: {MW}x{MH} px overlay; district shares for {len(shares)} districts")
 
 
+WRIS = REPO / "data" / "jharkhand" / "sources" / "wris"
+
+
+def _title(v) -> str:
+    v = (v or "").strip()
+    return "" if v.lower() in ("", "none", "<null>", "null") else v.title()
+
+
+def _num(v):
+    try:
+        return None if v is None else round(float(v), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def wris() -> None:
+    """Official layers from India-WRIS (Central Water Commission / NWIC, Ministry of Jal Shakti), fetched by wris_fetch.py:
+    large dams (National Register of Large Dams), river basins and sub-basins (CWC), and the notified wildlife
+    sanctuaries and national parks (year and area). Attributes are copied as published; a missing value stays missing."""
+    state = make_valid(shape(json.load(open(OUT / "state.geojson"))["features"][0]["geometry"]))
+
+    def load(name):
+        return json.load(open(WRIS / f"{name}.geojson"))["features"]
+
+    # Large dams: only those located in the state.
+    dams = []
+    for f in load("dams"):
+        g = f.get("geometry")
+        p = f["properties"]
+        if not g or not state.contains(Point(*g["coordinates"][:2])):
+            continue
+        dams.append(_feat(Point(*g["coordinates"][:2]), kind="dam", name=_title(p.get("dm_name")),
+                          river=_title(p.get("rivcode")), year=p.get("dm_cmp_yr") or None,
+                          height_m=_num(p.get("dm_height")), storage_mcm=_num(p.get("grs_stor_c")),
+                          purpose=(p.get("purpose") or "").strip(), owner=(p.get("incharge") or "").strip(),
+                          nrld=p.get("nrld_no") or ""))
+    _save("state_dams.geojson", _fc(dams))
+    print("wris dams:", len(dams))
+
+    # Basins and sub-basins, cut to the state outline.
+    basins = []
+    for f in load("subbasins"):
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if g.is_empty:
+            continue
+        p = f["properties"]
+        basins.append(_feat(g, basin=(p.get("ba_name") or "").replace(" Basin", "").strip(), sub_basin=(p.get("sub_basin") or "").strip()))
+    _save("state_basins.geojson", _fc(basins))
+    print("wris sub-basins in the state:", len(basins))
+
+    # The 44 major rivers India-WRIS names, cut to the state outline. Only the name and basin are kept: its
+    # free-text "origin" and "tributary" fields are partly outdated (e.g. "Ranchi district of Bihar").
+    rivers = []
+    for f in load("streams"):
+        g = make_valid(shape(f["geometry"])).intersection(state)
+        if g.is_empty or g.geom_type not in ("LineString", "MultiLineString", "GeometryCollection"):
+            continue
+        if g.geom_type == "GeometryCollection":
+            g = unary_union([x for x in g.geoms if x.geom_type in ("LineString", "MultiLineString")])
+            if g.is_empty:
+                continue
+        p = f["properties"]
+        rivers.append(_feat(g, name=(p.get("rivname") or "").strip(), basin=(p.get("ba_name") or "").strip(),
+                            sub_basin=(p.get("sub_basin") or "").strip() if (p.get("sub_basin") or "").strip().lower() != "none" else ""))
+    _save("state_majorrivers.geojson", _fc(rivers))
+    print("wris major rivers in the state:", len(rivers), sorted({r["properties"]["name"] for r in rivers}))
+
+    # Notified protected areas (replace the volunteer-drawn ones).
+    parks = []
+    for f in load("national_parks"):
+        p = f["properties"]
+        if p.get("state") != "JH":
+            continue
+        name = (p.get("name") or "").strip()
+        for suffix in (" WLS", " NP"):
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+        parks.append(_feat(make_valid(shape(f["geometry"])), kind="protected", name=name, category=p.get("type") or "",
+                           tiger_reserve=(p.get("sub_type") or "") == "Tiger Reserve",
+                           year=int(p["year_of_notification"]) if str(p.get("year_of_notification") or "").isdigit() else None,
+                           notified_km2=_num(p.get("reported_area"))))
+    _save("state_protected.geojson", _fc(parks))
+    print("wris protected areas:", len(parks))
+
+    # Dams now come from the register above, not from OpenStreetMap.
+    lm = json.load(open(OUT / "state_landmarks.geojson"))["features"]
+    kept = [f for f in lm if f["properties"].get("kind") != "dam"]
+    if len(kept) != len(lm):
+        _save("state_landmarks.geojson", _fc(kept))
+        print(f"landmarks: dropped {len(lm) - len(kept)} OpenStreetMap dams")
+
+
+
 def pack() -> None:
     import shutil
 
@@ -873,13 +966,13 @@ def pack() -> None:
     for name in ("state.geojson", "districts.geojson", "fires_firms_5d.geojson", "stations.geojson"):
         shutil.copy(OUT / name, web / name)
     for layer in ("railways", "rivers", "water", "forest", "protected", "places", "facilities", "landmarks",
-                  "transport", "power", "kilns", "builtup"):
+                  "transport", "power", "kilns", "builtup", "dams", "basins", "majorrivers"):
         if (OUT / f"state_{layer}.geojson").exists():
             shutil.copy(OUT / f"state_{layer}.geojson", web / f"{layer}.geojson")
 
 
 STEPS = {"boundaries": boundaries, "stations": stations, "fires": fires, "osm": osm, "osm_state": osm_state,
-         "curate": curate, "osm_base": osm_base, "landcover": landcover, "pack": pack}
+         "curate": curate, "osm_base": osm_base, "landcover": landcover, "wris": wris, "pack": pack}
 
 if __name__ == "__main__":
     wanted = sys.argv[1:] or ["all"]
