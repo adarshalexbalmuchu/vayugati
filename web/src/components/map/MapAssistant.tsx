@@ -73,7 +73,20 @@ export default function MapAssistant({
   const [results, setResults] = useState<{ q: string; cards: Card[] }[]>([])
   const wide = typeof window !== 'undefined' && window.innerWidth >= 768
   const sideResults = wide && resultsSlot != null
-  useEffect(() => { handlers.onResults(sideResults && results.length > 0) }, [results.length, sideResults])
+  // Show or hide the Answers section and fold the layers away, directly on the card's DOM, so it does not depend on
+  // a reference held in another component.
+  useEffect(() => {
+    const has = sideResults && results.length > 0
+    handlers.onResults(has)
+    const wrap = resultsSlot?.closest('details') as HTMLDetailsElement | null
+    const layersEl = wrap?.parentElement?.querySelector('details[data-layers]') as HTMLDetailsElement | null | undefined
+    if (!wrap) return
+    wrap.style.display = has ? '' : 'none'
+    if (has) {
+      wrap.open = true
+      if (layersEl) layersEl.open = false
+    } else if (layersEl) layersEl.open = true
+  }, [results.length, sideResults, resultsSlot])
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [msgs, busy, open])
 

@@ -24,7 +24,7 @@ import { elevationAt } from '../../lib/elevation'
  * after every setStyle() (which wipes custom layers).
  */
 
-import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE } from '../../lib/contextLayers'
+import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE } from '../../lib/contextLayers'
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 import { useState } from 'react'
 import MapAssistant from './MapAssistant'
@@ -791,6 +791,7 @@ class ViewControl implements maplibregl.IControl {
   private layerInputs: Partial<Record<CityContextLayerKey, HTMLInputElement>> = {}
   private layerCount: HTMLSpanElement | null = null
   private layersDetails: HTMLDetailsElement | null = null
+  private legendList: HTMLDivElement | null = null
   private resultsWrap: HTMLDetailsElement | null = null
   /** Where the assistant's answers (rankings, facts, overview) render, in the left card under the layers. */
   resultsSlot: HTMLDivElement | null = null
@@ -798,6 +799,7 @@ class ViewControl implements maplibregl.IControl {
   /** Sync the checkboxes with the current visibility. */
   setVisible(v: CityContextVisibility) {
     for (const [k, input] of Object.entries(this.layerInputs)) input.checked = v[k as CityContextLayerKey]
+    this.renderLegend(v)
     if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
   }
 
@@ -805,6 +807,7 @@ class ViewControl implements maplibregl.IControl {
   private buildLayerControl(): HTMLElement {
     const wrap = document.createElement('details')
     wrap.open = true
+    wrap.setAttribute('data-layers', '1')
     this.layersDetails = wrap
     wrap.className = 'rounded-xl border border-ink-900/10 bg-white'
     const sum = document.createElement('summary')
@@ -1024,11 +1027,27 @@ class ViewControl implements maplibregl.IControl {
     toolbar.appendChild(panel)
     this.panel3D = panel
 
-    // Land-cover key (while that layer is on)
+    // Legend: what the symbols of the layers that are on mean (the land-cover key appears here too)
+    const legend = document.createElement('details')
+    legend.open = true
+    legend.className = 'rounded-xl border border-ink-900/10 bg-white'
+    const lsum = document.createElement('summary')
+    lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
+    const lst = document.createElement('span')
+    lst.className = 'text-[10px] font-semibold uppercase tracking-widest text-ink-500'
+    lst.textContent = 'Legend'
+    lsum.appendChild(lst)
+    const lbody = document.createElement('div')
+    lbody.className = 'space-y-2.5 border-t border-ink-900/10 p-2.5'
+    this.legendList = document.createElement('div')
+    this.legendList.className = 'space-y-1'
     const lc = document.createElement('div')
     lc.style.display = 'none'
-    body.appendChild(lc)
+    lbody.append(this.legendList, lc)
+    legend.append(lsum, lbody)
+    body.appendChild(legend)
     this.lcLegend = lc
+    this.renderLegend(this.wanted())
     loadLandcover(this.pack.base).then((m) => {
       this.lcMeta = m
       this.refreshLegend()
@@ -1129,13 +1148,64 @@ class ViewControl implements maplibregl.IControl {
     this.map = null
   }
 
+  /** The legend: one line per symbol of each layer that is on, grouped by layer. */
+  private renderLegend(v: CityContextVisibility) {
+    const box = this.legendList
+    if (!box) return
+    box.replaceChildren()
+    let any = false
+    for (const def of CONTEXT_LAYER_DEFS) {
+      if (!v[def.key as CityContextLayerKey]) continue
+      const symbols = CONTEXT_LEGEND[def.key as CityContextLayerKey]
+      if (!symbols.length) continue
+      any = true
+      for (const s of symbols) {
+        const row = document.createElement('div')
+        row.className = 'flex items-center gap-2 text-[11px] text-ink-800'
+        const sw = document.createElement('span')
+        sw.className = 'flex h-3 w-6 shrink-0 items-center justify-center'
+        const mark = document.createElement('span')
+        if (s.shape === 'area') {
+          mark.className = 'block h-3 w-5 rounded-[3px] opacity-80'
+          mark.style.background = s.color
+        } else if (s.shape === 'line') {
+          mark.className = 'block h-[3px] w-6 rounded-full'
+          mark.style.background = s.color
+        } else if (s.shape === 'dash') {
+          mark.className = 'block h-0 w-6 border-t-2 border-dashed'
+          mark.style.borderColor = s.color
+        } else if (s.shape === 'ring') {
+          mark.className = 'block h-3 w-3 rounded-full border-2 bg-white'
+          mark.style.borderColor = s.color
+        } else if (s.shape === 'ramp') {
+          mark.className = 'block h-2.5 w-6 rounded-sm'
+          mark.style.background = s.color
+        } else {
+          mark.className = 'block h-2.5 w-2.5 rounded-full border border-white shadow-sm'
+          mark.style.background = s.color
+        }
+        sw.appendChild(mark)
+        const tx = document.createElement('span')
+        tx.textContent = s.label
+        row.append(sw, tx)
+        box.appendChild(row)
+      }
+    }
+    if (!any && !v.landcover) {
+      const p = document.createElement('p')
+      p.className = 'text-[11px] text-ink-500'
+      p.textContent = 'Switch a layer on to see what its symbols mean.'
+      box.appendChild(p)
+    }
+  }
+
   /** Land-cover colour key, shown while that layer is on. */
   refreshLegend() {
     const box = this.lcLegend
     if (!box) return
     const on = this.wanted().landcover && this.lcMeta != null
     box.style.display = on ? '' : 'none'
-    box.className = 'rounded-xl bg-cream p-2.5'
+    box.className = 'rounded-lg bg-cream p-2'
     if (!on || box.childElementCount) return
     const t = document.createElement('p')
     t.className = 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-500'

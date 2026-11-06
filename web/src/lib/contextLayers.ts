@@ -87,3 +87,55 @@ export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   places: '#5B4A3A', builtup: '#C8663E', facilities: '#D62D20', railways: '#2B2B2B', roads: '#C0392B',
   power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', kilns: '#A0522D', fires: '#E4572E',
 }
+
+/** What a layer's symbols mean on the map. Colours match the renderer (CityContextLayers.tsx). */
+export interface LegendSymbol {
+  shape: 'area' | 'line' | 'dash' | 'dot' | 'ring' | 'ramp'
+  color: string
+  label: string
+}
+
+export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
+  districts: [{ shape: 'line', color: '#2E2219', label: 'State and district outline' }],
+  landcover: [], // the land-cover colour key is shown from its own metadata (landcover_2021.json)
+  nightlights: [{ shape: 'ramp', color: 'linear-gradient(90deg,#0b0b12,#f5d76e,#ffffff)', label: 'Lights at night: dark to bright' }],
+  satellite: [],
+  relief: [{ shape: 'line', color: '#6B4F2E', label: 'Contour line (10 to 100 m)' }],
+  forest: [{ shape: 'area', color: '#2F7D3A', label: 'Forest or woodland' }],
+  protected: [{ shape: 'dash', color: '#1B5E20', label: 'Protected area (national park, sanctuary)' }],
+  water: [
+    { shape: 'area', color: '#3B82C4', label: 'Lake or reservoir' },
+    { shape: 'line', color: '#3B82C4', label: 'River or canal' },
+  ],
+  places: [
+    { shape: 'ring', color: '#2E2219', label: 'City or town' },
+    { shape: 'dot', color: '#5B4A3A', label: 'Village' },
+  ],
+  builtup: [{ shape: 'area', color: '#C8663E', label: 'Built-up area (mapped)' }],
+  facilities: [
+    { shape: 'dot', color: '#1E88E5', label: 'School or college' },
+    { shape: 'dot', color: '#D62D20', label: 'Hospital or clinic' },
+  ],
+  railways: [
+    { shape: 'line', color: '#2B2B2B', label: 'Railway line' },
+    { shape: 'line', color: '#7A4E2D', label: 'Siding or yard' },
+    { shape: 'dot', color: '#2B2B2B', label: 'Station' },
+  ],
+  roads: [{ shape: 'line', color: '#C0392B', label: 'Main road' }],
+  power: [
+    { shape: 'line', color: '#8E44AD', label: 'Power line' },
+    { shape: 'dot', color: '#8E44AD', label: 'Substation' },
+  ],
+  mines: [{ shape: 'area', color: '#3D3D3D', label: 'Mining or quarry area (mapped)' }],
+  industry: [
+    { shape: 'area', color: '#9B6BD1', label: 'Industrial land (mapped)' },
+    { shape: 'dot', color: '#FFBF00', label: 'Power plant or large works (checked)' },
+  ],
+  kilns: [{ shape: 'dot', color: '#A0522D', label: 'Brick kiln (mapped)' }],
+  fires: [{ shape: 'dot', color: '#E4572E', label: 'Satellite heat detection' }],
+  landmarks: [
+    { shape: 'dot', color: '#6D4C41', label: 'Hill peak' },
+    { shape: 'dot', color: '#0288D1', label: 'Waterfall' },
+    { shape: 'dot', color: '#455A64', label: 'Dam' },
+  ],
+}
