@@ -4,6 +4,7 @@ import { Navigate } from 'react-router-dom'
 import { LogoWordmark } from '../components/AppShell'
 import { roleHome, useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
+import headerSkyline from '../assets/header-skyline.jpg'
 
 /**
  * Login / auth surface. Scoped to this page: every colour is an explicit arbitrary-value class, not a change to
@@ -54,8 +55,18 @@ export default function Login() {
     'auth-input h-11 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/15'
 
   return (
-    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-gradient-to-b from-[#D6EEFA] via-[#EAF5FA] to-[#F7F4EE] px-4 py-10">
-      <div className="w-full max-w-[400px] animate-fade-in">
+    <div className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-[#CFE4F6] via-[#E3EFF8] to-[#F6F1E4] px-4 pb-44 pt-10 sm:pb-52">
+      {/* The same illustrated Delhi skyline as the app header, fading up into the sky. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[clamp(110px,16vw,230px)] bg-cover bg-bottom bg-no-repeat"
+        style={{
+          backgroundImage: `url(${headerSkyline})`,
+          WebkitMaskImage: 'linear-gradient(to top, #000 55%, transparent)',
+          maskImage: 'linear-gradient(to top, #000 55%, transparent)',
+        }}
+      />
+      <div className="relative z-10 w-full max-w-[400px] animate-fade-in">
         <div className="mb-8 flex flex-col items-center text-center">
           <LogoWordmark className="h-auto w-[120px] sm:w-[140px]" />
           <p className="mt-4 text-sm font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
@@ -149,7 +160,7 @@ export default function Login() {
           </p>
         </form>
 
-        <p className="mt-8 text-center text-xs text-[#422B1B]/50">
+        <p className="mt-6 text-center text-xs text-[#422B1B]/60">
           Vayu Gati · air quality and geospatial data for city and district teams
         </p>
       </div>
