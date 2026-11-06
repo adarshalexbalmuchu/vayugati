@@ -27,8 +27,3 @@ ingest/.data/
 
 # CPCB portal raw downloads (136 MB, re-downloadable)
 data/delhi/raw/cpcb_portal_2026/
-
-# Global Energy Monitor raw downloads (CC BY 4.0; large, re-downloadable). The derived Jharkhand layers are committed.
-data/jharkhand/sources/gem/*.xlsx
-data/jharkhand/sources/gem/*.zip
-data/jharkhand/sources/gem/boundaries/
