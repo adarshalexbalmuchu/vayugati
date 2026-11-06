@@ -530,7 +530,7 @@ const OSM_SOURCE = 'OpenStreetMap, mapped by volunteers (3 Nov 2026). May be inc
 /** A map popup in the platform's design: type label, name in the serif face, a few rows, source in the footer. */
 function popupNode(props: Record<string, unknown>, layerId: string, district: string | null): HTMLElement {
   const el = document.createElement('div')
-  el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 text-xs text-slate-700'
+  el.className = 'min-w-[180px] max-w-[250px] px-3 py-2.5 text-xs text-slate-700'
   let eyebrow = ''
   let title = ''
   const rows: [string, string][] = []
@@ -565,23 +565,23 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
     source = OSM_SOURCE
   }
   const e = document.createElement('p')
-  e.className = 'pr-5 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+  e.className = 'pr-5 text-[10px] font-medium uppercase tracking-wider text-slate-400'
   e.textContent = eyebrow
   const t = document.createElement('p')
-  t.className = 'mt-1 pr-5 text-lg font-bold leading-tight text-slate-900'
+  t.className = 'mt-0.5 pr-5 text-sm font-semibold leading-snug text-slate-900'
   t.textContent = title
   el.append(e, t)
   if (rows.length) {
     const dl = document.createElement('dl')
-    dl.className = 'mt-2.5 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white'
+    dl.className = 'mt-1.5 space-y-0.5'
     for (const [k, v] of rows) {
       const r = document.createElement('div')
-      r.className = 'flex items-baseline justify-between gap-3 px-2.5 py-1.5'
+      r.className = 'flex items-baseline justify-between gap-3'
       const dt = document.createElement('dt')
       dt.className = 'text-slate-500'
       dt.textContent = k
       const dd = document.createElement('dd')
-      dd.className = 'text-right font-semibold text-slate-900'
+      dd.className = 'text-right font-medium text-slate-900'
       dd.textContent = v
       r.append(dt, dd)
       dl.appendChild(r)
@@ -590,12 +590,12 @@ function popupNode(props: Record<string, unknown>, layerId: string, district: st
   }
   if (note) {
     const n = document.createElement('p')
-    n.className = 'mt-2 leading-snug text-slate-600'
+    n.className = 'mt-1.5 text-[11px] leading-snug text-slate-500'
     n.textContent = note
     el.appendChild(n)
   }
   const f = document.createElement('p')
-  f.className = 'mt-2.5 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-400'
+  f.className = 'mt-2 border-t border-slate-200/80 pt-1.5 text-[10px] leading-snug text-slate-400'
   f.textContent = source
   el.appendChild(f)
   return el
@@ -1809,25 +1809,28 @@ export default function CityContextLayers({
         map.once('idle', ensure)
       }
     }
-    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '300px', className: 'ctx-popup' })
+    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px', className: 'ctx-popup', focusAfterOpen: false })
     const clickable = () =>
       CLICKABLE.filter((id) => map.getLayer(id) && (id !== 'ctx-districts-fill' || map.getZoom() < DISTRICT_CLICK_MAX_ZOOM))
     const showElevation = (e: maplibregl.MapMouseEvent, extra?: HTMLElement) => {
       const el = extra ?? document.createElement('div')
-      if (!extra) el.className = 'min-w-[200px] max-w-[280px] px-3.5 pb-3 pt-3 text-xs text-slate-700'
-      const box = document.createElement('div')
-      box.className = `${extra ? 'mt-2.5' : ''} rounded-lg bg-white px-2.5 py-2 border border-slate-200`
-      const lab = document.createElement('p')
-      lab.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+      if (!extra) el.className = 'min-w-[150px] px-3 py-2 text-xs text-slate-700'
+      const row = document.createElement('div')
+      row.className = `${extra ? 'mt-2 border-t border-slate-200/80 pt-2' : ''} flex items-baseline justify-between gap-4`
+      const lab = document.createElement('span')
+      lab.className = 'text-[11px] text-slate-500'
       lab.textContent = 'Ground elevation'
-      const val = document.createElement('p')
-      val.className = 'text-2xl font-bold tabular-nums leading-none text-slate-900'
+      const val = document.createElement('span')
+      val.className = 'text-base font-semibold tabular-nums leading-none text-slate-900'
       val.textContent = '…'
-      const src = document.createElement('p')
-      src.className = 'mt-1 text-[10px] leading-snug text-slate-400'
-      src.textContent = 'MapTiler terrain model, about 30 m grid'
-      box.append(lab, val, src)
-      el.appendChild(box)
+      row.append(lab, val)
+      el.appendChild(row)
+      if (!extra) {
+        const src = document.createElement('p')
+        src.className = 'mt-1 text-[10px] leading-none text-slate-400'
+        src.textContent = 'MapTiler terrain, about 30 m grid'
+        el.appendChild(src)
+      }
       popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map)
       elevationAt(e.lngLat.lng, e.lngLat.lat).then((h) => {
         val.textContent = h == null ? 'Not available' : `${h.toLocaleString('en-IN')} m`

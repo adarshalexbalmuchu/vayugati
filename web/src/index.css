@@ -97,30 +97,32 @@
 
 /* Map popups on the Jharkhand map: the app's white card (rounded, slate border, soft shadow). */
 .ctx-popup .maplibregl-popup-content {
-  background: rgb(255 255 255 / 0.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.5);
-  backdrop-filter: blur(16px) saturate(1.5);
-  border: 1px solid rgb(255 255 255 / 0.5);
-  border-radius: 8px;
+  background: rgb(255 255 255 / 0.86);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  border-radius: 10px;
   padding: 0;
-  box-shadow: 0 8px 28px rgb(15 23 42 / 0.16);
+  box-shadow: 0 4px 16px rgb(15 23 42 / 0.14);
 }
 .ctx-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
 .ctx-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
-.ctx-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: rgb(255 255 255 / 0.6); }
+.ctx-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: rgb(255 255 255 / 0.86); }
 .ctx-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
 .ctx-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
-.ctx-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: rgb(255 255 255 / 0.6); }
-.ctx-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: rgb(255 255 255 / 0.6); }
-.ctx-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: rgb(255 255 255 / 0.6); }
+.ctx-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: rgb(255 255 255 / 0.86); }
+.ctx-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: rgb(255 255 255 / 0.86); }
+.ctx-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: rgb(255 255 255 / 0.86); }
 .ctx-popup .maplibregl-popup-close-button {
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  font-size: 18px;
-  line-height: 22px;
-  color: #64748b;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 15px;
+  line-height: 18px;
+  color: #94a3b8;
+  outline: none;
 }
+.ctx-popup .maplibregl-popup-close-button:focus-visible { outline: 2px solid #94a3b8; outline-offset: -2px; }
 .ctx-popup .maplibregl-popup-close-button:hover { background: #f1f5f9; color: #0f172a; }
