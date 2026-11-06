@@ -1064,18 +1064,18 @@ class ViewControl implements maplibregl.IControl {
     const legend = document.createElement('details')
     legend.open = true
     // A floating box on the map (like Delhi's legend), not part of the layers card.
-    legend.className = 'absolute bottom-24 left-2 z-10 w-[min(250px,calc(100vw-1rem))] overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200 md:bottom-3 md:left-[348px]'
+    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg bg-white/85 px-2 py-1.5 text-slate-700 shadow-card-lg backdrop-blur-md border border-slate-200 md:bottom-3 md:left-[348px]'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
-    lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
+    lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
     const lst = document.createElement('span')
-    lst.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-400'
+    lst.className = 'text-[8px] font-bold uppercase tracking-widest text-slate-500'
     lst.textContent = 'Legend'
     lsum.appendChild(lst)
     const lbody = document.createElement('div')
-    lbody.className = 'max-h-[min(55svh,26rem)] space-y-2.5 overflow-y-auto border-t border-slate-200 p-2.5'
+    lbody.className = 'mt-1 max-h-[min(55svh,26rem)] space-y-1.5 overflow-y-auto'
     this.legendList = document.createElement('div')
-    this.legendList.className = 'space-y-1'
+    this.legendList.className = 'space-y-[3px]'
     const lc = document.createElement('div')
     lc.style.display = 'none'
     lbody.append(this.legendList, lc)
@@ -1197,27 +1197,27 @@ class ViewControl implements maplibregl.IControl {
       any = true
       for (const s of symbols) {
         const row = document.createElement('div')
-        row.className = 'flex items-center gap-2 text-[11px] text-slate-700'
+        row.className = 'flex items-center gap-1.5 text-[9px] font-medium text-slate-700'
         const sw = document.createElement('span')
-        sw.className = 'flex h-3 w-6 shrink-0 items-center justify-center'
+        sw.className = 'flex h-2.5 w-4 shrink-0 items-center justify-center'
         const mark = document.createElement('span')
         if (s.shape === 'area') {
-          mark.className = 'block h-3 w-5 rounded-[3px] opacity-80'
+          mark.className = 'block h-2.5 w-3 rounded-[2px] opacity-85'
           mark.style.background = s.color
         } else if (s.shape === 'line') {
-          mark.className = 'block h-[3px] w-6 rounded-full'
+          mark.className = 'block h-[2px] w-4 rounded-full'
           mark.style.background = s.color
         } else if (s.shape === 'dash') {
-          mark.className = 'block h-0 w-6 border-t-2 border-dashed'
+          mark.className = 'block h-0 w-4 border-t-2 border-dashed'
           mark.style.borderColor = s.color
         } else if (s.shape === 'ring') {
-          mark.className = 'block h-3 w-3 rounded-full border-2 bg-white'
+          mark.className = 'block h-2 w-2 rounded-full border-[1.5px] bg-white'
           mark.style.borderColor = s.color
         } else if (s.shape === 'ramp') {
-          mark.className = 'block h-2.5 w-6 rounded-sm'
+          mark.className = 'block h-2 w-4 rounded-[2px]'
           mark.style.background = s.color
         } else {
-          mark.className = 'block h-2.5 w-2.5 rounded-full border border-white shadow-sm'
+          mark.className = 'block h-2 w-2 rounded-full'
           mark.style.background = s.color
         }
         sw.appendChild(mark)
@@ -1237,19 +1237,19 @@ class ViewControl implements maplibregl.IControl {
     if (!box) return
     const on = this.wanted().landcover && this.lcMeta != null
     box.style.display = on ? '' : 'none'
-    box.className = 'rounded-lg bg-slate-50 p-2'
+    box.className = 'border-t border-slate-200 pt-1.5'
     if (!on || box.childElementCount) return
     const t = document.createElement('p')
-    t.className = 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400'
-    t.textContent = 'Land cover key (ESA, 2021)'
+    t.className = 'mb-1 text-[8px] font-bold uppercase tracking-widest text-slate-500'
+    t.textContent = 'Land cover (ESA, 2021)'
     box.appendChild(t)
     const grid = document.createElement('div')
-    grid.className = 'grid grid-cols-2 gap-x-2 gap-y-0.5'
+    grid.className = 'grid grid-cols-1 gap-y-[3px]'
     for (const c of this.lcMeta!.classes) {
       const r = document.createElement('div')
-      r.className = 'flex items-center gap-1 text-[10px]'
+      r.className = 'flex items-center gap-1.5 text-[9px] font-medium text-slate-700'
       const sw = document.createElement('span')
-      sw.className = 'inline-block h-2.5 w-3 shrink-0 rounded-sm'
+      sw.className = 'inline-block h-2.5 w-3 shrink-0 rounded-[2px]'
       sw.style.background = c.color
       const tx = document.createElement('span')
       tx.textContent = c.label
