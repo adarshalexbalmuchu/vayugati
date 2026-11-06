@@ -143,10 +143,11 @@ A chat panel on the Jharkhand map (bottom-left). It is grounded by design:
 
 ## Data still to request (checked 6 Nov 2026)
 
-- **Coal mines with names and owners.** Global Energy Monitor's Global Coal Mine Tracker (CC BY 4.0, May 2026 release)
-  is the best structured source but its sheet is private: the data is released on request through GEM's form
-  (contact in their catalog metadata). Coal India subsidiaries (BCCL, CCL, ECL) and CMPDI hold the official lease and
-  project lists.
+- **Coal mines with names and owners.** Government sources only (decided 7 Nov 2026; Global Energy Monitor data was
+  tried and removed). data.gov.in has a table of 42 captive and commercial coal mines under production (allottee and
+  capacity, Rajya Sabha answer of 25 Nov 2024) but no state or coordinates, so it cannot be mapped; the Ministry of Coal
+  lists blocks for auction (name, state, exploration status) without coordinates; the Coal Directory is image-only. The
+  official lease and project lists are held by Coal India subsidiaries (BCCL, CCL, ECL) and CMPDI.
 - **Industries.** CPCB / JSPCB lists of highly polluting industry categories (consent records).
 - **Coal-fire map of Jharia.** NRSC/ISRO, quarterly under the October 2025 MoU with BCCL and CMPDI.
 - **District poverty / clean cooking fuel.** NITI's district MPI was not found as a download; NFHS-5 district fact sheets
