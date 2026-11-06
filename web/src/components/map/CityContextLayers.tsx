@@ -476,6 +476,34 @@ function removeAll(map: maplibregl.Map) {
   removeRelief(map)
 }
 
+/** The app's "liquid glass" (same recipe as components/GlassSurface.tsx), for panels built as plain DOM: a blur (with the SVG
+ *  distortion filter when `distort`), a white tint, and an inset highlight, stacked behind the content. The shell must be
+ *  positioned (absolute or relative). Big scrolling panels use a plain blur (the filter is costly while content scrolls). */
+function glassify(shell: HTMLElement, { tint = 0.5, distort = false }: { tint?: number; distort?: boolean } = {}) {
+  if (distort && !document.getElementById('glass-distortion')) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('style', 'display:none')
+    svg.setAttribute('aria-hidden', 'true')
+    svg.innerHTML = '<filter id="glass-distortion" x="0%" y="0%" width="100%" height="100%" filterUnits="objectBoundingBox"><feTurbulence type="fractalNoise" baseFrequency="0.001 0.005" numOctaves="1" seed="17" result="turbulence"/><feComponentTransfer in="turbulence" result="mapped"><feFuncR type="gamma" amplitude="1" exponent="10" offset="0.5"/><feFuncG type="gamma" amplitude="0" exponent="1" offset="0"/><feFuncB type="gamma" amplitude="0" exponent="1" offset="0.5"/></feComponentTransfer><feGaussianBlur in="turbulence" stdDeviation="3" result="softMap"/><feDisplacementMap in="SourceGraphic" in2="softMap" scale="200" xChannelSelector="R" yChannelSelector="G"/></filter>'
+    document.body.appendChild(svg)
+  }
+  shell.classList.add('isolate')
+  shell.style.boxShadow = '0 6px 6px rgba(0,0,0,0.2), 0 0 20px rgba(0,0,0,0.1)'
+  const layer = (z: number, style: Partial<CSSStyleDeclaration>) => {
+    const d = document.createElement('div')
+    d.className = 'pointer-events-none absolute inset-0 rounded-lg'
+    d.style.zIndex = String(z)
+    Object.assign(d.style, style)
+    return d
+  }
+  const filter = distort ? 'blur(3px) url(#glass-distortion)' : 'blur(16px) saturate(1.5)'
+  shell.prepend(
+    layer(-3, { backdropFilter: filter, webkitBackdropFilter: filter } as Partial<CSSStyleDeclaration>),
+    layer(-2, { background: `rgba(255,255,255,${tint})` }),
+    layer(-1, { boxShadow: 'inset 2px 2px 1px 0 rgba(255,255,255,0.5), inset -1px -1px 1px 1px rgba(255,255,255,0.5)' }),
+  )
+}
+
 /** Which district a point is in (ray casting over the district outlines). */
 function districtAt(fc: FeatureCollection | undefined, lng: number, lat: number): string | null {
   if (!fc) return null
@@ -916,7 +944,7 @@ class ViewControl implements maplibregl.IControl {
   onAdd(map: maplibregl.Map) {
     this.map = map
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200'
+    el.className = 'maplibregl-ctrl relative w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-lg text-xs text-slate-700'
 
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
@@ -980,7 +1008,7 @@ class ViewControl implements maplibregl.IControl {
 
     // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
     const dock = document.createElement('div')
-    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg bg-white/85 backdrop-blur-md text-xs text-slate-700 shadow-card-lg border border-slate-200 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
+    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg text-xs text-slate-700 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
     dock.style.display = 'none'
     const dockTabs = document.createElement('div')
     dockTabs.className = 'flex gap-1 border-b border-slate-200 bg-slate-50/60 p-1.5'
@@ -998,15 +1026,17 @@ class ViewControl implements maplibregl.IControl {
     chatSlot.className = 'min-h-0 flex-1'
     dock.append(dockTabs, profile, chatSlot)
     map.getContainer().appendChild(dock)
+    glassify(dock, { tint: 0.55 })
     this.dock = dock
     this.dockTabs = dockTabs
     this.profileBox = profile
     this.chatSlot = chatSlot
     // Bottom toolbar: 3D controls and the heat-detection player.
     const toolbar = document.createElement('div')
-    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg bg-white/85 backdrop-blur-md px-3 py-2 text-xs text-slate-700 shadow-card-lg border border-slate-200 md:left-1/2 md:right-auto md:-translate-x-1/2'
+    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg px-3 py-2 text-xs text-slate-700 md:left-1/2 md:right-auto md:-translate-x-1/2'
     toolbar.style.display = 'none'
     map.getContainer().appendChild(toolbar)
+    glassify(toolbar, { tint: 0.5, distort: true })
     this.toolbar = toolbar
     loadProfiles(this.pack.base).then((d) => {
       this.profiles = d
@@ -1064,7 +1094,7 @@ class ViewControl implements maplibregl.IControl {
     const legend = document.createElement('details')
     legend.open = true
     // A floating box on the map (like Delhi's legend), not part of the layers card.
-    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg bg-white/85 px-2 py-1.5 text-slate-700 shadow-card-lg backdrop-blur-md border border-slate-200 md:bottom-3 md:left-[348px]'
+    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg px-2 py-1.5 text-slate-700 md:bottom-3 md:left-[348px]'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
@@ -1081,6 +1111,7 @@ class ViewControl implements maplibregl.IControl {
     lbody.append(this.legendList, lc)
     legend.append(lsum, lbody)
     map.getContainer().appendChild(legend)
+    glassify(legend, { tint: 0.5, distort: true })
     this.lcLegend = lc
     this.renderLegend(this.wanted())
     loadLandcover(this.pack.base).then((m) => {
@@ -1111,6 +1142,7 @@ class ViewControl implements maplibregl.IControl {
 
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
+    glassify(el, { tint: 0.55 })
     this.el = el
     return el
   }
