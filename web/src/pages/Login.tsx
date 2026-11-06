@@ -5,21 +5,11 @@ import { LogoWordmark } from '../components/AppShell'
 import { roleHome, useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 
-/** Static launch facts only - no live query on this unauthenticated page.
- *  Same real counts already verified live elsewhere in the app (Sensors'
- *  Data Readiness card, Analytics' forecast trust panel). */
-const PILOT_FACTS = ['34 AQ stations connected', '252 ward boundaries loaded', 'Forecast pipeline live']
-
 /**
- * Login/auth brand surface. Scoped entirely to this page - every colour
- * below is an explicit arbitrary-value class (`bg-[#C7EAF9]` etc.), not a
- * change to tailwind.config.js's shared tokens, so the Commander/Field/
- * Citizen/Ops workspaces (which reuse those same tokens) are provably
- * unaffected. All auth behaviour (handlers, validation, session/role
- * redirect) is untouched - only markup/classes/copy changed. The
- * positioning line and pilot-facts block are launch-positioning copy
- * (product decision, not a visual-only pass) - static facts only, no query
- * on this unauthenticated page.
+ * Login / auth surface. Scoped to this page: every colour is an explicit arbitrary-value class, not a change to
+ * tailwind.config.js's shared tokens, so the other workspaces are unaffected. Auth behaviour (handlers, validation,
+ * session and role redirect) is unchanged; only markup, classes and copy differ. No query runs on this
+ * unauthenticated page.
  */
 export default function Login() {
   const { session, profile, loading } = useAuth()
@@ -60,41 +50,44 @@ export default function Login() {
     setBusy(false)
   }
 
+  const field =
+    'auth-input h-11 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/15'
+
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#C7EAF9] px-4 py-8 sm:px-5">
-      <div className="w-full max-w-[420px] animate-fade-in sm:max-w-[440px]">
-        {/* Logo + tagline - one brand block, compact spacing */}
-        <div className="mb-7 flex flex-col items-center text-center">
-          <LogoWordmark className="h-auto w-[150px] sm:w-[190px]" />
-          <p className="mt-3 text-base font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
-          <p className="text-xs text-[#422B1B]/70">From information to action</p>
-          <p className="mt-2 text-xs font-medium text-[#6B7280]">Air-quality response layer for city teams</p>
+    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-gradient-to-b from-[#D6EEFA] via-[#EAF5FA] to-[#F7F4EE] px-4 py-10">
+      <div className="w-full max-w-[400px] animate-fade-in">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <LogoWordmark className="h-auto w-[120px] sm:w-[140px]" />
+          <p className="mt-4 text-sm font-semibold text-[#422B1B]">जानकारी से कार्यवाही तक</p>
+          <p className="mt-0.5 text-xs text-[#422B1B]/60">From information to action</p>
         </div>
 
-        {/* Auth card */}
         <form
           onSubmit={signIn}
-          className="rounded-[22px] border border-[#E5E7EB] bg-white p-7 shadow-card-lg sm:p-9"
-          noValidate={false}
+          className="rounded-2xl border border-white/80 bg-white/95 p-7 shadow-[0_1px_2px_rgba(66,43,27,0.06),0_16px_40px_-12px_rgba(66,43,27,0.18)] sm:p-8"
         >
-          <div className="space-y-5">
+          <h1 className="text-lg font-semibold text-slate-900">Sign in</h1>
+          <p className="mt-1 text-sm text-slate-500">Use your work email to continue.</p>
+
+          <div className="mt-6 space-y-4">
             <div>
-              <label htmlFor={emailId} className="mb-1.5 block text-xs font-semibold text-slate-700">
+              <label htmlFor={emailId} className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Email
               </label>
               <input
                 id={emailId}
                 type="email"
                 required
+                autoFocus
                 autoComplete="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="auth-input h-12 w-full rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/20"
+                className={field}
               />
             </div>
             <div>
-              <label htmlFor={passwordId} className="mb-1.5 block text-xs font-semibold text-slate-700">
+              <label htmlFor={passwordId} className="mb-1.5 block text-[13px] font-medium text-slate-700">
                 Password
               </label>
               <div className="relative">
@@ -104,17 +97,17 @@ export default function Login() {
                   required
                   minLength={6}
                   autoComplete="current-password"
-                  placeholder="••••••••"
+                  placeholder="At least 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="auth-input h-12 w-full rounded-xl border border-[#E5E7EB] bg-white px-4 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#422B1B] focus:ring-2 focus:ring-[#422B1B]/20"
+                  className={`${field} pr-10`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 outline-none transition hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#422B1B]/40"
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-400 outline-none transition hover:text-slate-600 focus-visible:ring-2 focus-visible:ring-[#422B1B]/40"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
                 </button>
@@ -135,38 +128,30 @@ export default function Login() {
             </p>
           )}
 
-          <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
-            <button
-              type="submit"
-              disabled={busy}
-              className="focus-ring order-1 h-12 flex-1 rounded-xl bg-[#422B1B] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#341f14] disabled:cursor-not-allowed disabled:opacity-50 sm:order-2"
-            >
-              {busy ? 'Please wait…' : 'Sign in'}
-            </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="focus-ring mt-6 h-11 w-full rounded-lg bg-[#422B1B] px-4 text-sm font-semibold text-white transition hover:bg-[#341f14] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? 'Please wait…' : 'Sign in'}
+          </button>
+
+          <p className="mt-5 text-center text-sm text-slate-500">
+            No account yet?{' '}
             <button
               type="button"
               disabled={busy}
               onClick={signUp}
-              className="focus-ring order-2 h-12 flex-1 rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#422B1B] transition hover:bg-[#422B1B]/5 disabled:cursor-not-allowed disabled:opacity-50 sm:order-1"
+              className="font-semibold text-[#422B1B] underline-offset-4 outline-none hover:underline focus-visible:underline disabled:opacity-50"
             >
-              Sign up
+              Create one with the details above
             </button>
-          </div>
+          </p>
         </form>
 
-        <div className="mt-4 rounded-xl border border-[#E5E7EB] bg-white/60 px-4 py-3.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#422B1B]/70">Delhi City Pack</p>
-          <ul className="mt-1.5 space-y-1">
-            {PILOT_FACTS.map((fact) => (
-              <li key={fact} className="flex items-center gap-1.5 text-xs text-slate-600">
-                <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-status-success" aria-hidden />
-                {fact}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="mt-4 text-center text-xs text-[#6B7280]">Delhi City Pack · pan-India air incident response</p>
+        <p className="mt-8 text-center text-xs text-[#422B1B]/50">
+          Vayu Gati · air quality and geospatial data for city and district teams
+        </p>
       </div>
     </div>
   )
