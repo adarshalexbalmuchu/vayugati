@@ -1071,8 +1071,8 @@ class ViewControl implements maplibregl.IControl {
     // Legend: what the symbols of the layers that are on mean (the land-cover key appears here too)
     const legend = document.createElement('details')
     legend.open = true
-    // A floating box on the map (like Delhi's legend), not part of the layers card.
-    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg px-2 py-1.5 text-slate-700 md:bottom-3 md:left-[348px]'
+    // A floating box on the map, at the top beside the layers card (not part of it).
+    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg px-2 py-1.5 text-slate-700 md:bottom-auto md:left-[342px] md:top-[10px]'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
