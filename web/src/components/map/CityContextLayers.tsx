@@ -1276,7 +1276,7 @@ class ViewControl implements maplibregl.IControl {
 
     // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
     const dock = document.createElement('div')
-    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg text-xs text-slate-700 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[360px]'
+    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg text-xs text-slate-700 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[320px]'
     dock.style.display = 'none'
     const dockTabs = document.createElement('div')
     dockTabs.className = 'flex gap-1 border-b border-slate-200 bg-slate-50/60 p-1.5'
@@ -1289,7 +1289,7 @@ class ViewControl implements maplibregl.IControl {
       this.dockBtns[k] = b
     }
     const profile = document.createElement('div')
-    profile.className = 'min-h-0 flex-1 overflow-y-auto p-3'
+    profile.className = 'min-h-0 flex-1 overflow-y-auto p-2.5'
     const chatSlot = document.createElement('div')
     chatSlot.className = 'min-h-0 flex-1'
     dock.append(dockTabs, profile, chatSlot)
@@ -1608,13 +1608,13 @@ class ViewControl implements maplibregl.IControl {
       if (text != null) n.textContent = text
       return n
     }
-    const label = (t: string) => el('p', 'mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500', t)
+    const label = (t: string) => el('p', 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500', t)
 
-    const top = el('div', '-mx-3 -mt-3 mb-3 flex items-start justify-between gap-2 rounded-t-lg border-b border-slate-100 bg-white/50 px-3 pb-3 pt-3')
+    const top = el('div', 'mb-2 flex items-center justify-between gap-2')
     const tt = el('div', 'min-w-0')
-    tt.append(el('p', 'text-[10px] font-semibold uppercase tracking-widest text-slate-600', 'District profile'),
-      el('p', 'truncate text-xl font-bold leading-tight text-slate-900', name))
-    const back = el('button', 'focus-ring shrink-0 rounded-md bg-accent-500 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-accent-600', 'Whole state')
+    tt.append(el('p', 'truncate text-base font-bold leading-tight text-slate-900', name))
+    tt.firstElementChild?.setAttribute('title', `${name} district profile`)
+    const back = el('button', 'focus-ring shrink-0 rounded-md border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50', 'Whole state')
     ;(back as HTMLButtonElement).type = 'button'
     back.addEventListener('click', () => this.selectDistrict(null))
     top.append(tt, back)
@@ -1626,12 +1626,12 @@ class ViewControl implements maplibregl.IControl {
     const num = (v: number | null | undefined, unit = '') => (v == null ? NA : `${nf.format(v)}${unit}`)
 
     // Tabs: Overview | Nature | Sources
-    const tabs = el('div', 'mb-3 flex gap-1 rounded-lg bg-slate-100 p-1')
-    const panes = { overview: el('div', ''), nature: el('div', 'space-y-3'), sources: el('div', '') }
+    const tabs = el('div', 'mb-2 flex gap-0.5 rounded-md bg-slate-100 p-0.5')
+    const panes = { overview: el('div', ''), nature: el('div', 'space-y-2.5'), sources: el('div', '') }
     const tabButtons: Partial<Record<'overview' | 'nature' | 'sources', HTMLButtonElement>> = {}
     const paint = () => {
       for (const k of ['overview', 'nature', 'sources'] as const) {
-        tabButtons[k]!.className = `flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${this.tab === k ? 'bg-accent-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`
+        tabButtons[k]!.className = `flex-1 rounded px-2 py-1 text-[11px] font-semibold transition ${this.tab === k ? 'bg-accent-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`
         panes[k].style.display = this.tab === k ? '' : 'none'
       }
     }
@@ -1648,12 +1648,12 @@ class ViewControl implements maplibregl.IControl {
     box.append(panes.overview, panes.nature, panes.sources)
 
     // Key figures
-    const grid = el('div', 'grid grid-cols-2 gap-1.5')
+    const grid = el('div', 'grid grid-cols-2 gap-1')
     const tile = (k: string, v: string, sub?: string) => {
-      const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
-      t.append(el('p', 'mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-400', k),
-        el('p', `text-2xl font-bold tabular-nums leading-none ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
-      if (sub) t.appendChild(el('p', 'text-[10px] text-slate-500', sub))
+      const t = el('div', 'rounded-md bg-slate-50 px-2 py-1')
+      t.append(el('p', 'text-[10px] font-medium uppercase tracking-wide text-slate-500', k),
+        el('p', `text-[15px] font-bold tabular-nums leading-tight ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
+      if (sub) t.appendChild(el('p', 'text-[10px] leading-tight text-slate-500', sub))
       grid.appendChild(t)
     }
     tile('Area', num(p.area_km2, ' km²'), p.area_note ? 'sources differ, see Sources' : undefined)
@@ -1688,7 +1688,7 @@ class ViewControl implements maplibregl.IControl {
     }
 
     // Forest, by density (share of district area)
-    const fsec = el('div', 'mt-3')
+    const fsec = el('div', '')
     fsec.appendChild(label('Forest by density (ISFR 2023)'))
     if ((p.area_isfr_km2 ?? p.area_km2) && p.forest_km2 != null) {
       const a = (p.area_isfr_km2 ?? p.area_km2) as number  // forest shares are ISFR's own, against ISFR's area
@@ -1704,7 +1704,7 @@ class ViewControl implements maplibregl.IControl {
     panes.nature.appendChild(fsec)
 
     // Land cover (satellite)
-    const lsec = el('div', 'mt-3')
+    const lsec = el('div', '')
     lsec.appendChild(label('Land cover (ESA, 2021)'))
     const lc = p.landcover_pct
     if (lc) {
@@ -1742,10 +1742,10 @@ class ViewControl implements maplibregl.IControl {
     const csec = el('div', '')
     csec.appendChild(label('Rain and wind (ERA5, 2015–2024)'))
     if (c) {
-      const stats = el('div', 'grid grid-cols-2 gap-1.5')
+      const stats = el('div', 'grid grid-cols-2 gap-1')
       const stat = (k: string, v: string) => {
-        const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
-        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-xl font-bold leading-none text-slate-900', v))
+        const t = el('div', 'rounded-md bg-slate-50 px-2 py-1')
+        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-[15px] font-bold leading-tight text-slate-900', v))
         stats.appendChild(t)
       }
       stat('Rain per year', `${nf.format(c.rain_annual_mm)} mm`)
@@ -1754,7 +1754,7 @@ class ViewControl implements maplibregl.IControl {
       // monthly rain bars
       const months = 'JFMAMJJASOND'
       const maxm = Math.max(...c.rain_monthly_mm, 1)
-      const bars = el('div', 'mt-2 flex h-14 items-end gap-1')
+      const bars = el('div', 'mt-1.5 flex h-10 items-end gap-1')
       c.rain_monthly_mm.forEach((v, i) => {
         const col = el('div', 'flex h-full flex-1 flex-col items-center justify-end')
         const bar = el('div', 'w-full rounded-sm bg-sky-400')
@@ -1771,7 +1771,7 @@ class ViewControl implements maplibregl.IControl {
       const NS = 'http://www.w3.org/2000/svg'
       const svg = document.createElementNS(NS, 'svg')
       svg.setAttribute('viewBox', '-60 -60 120 120')
-      svg.setAttribute('class', 'mx-auto h-32 w-32')
+      svg.setAttribute('class', 'h-20 w-20 shrink-0')
       const ring = document.createElementNS(NS, 'circle')
       ring.setAttribute('r', '46')
       ring.setAttribute('fill', 'none')
@@ -1801,12 +1801,12 @@ class ViewControl implements maplibregl.IControl {
         lab.textContent = dirs[i]
         svg.appendChild(lab)
       })
-      const roseBox = el('div', 'mt-2 flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2')
+      const roseBox = el('div', 'mt-1.5 flex items-center gap-2 rounded-md bg-slate-50 p-1.5')
       roseBox.appendChild(svg as unknown as HTMLElement)
       const rt = el('div', 'min-w-0 text-slate-600')
       rt.append(
         el('p', 'font-semibold text-slate-900', `Winter wind mostly from the ${c.wind_from.winter ?? '—'}`),
-        el('p', '', `Average ${c.wind_mean_ms.winter == null ? NA : nf1.format(c.wind_mean_ms.winter)} m/s (December to February). The bars show how often the wind blows from each direction.`),
+        el('p', 'text-[11px]', `Average ${c.wind_mean_ms.winter == null ? NA : nf1.format(c.wind_mean_ms.winter)} m/s, December to February. Bars: how often the wind blows from each direction.`),
       )
       roseBox.appendChild(rt)
       csec.appendChild(roseBox)
@@ -1816,13 +1816,13 @@ class ViewControl implements maplibregl.IControl {
 
     // Ground water (CGWB 2020)
     const gw = p.groundwater
-    const gsec = el('div', 'mt-3')
+    const gsec = el('div', '')
     gsec.appendChild(label('Ground water (CGWB 2020)'))
     if (gw && gw.stage_pct != null) {
-      const stats = el('div', 'grid grid-cols-2 gap-1.5')
+      const stats = el('div', 'grid grid-cols-2 gap-1')
       const stat = (k: string, v: string) => {
-        const t = el('div', 'rounded-lg border border-slate-200 bg-white px-2.5 py-2')
-        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-xl font-bold leading-none text-slate-900', v))
+        const t = el('div', 'rounded-md bg-slate-50 px-2 py-1')
+        t.append(el('p', 'text-[10px] text-slate-500', k), el('p', 'text-[15px] font-bold leading-tight text-slate-900', v))
         stats.appendChild(t)
       }
       stat('Drawn each year', `${nf1.format(gw.stage_pct)}%`)
@@ -1835,11 +1835,11 @@ class ViewControl implements maplibregl.IControl {
     panes.nature.appendChild(gsec)
 
     // In the district
-    const rows = el('div', 'mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white')
+    const rows = el('div', 'mt-1 divide-y divide-slate-100 rounded-md bg-slate-50')
     const row = (k: string, v: string, sub?: string) => {
-      const r = el('div', 'px-2.5 py-1.5')
+      const r = el('div', 'px-2 py-1')
       const line = el('div', 'flex items-baseline justify-between gap-2')
-      line.append(el('span', 'text-slate-500', k), el('span', `text-right font-semibold tabular-nums ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
+      line.append(el('span', 'text-[12px] text-slate-600', k), el('span', `text-right text-[12px] font-semibold tabular-nums ${v === NA ? 'text-slate-300' : 'text-slate-900'}`, v))
       r.appendChild(line)
       if (sub) r.appendChild(el('p', 'mt-0.5 text-right text-[10px] leading-snug text-slate-500', sub))
       rows.appendChild(r)
@@ -1848,7 +1848,6 @@ class ViewControl implements maplibregl.IControl {
     row('Power plants and works', sites.length ? String(sites.length) : 'None checked', sites.map((x) => x.name).join(' · ') || undefined)
     row('Public air monitors', p.monitors_continuous_in_feed == null ? NA : `${p.monitors_continuous_in_feed} continuous · ${p.monitors_manual_namp ?? NA} manual`,
       p.monitors_planned_jspcb ? `${p.monitors_planned_jspcb} continuous planned (JSPCB tender, Dec 2025)` : undefined)
-    row('Mining area', p.mining_area_km2 == null ? NA : num(p.mining_area_km2, ' km²'), p.mining_area_km2 == null ? 'No official district figure' : undefined)
     panes.overview.appendChild(rows)
 
 
@@ -1885,7 +1884,7 @@ class ViewControl implements maplibregl.IControl {
     const c = map.getContainer()
     const wide = c.clientWidth >= 768
     const padding = wide
-      ? { top: 40, bottom: 110, left: 40, right: 400 } // right: docked profile panel + map buttons
+      ? { top: 40, bottom: 110, left: 40, right: 360 } // right: docked profile panel + map buttons
       : { top: 60, bottom: Math.round(c.clientHeight * 0.55) + 20, left: 30, right: 30 } // bottom sheet
     const opts = { padding, pitch: 62, bearing: -25, maxZoom: 11.5 }
     const bounds: maplibregl.LngLatBoundsLike = [[w, s], [e, n]]
