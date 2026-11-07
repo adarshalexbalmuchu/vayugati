@@ -107,6 +107,8 @@ air-quality values (40 km global, not validated in India) as a clearly labelled 
 ## 8. Decisions we still need from the owner
 
 1. How 3D is switched on (toggle, always on, or district only).
-2. Whether non-commercial licences (FABDEM) are acceptable for the analysis layer.
+2. ~~Whether non-commercial licences (FABDEM) are acceptable.~~ Decided 7 Nov 2026: yes, the platform is free to every user.
+   Conditions: no charging, advertising or paid access to it; derived layers carry the same licence and credit; if the
+   project ever takes paid work built on it, re-check every non-commercial licence first.
 3. Approval to download FABDEM tiles (blocked once).
 4. Whether the shareable scenario link may be public.
