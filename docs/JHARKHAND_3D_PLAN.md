@@ -11,6 +11,26 @@ credible sources only, every source credited, simulations always labelled as wha
 - All layers are draped flat on the terrain. About 16-20 MB of GeoJSON is loaded by the browser.
 - Elevation is a **surface** model (it includes tree tops). District figures use Copernicus GLO-90.
 
+### Elevation check (7 Nov 2026): MapTiler terrain against FABDEM
+
+FABDEM tiles for the whole state were downloaded (25 tiles, 513 MB, `data/jharkhand/sources/fabdem/`). 480 random points in
+six areas (Saranda and Hazaribagh forests, Netarhat and Ranchi plateaus, Santhal plains, Damodar coalfield), each with its
+ESA WorldCover class. MapTiler minus FABDEM, in metres:
+
+| Class | Points | Mean | Median | 90th percentile |
+|---|---|---|---|---|
+| Tree cover | 244 | +3.7 | +3.5 | +8.4 |
+| Cropland | 126 | +0.6 | +0.2 | +2.0 |
+| Grassland | 67 | +1.2 | +0.8 | +3.7 |
+| Built-up | 35 | +2.7 | +2.9 | +5.0 |
+
+Dense forest (Saranda, Netarhat) reads about 4.5-5 m high on average and up to 15 m at worst; open land agrees within 1 m. At the
+three landmarks (Parasnath, Netarhat, Ranchi airport) the two models agree within a few metres of each other, and both read
+below published summit heights because a 30 m cell smooths a narrow peak.
+
+Conclusion: the MapTiler terrain is fine for the visual 3D (5 m is invisible at 3x height). Use FABDEM for slope, flow routing
+and viewshed, where forest bias would shift results. Not affected: district "Highest point" (it reads the summit, rarely forest).
+
 ## 2. What European urban-planning platforms do, and what we take from them
 
 | Platform | Stack (as published) | What we borrow |
@@ -104,11 +124,12 @@ air-quality values (40 km global, not validated in India) as a clearly labelled 
   confirmed from the dataset's own page before that data ships.
 - MapLibre jump from 4 to 6: possible breaking changes; the upgrade is a separate, tested step.
 
-## 8. Decisions we still need from the owner
+## 8. Decisions (owner, 7 Nov 2026)
 
-1. How 3D is switched on (toggle, always on, or district only).
-2. ~~Whether non-commercial licences (FABDEM) are acceptable.~~ Decided 7 Nov 2026: yes, the platform is free to every user.
-   Conditions: no charging, advertising or paid access to it; derived layers carry the same licence and credit; if the
-   project ever takes paid work built on it, re-check every non-commercial licence first.
-3. Approval to download FABDEM tiles (blocked once).
-4. Whether the shareable scenario link may be public.
+1. 3D is switched on with a **toggle**; the flat map stays one click away.
+2. Non-commercial licences are accepted: the platform is free to every user. Conditions: no charging, advertising or paid
+   access; derived layers carry the same licence and credit; if the project ever takes paid work built on it, re-check
+   every non-commercial licence first.
+3. FABDEM download approved. Script: `ingest/scripts/jharkhand/fabdem_fetch.py` (standard library only; reads the Bristol
+   zip by range requests; tiles go to `data/jharkhand/sources/fabdem/`, git-ignored).
+4. Shareable scenario links work **inside the platform only** (signed-in users), not as public links.

@@ -32,3 +32,6 @@ data/delhi/raw/cpcb_portal_2026/
 data/jharkhand/sources/gem/*.xlsx
 data/jharkhand/sources/gem/*.zip
 data/jharkhand/sources/gem/boundaries/
+
+# FABDEM bare-earth elevation tiles (large; re-download with ingest/scripts/jharkhand/fabdem_fetch.py)
+data/jharkhand/sources/fabdem/
