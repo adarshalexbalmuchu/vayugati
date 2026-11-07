@@ -1147,6 +1147,7 @@ class ViewControl implements maplibregl.IControl {
   private layerNotes: Partial<Record<CityContextLayerKey, HTMLSpanElement>> = {}
   private srcState = new Map<string, 'loading' | 'ok' | 'failed'>()
   private layerCount: HTMLSpanElement | null = null
+  private toggleCount: HTMLSpanElement | null = null
   private groupUi: { keys: CityContextLayerKey[]; count: HTMLSpanElement; dots: HTMLSpanElement }[] = []
   private layersDetails: HTMLDetailsElement | null = null
   private legendList: HTMLDivElement | null = null
@@ -1188,7 +1189,9 @@ class ViewControl implements maplibregl.IControl {
     this.renderLegend(v)
     this.renderSources(v)
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
-    if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
+    const nOn = Object.values(v).filter(Boolean).length
+    if (this.layerCount) this.layerCount.textContent = `${nOn} of ${CONTEXT_LAYER_DEFS.length} on`
+    if (this.toggleCount) this.toggleCount.textContent = String(nOn)
     // Each group's header shows what is on inside it (colour chips and a count), so a closed group still tells you.
     for (const g of this.groupUi) {
       const on = g.keys.filter((k) => v[k])
@@ -1301,7 +1304,8 @@ class ViewControl implements maplibregl.IControl {
     head.className = 'flex items-center gap-2 px-2.5 py-2'
     // The district picker is the card's heading: it reads "Whole Jharkhand" or the district's name, and opens the list.
     const select = document.createElement('select')
-    select.className = 'focus-ring h-7 min-w-0 flex-1 cursor-pointer rounded-md border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-900 hover:bg-slate-50'
+    // The ring shows for the keyboard only, not after a mouse click.
+    select.className = 'h-7 min-w-0 flex-1 cursor-pointer rounded-md border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-900 outline-none hover:bg-slate-50 focus-visible:border-accent-500 focus-visible:ring-2 focus-visible:ring-accent-500/30'
     select.title = 'Go to a district (opens in 3D)'
     select.setAttribute('aria-label', 'Go to a district (opens in 3D)')
     select.addEventListener('change', () => this.selectDistrict(select.value || null))
@@ -1309,9 +1313,29 @@ class ViewControl implements maplibregl.IControl {
     this.fillSelect()
     const toggle = document.createElement('button')
     toggle.type = 'button'
-    toggle.className = 'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50'
+    // The button says what it opens: a layers symbol and how many layers are on, then the arrow.
+    toggle.className = 'focus-ring flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-300 px-1.5 text-slate-600 hover:bg-slate-50'
+    const NS = 'http://www.w3.org/2000/svg'
+    const layersIcon = document.createElementNS(NS, 'svg')
+    layersIcon.setAttribute('viewBox', '0 0 24 24')
+    layersIcon.setAttribute('aria-hidden', 'true')
+    layersIcon.setAttribute('class', 'h-3.5 w-3.5 shrink-0')
+    for (const d of ['M13 13.74a2 2 0 0 1-2 0L2.5 8.87a1 1 0 0 1 0-1.74L11 2.26a2 2 0 0 1 2 0l8.5 4.87a1 1 0 0 1 0 1.74z',
+      'm20 14.285 1.5.845a1 1 0 0 1 0 1.74L13 21.74a2 2 0 0 1-2 0l-8.5-4.87a1 1 0 0 1 0-1.74l1.5-.845']) {
+      const path = document.createElementNS(NS, 'path')
+      path.setAttribute('d', d)
+      path.setAttribute('fill', 'none')
+      path.setAttribute('stroke', 'currentColor')
+      path.setAttribute('stroke-width', '2')
+      path.setAttribute('stroke-linecap', 'round')
+      path.setAttribute('stroke-linejoin', 'round')
+      layersIcon.appendChild(path)
+    }
+    const toggleCount = document.createElement('span')
+    toggleCount.className = 'min-w-[1ch] text-[11px] font-semibold tabular-nums text-slate-700'
+    this.toggleCount = toggleCount
     const toggleIcon = chevronIcon('h-3.5 w-3.5 transition-transform')
-    toggle.appendChild(toggleIcon)
+    toggle.append(layersIcon, toggleCount, toggleIcon)
     const body = document.createElement('div')
     body.className = 'max-h-[max(14rem,calc(100svh-24rem))] space-y-2 overflow-y-auto border-t border-slate-200 px-2.5 py-2.5'
     const setOpen = (open: boolean) => {
@@ -1453,7 +1477,7 @@ class ViewControl implements maplibregl.IControl {
     lbody.append(this.legendList, lc)
     legend.append(lsum, lbody)
     root.appendChild(legend)
-    glassify(legend, { tint: 0.78, distort: true })
+    glassify(legend, { tint: 0.8 })
     this.lcLegend = lc
     // Sources strip along the bottom edge: one line, the sources of the layers that are on. The map's own controls
     // and the floating buttons sit above it.
