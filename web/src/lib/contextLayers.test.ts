@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE, normalizeBaseImages } from './contextLayers'
+import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE, CONTEXT_SOURCES, activeSources, normalizeBaseImages } from './contextLayers'
 
 describe('Jharkhand layer legend', () => {
   it('has an entry, a swatch and a note for every layer', () => {
@@ -47,5 +47,17 @@ describe('normalizeBaseImages', () => {
 
   it('when several come on at once, keeps the one already on', () => {
     expect(normalizeBaseImages({ satellite: true, landcover: true }, { landcover: true })).toMatchObject({ landcover: true, satellite: false })
+  })
+})
+
+describe('sources strip', () => {
+  it('names a source for every layer', () => {
+    for (const d of CONTEXT_LAYER_DEFS) expect(CONTEXT_SOURCES[d.key].length, d.key).toBeGreaterThan(0)
+  })
+
+  it('lists the sources of the layers that are on, each once', () => {
+    expect(activeSources({ majorrivers: true, basins: true, protected: true })).toEqual(['India-WRIS'])
+    expect(activeSources({ coalmines: true, coalplants: true, landcover: true })).toEqual(['© ESA WorldCover 2021 (CC BY 4.0)', 'Global Energy Monitor (CC BY 4.0)'])
+    expect(activeSources({})).toEqual([])
   })
 })

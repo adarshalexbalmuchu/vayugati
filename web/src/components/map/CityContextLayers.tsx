@@ -23,7 +23,7 @@ import { elevationAt } from '../../lib/elevation'
  * after every setStyle() (which wipes custom layers).
  */
 
-import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE, normalizeBaseImages } from '../../lib/contextLayers'
+import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE, DISTRICT_PROFILE_SOURCES, activeSources, normalizeBaseImages } from '../../lib/contextLayers'
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 import { useState } from 'react'
 import MapAssistant from './MapAssistant'
@@ -1132,6 +1132,10 @@ class ViewControl implements maplibregl.IControl {
   private layersDetails: HTMLDetailsElement | null = null
   private legendList: HTMLDivElement | null = null
   private legendWrap: HTMLDetailsElement | null = null
+  private sourceBar: HTMLDivElement | null = null
+  private sourceList: HTMLSpanElement | null = null
+  private onCredits: (() => void) | null = null
+  private barObserver: ResizeObserver | null = null
   private resultsWrap: HTMLDetailsElement | null = null
   /** Where the assistant's answers (rankings, facts, overview) render, in the left card under the layers. */
   resultsSlot: HTMLDivElement | null = null
@@ -1163,6 +1167,7 @@ class ViewControl implements maplibregl.IControl {
     if (this.satBox) this.satBox.checked = v.satellite
     if (this.on3D) this.satellite = v.satellite
     this.renderLegend(v)
+    this.renderSources(v)
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
     if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
     // Each group's header shows what is on inside it (colour chips and a count), so a closed group still tells you.
@@ -1323,7 +1328,7 @@ class ViewControl implements maplibregl.IControl {
 
     // One dock for the district profile and the chat (tabs), so they never overlap. A bottom sheet on phones.
     const dock = document.createElement('div')
-    dock.className = 'absolute bottom-24 left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg text-xs text-slate-700 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[320px]'
+    dock.className = 'absolute bottom-[calc(var(--src-bar-h,0px)+7.5rem)] left-2 right-2 z-10 flex max-h-[60svh] flex-col overflow-hidden rounded-lg text-xs text-slate-700 md:bottom-auto md:left-auto md:right-16 md:top-3 md:max-h-[calc(100%-7.5rem)] md:w-[320px]'
     dock.style.display = 'none'
     const dockTabs = document.createElement('div')
     dockTabs.className = 'flex gap-1 border-b border-slate-200 bg-slate-50/60 p-1.5'
@@ -1348,7 +1353,7 @@ class ViewControl implements maplibregl.IControl {
     this.chatSlot = chatSlot
     // Bottom toolbar: the 3D controls (height scale, satellite).
     const toolbar = document.createElement('div')
-    toolbar.className = 'absolute bottom-3 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg px-3 py-2 text-xs text-slate-700 md:left-1/2 md:right-auto md:-translate-x-1/2'
+    toolbar.className = 'absolute bottom-8 left-2 right-16 z-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-lg px-3 py-2 text-xs text-slate-700 md:left-1/2 md:right-auto md:-translate-x-1/2'
     toolbar.style.display = 'none'
     map.getContainer().appendChild(toolbar)
     glassify(toolbar, { tint: 0.78, distort: true })
@@ -1426,6 +1431,36 @@ class ViewControl implements maplibregl.IControl {
     root.appendChild(legend)
     glassify(legend, { tint: 0.78, distort: true })
     this.lcLegend = lc
+    // Sources strip along the bottom edge: one line, the sources of the layers that are on. The map's own controls
+    // and the floating buttons sit above it.
+    const bar = document.createElement('div')
+    bar.className = 'absolute inset-x-0 bottom-0 z-10 flex items-start gap-2 border-t border-slate-200/70 bg-white/85 px-2.5 py-[3px] text-[10px] leading-[14px] text-slate-600 backdrop-blur-sm'
+    const bl = document.createElement('span')
+    bl.className = 'shrink-0 text-[9px] font-bold uppercase tracking-widest text-slate-500'
+    bl.textContent = 'Sources'
+    const list = document.createElement('span')
+    list.className = 'min-w-0 flex-1'
+    bar.append(bl, list)
+    map.getContainer().appendChild(bar)
+    this.sourceBar = bar
+    this.sourceList = list
+    // The strip wraps to a second line on narrow screens, so the controls and buttons above it follow its height.
+    this.barObserver = new ResizeObserver(() => {
+      const h = bar.offsetHeight
+      const c = map.getContainer()
+      c.style.setProperty('--src-bar-h', `${h}px`)
+      for (const q of ['.maplibregl-ctrl-bottom-right', '.maplibregl-ctrl-bottom-left']) {
+        const n = c.querySelector<HTMLElement>(q)
+        if (n) n.style.bottom = `${h}px`
+      }
+      toolbar.style.bottom = `${h + 8}px`
+    })
+    this.barObserver.observe(bar)
+    this.renderSources(this.wanted())
+    // Tile sources report their credit when they load, and a basemap switch changes it.
+    let credTimer = 0
+    this.onCredits = () => { window.clearTimeout(credTimer); credTimer = window.setTimeout(() => this.renderSources(this.wanted()), 400) }
+    map.on('sourcedata', this.onCredits)
     this.renderLegend(this.wanted())
     loadLandcover(this.pack.base).then((m) => {
       this.lcMeta = m
@@ -1498,6 +1533,14 @@ class ViewControl implements maplibregl.IControl {
   onRemove() {
     this.dock?.remove()
     this.toolbar?.remove()
+    this.sourceBar?.remove()
+    this.barObserver?.disconnect()
+    this.map?.getContainer().style.removeProperty('--src-bar-h')
+    if (this.onCredits) this.map?.off('sourcedata', this.onCredits)
+    for (const c of ['.maplibregl-ctrl-bottom-right', '.maplibregl-ctrl-bottom-left']) {
+      const n = this.map?.getContainer().querySelector<HTMLElement>(c)
+      if (n) n.style.bottom = ''
+    }
     this.map?.off('styledata', this.reapply)
     this.map?.off('style.load', this.onStyleLoad)
     if (this.on3D) this.leave3D()
@@ -1551,6 +1594,41 @@ class ViewControl implements maplibregl.IControl {
     }
     // nothing to explain: hide the box
     if (this.legendWrap) this.legendWrap.style.display = any || v.landcover ? '' : 'none'
+  }
+
+  /** The credits the map's own tile sources ask for (basemap, satellite, night lights, terrain), read from the sources of
+   *  the layers that are drawn, as MapLibre's attribution control does. Falls back to the known basemap credit until the
+   *  tile sources have loaded. */
+  private mapCredits(): string[] {
+    const map = this.map
+    const out = new Set<string>()
+    if (alive(map)) {
+      for (const l of map.getStyle()?.layers ?? []) {
+        const src = (l as { source?: string }).source
+        if (!src || (l.layout as { visibility?: string } | undefined)?.visibility === 'none') continue
+        const a = (map.getSource(src) as { attribution?: string } | undefined)?.attribution
+        if (a) {
+          // The credit is HTML (links, &copy;): keep the text only.
+          out.add((new DOMParser().parseFromString(a, 'text/html').body.textContent ?? '').replace(/\s+/g, ' ').trim())
+        }
+      }
+    }
+    if (!out.size) out.add(maptilerKey() ? '© MapTiler © OpenStreetMap contributors' : '© Esri, HERE, Garmin, © OpenStreetMap contributors')
+    return [...out]
+  }
+
+  /** The sources strip: the map's own credits, then who the data of each layer that is on comes from. */
+  private renderSources(v: CityContextVisibility) {
+    const list = this.sourceList
+    if (!list) return
+    const credits = this.mapCredits()
+    const have = credits.join(' ').toLowerCase()
+    const names = [...activeSources(v), ...(this.selected ? DISTRICT_PROFILE_SOURCES : [])]
+      // a source already named in a map credit (e.g. © MapTiler, OpenStreetMap contributors) is not repeated
+      .filter((n, i, all) => all.indexOf(n) === i && !have.includes(n.replace(/^© /, '').replace(/ \(.*\)$/, '').toLowerCase()))
+    const all = [...credits, 'MapLibre', ...names]
+    list.textContent = all.join('  ·  ')
+    list.title = all.join(', ')
   }
 
   /** Land-cover colour key, shown while that layer is on. */
@@ -1624,6 +1702,7 @@ class ViewControl implements maplibregl.IControl {
     if (this.selected) this.dockTab = fromChat && this.chatOpen ? 'ask' : 'district'
     this.applySelection()
     this.renderProfile()
+    this.renderSources(this.wanted())
     this.syncDock()
     if (f) {
       if (!this.on3D) this.enter3D()

@@ -231,7 +231,7 @@ export default function MapAssistant({
       {open && slot && createPortal(panel, slot)}
       {!open && createPortal(
         <button type="button" onClick={() => onOpenChange(true)}
-          className="focus-ring absolute bottom-16 left-3 z-20 flex items-center gap-2 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-medium text-white shadow-card-lg hover:bg-accent-600 md:bottom-3 md:left-auto md:right-16">
+          className="focus-ring absolute bottom-[calc(var(--src-bar-h,0px)+4rem)] left-3 z-20 flex items-center gap-2 rounded-full bg-accent-500 px-4 py-2.5 text-sm font-medium text-white shadow-card-lg hover:bg-accent-600 md:bottom-[calc(var(--src-bar-h,0px)+0.75rem)] md:left-auto md:right-16">
           <MessageCircle className="h-4 w-4" aria-hidden /> Ask the map
         </button>,
         container,

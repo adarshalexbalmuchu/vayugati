@@ -122,6 +122,50 @@ export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   power: '#8E44AD', industry: '#9B6BD1', fires: '#E4572E',
 }
 
+/** Who the data of each layer comes from, short, for the strip along the bottom of the map. Only layers that are on are
+ *  listed, each source once. The full notes (with dates) are in CONTEXT_LAYER_DEFS and in the popups. */
+export const CONTEXT_SOURCES: Record<CityContextLayerKey, string[]> = {
+  districts: ['Datameet / Census 2011', 'OpenStreetMap contributors (ODbL)', 'geoBoundaries (CC BY 4.0)'],
+  landcover: ['© ESA WorldCover 2021 (CC BY 4.0)'],
+  nightlights: ['NASA Black Marble (GIBS)'],
+  satellite: ['© MapTiler'],
+  relief: ['© MapTiler', 'Copernicus DEM'],
+  protected: ['India-WRIS'],
+  majorrivers: ['India-WRIS'],
+  basins: ['India-WRIS'],
+  water: ['OpenStreetMap contributors (ODbL)'],
+  canals: ['India-WRIS'],
+  groundwater: ['CGWB', 'India-WRIS'],
+  monitors: ['India-WRIS'],
+  aquifers: ['CGWB', 'India-WRIS'],
+  dams: ['CWC', 'India-WRIS'],
+  places: ['Census of India 2011', 'India-WRIS'],
+  railways: ['OpenStreetMap contributors (ODbL)'],
+  roads: ['OpenStreetMap contributors (ODbL)'],
+  power: ['OpenStreetMap contributors (ODbL)'],
+  coalmines: ['Global Energy Monitor (CC BY 4.0)'],
+  coalplants: ['Global Energy Monitor (CC BY 4.0)'],
+  industry: ['OpenStreetMap contributors (ODbL)', 'WRI Global Power Plant Database (CC BY 4.0)'],
+  fires: ['NASA FIRMS (VIIRS)'],
+  seismic: ['India-WRIS'],
+  blocks: ['India-WRIS'],
+  constituencies: ['India-WRIS'],
+  landmarks: ['OpenStreetMap contributors (ODbL)'],
+}
+
+/** Sources of the district profile (shown while a district is open). */
+export const DISTRICT_PROFILE_SOURCES = ['Census of India 2011', 'FSI India State of Forest Report 2023', 'Copernicus DEM', 'ERA5 (Copernicus C3S)', 'ESA WorldCover 2021', 'CGWB 2020']
+
+/** The sources of the layers that are on, each once, in layer order. */
+export function activeSources(v: Partial<CityContextVisibility>): string[] {
+  const seen = new Set<string>()
+  for (const d of CONTEXT_LAYER_DEFS) {
+    if (!v[d.key as CityContextLayerKey]) continue
+    for (const s of CONTEXT_SOURCES[d.key as CityContextLayerKey]) seen.add(s)
+  }
+  return [...seen]
+}
+
 /** What a layer's symbols mean on the map. Colours match the renderer (CityContextLayers.tsx). */
 export interface LegendSymbol {
   shape: 'area' | 'line' | 'dash' | 'dot' | 'ring' | 'ramp'

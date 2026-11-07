@@ -194,6 +194,16 @@ night lights (2016) and the volunteer-mapped streams start off. Towns and villag
   from zoom 8, all from zoom 9.5; the bigger town keeps its name when names collide.
 - **Clicks.** The feature under the pointer wins; the district shading only takes the click when nothing else is there.
 
+## Credits (7 Nov 2026)
+
+A strip along the bottom of the map names every source in use, so nothing is shown without its credit: first the map's own
+credits (read from the tile sources, so they follow the basemap: MapTiler and OpenStreetMap contributors, or Esri when no key is
+set; satellite and night-lights credits as well), MapLibre, then the sources of each layer that is switched on (India-WRIS, CGWB,
+ESA WorldCover, Global Energy Monitor, ...), and the district-profile sources while a district is open. The per-layer
+list is `CONTEXT_SOURCES` in `web/src/lib/contextLayers.ts`: a new layer needs an entry there (a test enforces it).
+Licences to keep: OpenStreetMap (ODbL, credit "OpenStreetMap contributors"), MapTiler (credit and a valid key for the
+domain), ESA WorldCover, geoBoundaries, WRI Global Power Plant Database and Global Energy Monitor (all CC BY 4.0).
+
 ## Credibility rule (7 Nov 2026)
 
 A fact is shown only if it can be stated without a mistake: an official source, or a research data set that cites its
