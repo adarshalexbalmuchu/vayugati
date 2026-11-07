@@ -184,7 +184,7 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   monitors: ['ctx-monitors'],
   blocks: ['ctx-blocks-fill', 'ctx-blocks-line', 'ctx-blocks-label'],
   constituencies: ['ctx-assembly-line', 'ctx-assembly-label'],
-  places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-village'],
+  places: ['ctx-places-town', 'ctx-places-village', 'ctx-places-label-town', 'ctx-places-label-town2', 'ctx-places-label-town3', 'ctx-places-label-village'],
   railways: ['ctx-railways-main', 'ctx-railways-siding', 'ctx-transport'],
   roads: ['ctx-roads-line'],
   power: ['ctx-power-line', 'ctx-power-sub'],
@@ -296,7 +296,7 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     map.addSource(id, { type: 'geojson', data: needed ? data[k as keyof PackData] : `${base}/${FILES[k as keyof typeof FILES]}` })
   }
   const vis = (key: CityContextLayerKey) => (visible[key] ? 'visible' : 'none') as 'visible' | 'none'
-  if (visible.districts) hideBasemapBoundaries(map)
+  syncBasemap(map, visible)
   const font = labelFont(map)
   // Rasters first (bottom): land cover, night lights.
   if (landcover) {
@@ -394,8 +394,14 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
     paint: { 'circle-radius': 2.2, 'circle-color': '#5B4A3A', 'circle-opacity': 0.8 } })
   map.addLayer({ id: 'ctx-places-town', type: 'circle', source: SRC.places, filter: ['in', ['get', 'kind'], ['literal', ['city', 'town']]],
     layout: { visibility: vis('places') },
-    paint: { 'circle-radius': ['match', ['get', 'kind'], 'city', 5, 3.5], 'circle-color': '#FFFFFF',
-      'circle-stroke-color': '#2E2219', 'circle-stroke-width': 1.5 } })
+    // 229 towns would pile up in the coalfield at state zoom: the larger ones first, smaller ones as you zoom in.
+    paint: { 'circle-radius': ['step', ['zoom'],
+      ['case', ['>=', ['coalesce', ['get', 'pop'], 0], 100000], 4.5, 0],
+      8, ['case', ['>=', ['coalesce', ['get', 'pop'], 0], 30000], 4, 0],
+      9.5, ['match', ['get', 'kind'], 'city', 5, 3.5]],
+      'circle-color': '#FFFFFF', 'circle-stroke-color': '#2E2219',
+      'circle-stroke-width': ['step', ['zoom'], ['case', ['>=', ['coalesce', ['get', 'pop'], 0], 100000], 1.5, 0],
+        8, ['case', ['>=', ['coalesce', ['get', 'pop'], 0], 30000], 1.5, 0], 9.5, 1.5] } })
   map.addLayer({ id: 'ctx-transport', type: 'circle', source: SRC.transport, minzoom: 8, layout: { visibility: vis('railways') },
     paint: { 'circle-radius': ['match', ['get', 'kind'], 'airport', 5, 3], 'circle-color': ['match', ['get', 'kind'], 'airport', '#00796B', '#2B2B2B'],
       'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } })
@@ -443,11 +449,17 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
       filter: ['!=', ['get', 'name'], ''], layout: { visibility: vis('dams'), 'text-field': ['get', 'name'], 'text-font': font,
         'text-size': 10, 'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-optional': true },
       paint: { 'text-color': '#0B3C7D', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.2 } })
-    map.addLayer({ id: 'ctx-places-label-town', type: 'symbol', source: SRC.places,
-      filter: ['in', ['get', 'kind'], ['literal', ['city', 'town']]], minzoom: 6.5, layout: { visibility: vis('places'),
+    // Town names in three tiers, matching the dots: the bigger town keeps its name when names collide.
+    const townKinds: maplibregl.ExpressionSpecification = ['in', ['get', 'kind'], ['literal', ['city', 'town']]]
+    const popOf: maplibregl.ExpressionSpecification = ['coalesce', ['get', 'pop'], 0]
+    const townLabel = (id: string, minzoom: number, extra: maplibregl.ExpressionSpecification[]) => map.addLayer({ id, type: 'symbol', source: SRC.places,
+      filter: ['all', townKinds, ...extra], minzoom, layout: { visibility: vis('places'),
         'text-field': ['get', 'name'], 'text-font': font, 'text-size': ['match', ['get', 'kind'], 'city', 13, 11],
-        'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-optional': true },
+        'text-offset': [0, 0.9], 'text-anchor': 'top', 'text-optional': true, 'symbol-sort-key': ['-', 0, popOf] },
       paint: { 'text-color': '#2E2219', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 } })
+    townLabel('ctx-places-label-town', 6.5, [['>=', popOf, 100000]])
+    townLabel('ctx-places-label-town2', 8, [['<', popOf, 100000], ['>=', popOf, 30000]])
+    townLabel('ctx-places-label-town3', 9.5, [['<', popOf, 30000]])
     map.addLayer({ id: 'ctx-places-label-village', type: 'symbol', source: SRC.places, filter: ['==', ['get', 'kind'], 'village'],
       minzoom: 11.5, layout: { visibility: vis('places'), 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 10,
         'text-offset': [0, 0.7], 'text-anchor': 'top', 'text-optional': true },
@@ -502,28 +514,58 @@ function addAll(map: maplibregl.Map, data: PackData, visible: CityContextVisibil
   })
 }
 
-/** The basemap draws its own administrative lines (from OpenStreetMap), and
- *  in places they disagree with ours (OSM's Kodarma is 35% too small). Two sets
- *  of borders on one map reads as an error, so the basemap's are hidden while
- *  our outlines are shown, and restored afterwards. */
-const hiddenBasemapBoundaries = new WeakMap<maplibregl.Map, string[]>()
-function hideBasemapBoundaries(map: maplibregl.Map) {
-  const hidden: string[] = []
-  for (const l of map.getStyle()?.layers ?? []) {
-    if (l.id.startsWith('ctx-') || (l as { 'source-layer'?: string })['source-layer'] !== 'boundary') continue
-    if (map.getLayoutProperty(l.id, 'visibility') === 'none') continue
-    map.setLayoutProperty(l.id, 'visibility', 'none')
-    hidden.push(l.id)
-  }
-  hiddenBasemapBoundaries.set(map, hidden)
+/** The basemap draws things we also draw from our own data: administrative lines (in places they disagree with ours,
+ *  e.g. OSM's Kodarma is 35% too small), town names, roads, rivers, parks, forest shading. Two copies of one thing,
+ *  slightly apart, read as an error and clutter the points on top. So a basemap feature class is hidden while the same
+ *  class is shown from our data, and comes back when ours is switched off. A few classes (shops, trails, ...) have no
+ *  use here and are always hidden. Keyed by the source layer of the OpenMapTiles schema that the basemap styles use. */
+type BasemapRule = { when: (v: CityContextVisibility) => boolean; id?: RegExp }
+const BASEMAP_RULES: Record<string, BasemapRule[]> = {
+  boundary: [{ when: (v) => v.districts }],
+  place: [{ when: (v) => v.places }],
+  transportation: [{ when: (v) => v.railways, id: /rail/i }, { when: (v) => v.roads, id: /^(?!.*rail)/i }],
+  transportation_name: [{ when: (v) => v.roads }],
+  aeroway: [{ when: (v) => v.railways }],
+  aerodrome_label: [{ when: (v) => v.railways }],
+  waterway: [{ when: (v) => v.water }],
+  water: [{ when: (v) => v.water }],
+  water_name: [{ when: (v) => v.water }],
+  park: [{ when: (v) => v.protected }],
+  landcover: [{ when: (v) => v.landcover || v.satellite }],
+  globallandcover: [{ when: (v) => v.landcover || v.satellite }],
+  mountain_peak: [{ when: (v) => v.landmarks }],
+  contour: [{ when: (v) => v.relief }],
+  hillshade: [{ when: (v) => v.relief }],
+  poi: [{ when: () => true }],
+  outdoor_poi: [{ when: () => true }],
+  trail: [{ when: () => true }],
 }
-function restoreBasemapBoundaries(map: maplibregl.Map) {
-  for (const id of hiddenBasemapBoundaries.get(map) ?? []) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
-  hiddenBasemapBoundaries.delete(map)
+const hiddenBasemap = new WeakMap<maplibregl.Map, Set<string>>()
+function syncBasemap(map: maplibregl.Map, v: CityContextVisibility) {
+  const mine = hiddenBasemap.get(map) ?? new Set<string>()
+  for (const l of map.getStyle()?.layers ?? []) {
+    if (l.id.startsWith('ctx-')) continue
+    const rules = BASEMAP_RULES[(l as { 'source-layer'?: string })['source-layer'] ?? l.type]
+    if (!rules) continue
+    const hide = rules.some((r) => r.when(v) && (!r.id || r.id.test(l.id)))
+    const shown = map.getLayoutProperty(l.id, 'visibility') !== 'none'
+    if (hide && shown) {
+      map.setLayoutProperty(l.id, 'visibility', 'none')
+      mine.add(l.id)
+    } else if (!hide && !shown && mine.has(l.id)) {
+      map.setLayoutProperty(l.id, 'visibility', 'visible')
+      mine.delete(l.id)
+    }
+  }
+  hiddenBasemap.set(map, mine)
+}
+function restoreBasemap(map: maplibregl.Map) {
+  for (const id of hiddenBasemap.get(map) ?? []) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible')
+  hiddenBasemap.delete(map)
 }
 
 function removeAll(map: maplibregl.Map) {
-  restoreBasemapBoundaries(map)
+  restoreBasemap(map)
   for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
   for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT, 'ctx-landcover', 'ctx-nightlights']) if (map.getSource(id)) map.removeSource(id)
@@ -2190,9 +2232,8 @@ export default function CityContextLayers({
     }
     if (map.getSource(SRC.sources)) {
       applyOnDemand(map, visible)
-      // Basemap borders are hidden only while ours are shown.
-      if (visible.districts && !hiddenBasemapBoundaries.has(map)) hideBasemapBoundaries(map)
-      else if (!visible.districts) restoreBasemapBoundaries(map)
+      // Basemap features are hidden only while ours of the same kind are shown.
+      syncBasemap(map, visible)
     }
     controlRef.current?.refreshLegend()
     controlRef.current?.setVisible(visible)

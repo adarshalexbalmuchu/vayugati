@@ -183,6 +183,17 @@ authoritative source, and teaches one basic fact about it (how it is divided, wh
 protected, where people live). Heat detections (a changing snapshot), mines, kilns, roads, railways, power, schools,
 night lights (2016) and the volunteer-mapped streams start off. Towns and villages are now the Census 2011 lists.
 
+## Map overlap rules (7 Nov 2026)
+
+- **Basemap de-duplication.** A basemap feature class is hidden while the same class is drawn from our data (town names,
+  roads, rail, mapped streams and lakes, parks, forest shading, peaks, contours, borders), and comes back when ours is
+  switched off. Shops, trails and similar basemap points are always hidden. Rules: `BASEMAP_RULES` in `CityContextLayers.tsx`.
+- **Full-map pictures are exclusive.** Satellite, land cover and night lights cover each other; switching one on switches
+  the others off (`normalizeBaseImages`).
+- **Towns by size.** Dots and names appear by population as you zoom: 100,000 and over from the start, 30,000 and over
+  from zoom 8, all from zoom 9.5; the bigger town keeps its name when names collide.
+- **Clicks.** The feature under the pointer wins; the district shading only takes the click when nothing else is there.
+
 ## Credibility rule (7 Nov 2026)
 
 A fact is shown only if it can be stated without a mistake: an official source, or a research data set that cites its
