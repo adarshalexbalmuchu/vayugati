@@ -5,6 +5,8 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { roleHome, useAuth } from '../lib/auth'
 import { useCity } from '../lib/city'
 import { fetchCityWeatherNow } from '../lib/data'
+import { useSelectedDistrict } from '../lib/jhSelection'
+import { fetchJhWeather, weatherView } from '../lib/jhWeather'
 import { initOfflineSync } from '../lib/offlineSync'
 import { useAsync } from '../lib/useAsync'
 import headerSkyline from '../assets/header-skyline.jpg'
@@ -53,10 +55,57 @@ function CitySwitcher() {
 }
 
 /** City temperature and humidity now (median across wards of each ward's
- *  latest Open-Meteo reading, see fetchCityWeatherNow), re-fetched every
+ *  latest MET Norway reading, see fetchCityWeatherNow), re-fetched every
  *  10 min. Renders nothing when weather ingest has nothing from the last
  *  3 h, rather than showing an old value as current. */
 function HeaderWeather() {
+  const { map: city } = useCity()
+  return city.mapFirst ? <JharkhandWeather /> : <CityWeather />
+}
+
+/** Jharkhand: the whole state (median of its 24 districts), or the district open on the map. Open-Meteo, one request for
+ *  all districts, re-fetched every 10 minutes. */
+function JharkhandWeather() {
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 10 * 60_000)
+    return () => clearInterval(t)
+  }, [])
+  const district = useSelectedDistrict()
+  const { data } = useAsync(() => fetchJhWeather(), [tick], { cacheKey: 'jh-weather', staleAfterMs: 10 * 60_000 })
+  const v = data ? weatherView(data, district) : null
+  if (!data || !v || (v.tempC == null && v.humidity == null)) return null
+  // Open-Meteo gives India time as '2026-11-07T16:00': show it as it is.
+  const asOf = data.asOf ? `${data.asOf.slice(11, 16)} IST` : ''
+  const label = [
+    v.tempC != null ? `${Math.round(v.tempC)}°C` : null,
+    v.humidity != null ? `humidity ${Math.round(v.humidity)}%` : null,
+  ].filter(Boolean).join(', ')
+  const how = v.medianOf ? `Median of ${v.medianOf} districts` : 'At the district centre'
+  return (
+    <div
+      className="hidden items-center gap-2.5 rounded-lg bg-white/75 px-2.5 py-1.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm backdrop-blur-sm md:flex"
+      title={`${v.label} now: ${label}. ${how}. Open-Meteo weather model (CC BY 4.0)${asOf ? `, as of ${asOf}` : ''}. A model value, not a thermometer reading.`}
+      aria-label={`${v.label} weather now: ${label}`}
+    >
+      <span className="max-w-[7rem] truncate text-[10px] font-medium text-slate-500">{v.label}</span>
+      {v.tempC != null && (
+        <span className="flex items-center gap-1">
+          <Thermometer className="h-3.5 w-3.5 text-orange-500" aria-hidden />
+          {Math.round(v.tempC)}°C
+        </span>
+      )}
+      {v.humidity != null && (
+        <span className="flex items-center gap-1">
+          <Droplets className="h-3.5 w-3.5 text-sky-500" aria-hidden />
+          {Math.round(v.humidity)}%
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CityWeather() {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     const t = setInterval(() => setTick((v) => v + 1), 10 * 60_000)
@@ -65,10 +114,7 @@ function HeaderWeather() {
   const { cityId, map: city } = useCity()
   const { data } = useAsync(() => fetchCityWeatherNow(cityId), [tick, cityId], { cacheKey: 'header-weather', staleAfterMs: 15 * 60_000 })
   if (!data || (data.tempC == null && data.humidity == null)) return null
-  // The weather ingest covers the Dhanbad-Jharia ward grid only, so on the Jharkhand map the figure is for that area,
-  // not the whole state: say so.
-  const place = city.mapFirst ? 'Dhanbad–Jharia coalfield' : city.label
-  const cityShort = city.mapFirst ? 'Dhanbad' : null
+  const place = city.label
   const asOf = new Date(data.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   const label = [
     data.tempC != null ? `${Math.round(data.tempC)}°C` : null,
@@ -80,7 +126,6 @@ function HeaderWeather() {
       title={`${place} now: ${label}. Median of ${data.wards} grid cells, MET Norway forecast model (CC BY 4.0), as of ${asOf}. A model value, not a thermometer reading.`}
       aria-label={`${place} weather now: ${label}`}
     >
-      {cityShort && <span className="text-[10px] font-medium text-slate-500">{cityShort}</span>}
       {data.tempC != null && (
         <span className="flex items-center gap-1">
           <Thermometer className="h-3.5 w-3.5 text-orange-500" aria-hidden />

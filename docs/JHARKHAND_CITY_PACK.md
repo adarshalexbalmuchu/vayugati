@@ -204,6 +204,13 @@ list is `CONTEXT_SOURCES` in `web/src/lib/contextLayers.ts`: a new layer needs a
 Licences to keep: OpenStreetMap (ODbL, credit "OpenStreetMap contributors"), MapTiler (credit and a valid key for the
 domain), ESA WorldCover, geoBoundaries, WRI Global Power Plant Database and Global Energy Monitor (all CC BY 4.0).
 
+## Weather in the header (7 Nov 2026)
+
+On the Jharkhand map the header shows temperature and humidity for the whole state (the median of the 24 districts) or, once
+a district is open, for that district's centre. Source: Open-Meteo (open-meteo.com, CC BY 4.0), a weather-model value, not a
+thermometer reading, fetched in one request for all districts and reused for 10 minutes (`web/src/lib/jhWeather.ts`).
+Other cities keep the ward-based figure (MET Norway through the ingest service). Credited in the sources strip.
+
 ## Credibility rule (7 Nov 2026)
 
 A fact is shown only if it can be stated without a mistake: an official source, or a research data set that cites its

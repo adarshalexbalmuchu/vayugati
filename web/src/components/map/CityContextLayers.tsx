@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection, Geometry, Polygon, Position } from 'geojson'
 import { maptilerKey } from '../../lib/basemaps'
 import { elevationAt } from '../../lib/elevation'
+import { setSelectedDistrict } from '../../lib/jhSelection'
 
 /**
  * Static context layers for a city pack. For Jharkhand the pack covers the
@@ -1554,6 +1555,7 @@ class ViewControl implements maplibregl.IControl {
   }
 
   onRemove() {
+    setSelectedDistrict(null)
     this.dock?.remove()
     this.toolbar?.remove()
     this.sourceBar?.remove()
@@ -1649,8 +1651,8 @@ class ViewControl implements maplibregl.IControl {
     const names = [...activeSources(v), ...(this.selected ? DISTRICT_PROFILE_SOURCES : [])]
       // a source already named in a map credit (e.g. © MapTiler, OpenStreetMap contributors) is not repeated
       .filter((n, i, all) => all.indexOf(n) === i && !have.includes(n.replace(/^© /, '').replace(/ \(.*\)$/, '').toLowerCase()))
-    // The header's temperature and humidity (Dhanbad area) come from MET Norway.
-    const all = [...credits, 'MapLibre', ...names, 'Header weather: MET Norway (CC BY 4.0)']
+    // The header's temperature and humidity (state and districts) come from Open-Meteo.
+    const all = [...credits, 'MapLibre', ...names, 'Header weather: Open-Meteo.com (CC BY 4.0)']
     list.textContent = all.join('  ·  ')
     list.title = all.join(', ')
   }
@@ -1721,6 +1723,7 @@ class ViewControl implements maplibregl.IControl {
     if (!alive(map)) return
     const f = name ? this.districts.find((d) => d.properties?.name === name) : undefined
     this.selected = f ? name : null
+    setSelectedDistrict(this.selected)
     if (this.select) this.select.value = this.selected ?? ''
     // Picking a district shows its profile; the chat keeps its tab when it was the chat that moved the map.
     if (this.selected) this.dockTab = fromChat && this.chatOpen ? 'ask' : 'district'
