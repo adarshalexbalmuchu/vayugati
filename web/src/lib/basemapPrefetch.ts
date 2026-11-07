@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import { BASEMAP_OPTIONS, isBasemapAvailable, resolveStyleUrl, type BasemapMode } from './basemaps'
 
 /**

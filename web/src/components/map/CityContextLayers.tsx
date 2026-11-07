@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection, Geometry, Polygon, Position } from 'geojson'
 import { maptilerKey } from '../../lib/basemaps'
 import { elevationAt } from '../../lib/elevation'
@@ -2356,7 +2356,7 @@ export default function CityContextLayers({
         controlRef.current?.setSourceState(e.sourceId, 'ok')
       }
     }
-    const onMapError = (e: { sourceId?: string; error?: Error }) => {
+    const onMapError = (e: { sourceId?: string; error?: { message?: string } }) => {
       if (e.sourceId && SRC_KEYS[e.sourceId]) {
         console.warn('[CityContextLayers] could not load', e.sourceId, e.error?.message)
         controlRef.current?.setSourceState(e.sourceId, 'failed')

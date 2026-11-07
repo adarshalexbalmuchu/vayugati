@@ -1,5 +1,5 @@
 import type { FeatureCollection, Feature, Polygon, MultiPolygon, Point } from 'geojson'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { Maximize2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
