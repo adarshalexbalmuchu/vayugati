@@ -1,7 +1,7 @@
 import { maptilerKey } from './basemaps'
 
 /**
- * Ground elevation at a point, read from the same MapTiler Terrain RGB v2
+ * Surface elevation at a point (a surface model: it includes tree tops, so it can read a few metres high under forest), read from the same MapTiler Terrain RGB v2
  * tiles the 3D terrain is drawn from (a global 30 m-class model). Tiles are
  * 512 px, Mapbox terrain-RGB encoding: height = -10000 + (R*65536 + G*256 + B) * 0.1 m.
  * Checked 5 Nov 2026 at Parasnath: the decoded summit area reads about

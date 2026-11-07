@@ -1945,7 +1945,7 @@ class ViewControl implements maplibregl.IControl {
 
     // Relief: typical and highest ground height against the state's range (about 0 to 1,400 m)
     const rsec = el('div', '')
-    rsec.appendChild(label('Relief (Copernicus DEM)'))
+    rsec.appendChild(label('Relief (Copernicus DEM, surface)'))
     if (p.elevation_median_m != null && p.elevation_max_m != null) {
       const track = el('div', 'relative h-6')
       track.appendChild(el('div', 'absolute left-0 right-0 top-2.5 h-1 rounded-full bg-gradient-to-r from-emerald-200 via-amber-200 to-stone-400'))
@@ -2288,7 +2288,7 @@ export default function CityContextLayers({
       row.className = `${extra ? 'mt-2 border-t border-slate-200/80 pt-2' : ''} flex items-baseline justify-between gap-4`
       const lab = document.createElement('span')
       lab.className = 'text-[11px] text-slate-500'
-      lab.textContent = 'Ground elevation'
+      lab.textContent = 'Surface elevation'
       const val = document.createElement('span')
       val.className = 'text-base font-semibold tabular-nums leading-none text-slate-900'
       val.textContent = '…'
@@ -2297,7 +2297,7 @@ export default function CityContextLayers({
       if (!extra) {
         const src = document.createElement('p')
         src.className = 'mt-1 text-[10px] leading-none text-slate-400'
-        src.textContent = 'MapTiler terrain, about 30 m grid'
+        src.textContent = 'MapTiler terrain, about 30 m grid; includes tree tops'
         el.appendChild(src)
       }
       popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map)

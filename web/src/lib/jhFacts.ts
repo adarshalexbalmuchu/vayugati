@@ -54,7 +54,7 @@ interface FieldDef {
 
 const ISFR = 'Forest Survey of India, ISFR 2023'
 const ESA = 'ESA WorldCover 2021 (satellite, 10 m); shares computed by Vayu Gati'
-const DEM = 'Copernicus DEM (ESA), 90 m grid; computed by Vayu Gati'
+const DEM = 'Copernicus DEM (ESA), 90 m grid; a surface model that includes tree tops; computed by Vayu Gati'
 
 const CGWB = 'Central Ground Water Board, Dynamic Ground Water Resources 2020, via India-WRIS'
 const ERA5 = 'ERA5 reanalysis (ECMWF / Copernicus), 2015-2024, about a 30 km grid: the area\'s climate, not a town\'s'
@@ -65,7 +65,7 @@ export const FIELD_DEFS: Record<FactField, FieldDef> = {
   forest_pct: { label: 'Forest cover', unit: '%', get: (p) => p.forest_pct, decimals: 1, source: ISFR },
   forest_km2: { label: 'Forest area', unit: ' km²', get: (p) => p.forest_km2, decimals: 0, source: ISFR },
   highest_point: { label: 'Highest point', unit: ' m', get: (p) => p.elevation_max_m, source: DEM },
-  typical_height: { label: 'Typical ground height', unit: ' m', get: (p) => p.elevation_median_m, source: DEM },
+  typical_height: { label: 'Typical surface height', unit: ' m', get: (p) => p.elevation_median_m, source: DEM },
   tree_cover_pct: { label: 'Tree cover (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Tree cover'], decimals: 1, source: ESA },
   cropland_pct: { label: 'Cropland (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Cropland'], decimals: 1, source: ESA },
   builtup_pct: { label: 'Built-up land (satellite)', unit: '%', get: (p) => p.landcover_pct?.['Built-up'], decimals: 1, source: ESA },

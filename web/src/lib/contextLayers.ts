@@ -24,7 +24,7 @@ export const CONTEXT_LAYER_DEFS = [
     note: 'Lights at night from NASA’s VIIRS satellite, 2016 composite (the latest global one NASA serves as map tiles). Towns, mines and industry glow.' },
   { key: 'satellite', label: 'Satellite imagery', on: false, note: 'MapTiler satellite imagery.' },
   { key: 'relief', label: 'Shaded relief and contours', on: false,
-    note: 'Hill shading from the MapTiler elevation model, with contour lines every 10 to 100 m (from zoom 9).' },
+    note: 'Hill shading from the MapTiler elevation model (about 30 m grid, a surface model that includes tree tops), with contour lines every 10 to 100 m (from zoom 9).' },
   { key: 'protected', label: 'Protected areas', on: true,
     note: 'The 11 wildlife sanctuaries and the national park of Jharkhand, from the India-WRIS list (Central Water Commission, Ministry of Jal Shakti), with notification year and notified area. Outlines are approximate and can differ from the notified area; click one to compare.' },
   { key: 'majorrivers', label: 'Major rivers (India-WRIS)', on: true,
