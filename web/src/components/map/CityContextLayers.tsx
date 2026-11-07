@@ -4,6 +4,7 @@ import type { Feature, FeatureCollection, Geometry, Polygon, Position } from 'ge
 import { maptilerKey } from '../../lib/basemaps'
 import { elevationAt } from '../../lib/elevation'
 import { setSelectedDistrict } from '../../lib/jhSelection'
+import { buildColumns, COLUMN_NEAR_FROM_ZOOM, type ColumnKind } from '../../lib/columns'
 
 /**
  * Static context layers for a city pack. For Jharkhand the pack covers the
@@ -194,8 +195,55 @@ const LAYERS: Record<CityContextLayerKey, string[]> = {
   landmarks: ['ctx-landmarks', 'ctx-landmarks-label'],
 }
 
+/** 3D columns (see lib/columns.ts): wide ones for the state view, narrow ones from zoom 8.5. They are drawn only while the
+ *  map is in 3D and their layer is on, so they are not in LAYERS; the view control switches them (syncColumns). */
+const COLUMN_DEFS: { kind: ColumnKind; key: CityContextLayerKey; file: keyof typeof FILES; popup: string; color: maplibregl.ExpressionSpecification | string }[] = [
+  { kind: 'mines', key: 'coalmines', file: 'coalmines', popup: 'ctx-coalmines',
+    color: ['match', ['get', 'status'], 'Operating', '#212121', 'Proposed', '#F9A825', 'Closed', '#C62828', '#8E8E8E'] },
+  { kind: 'plants', key: 'coalplants', file: 'coalplants', popup: 'ctx-coalplants', color: '#B23A48' },
+  { kind: 'dams', key: 'dams', file: 'dams', popup: 'ctx-dams', color: '#0B3C7D' },
+]
+const columnLayerIds = (kind: ColumnKind) => [`ctx-col-${kind}-far`, `ctx-col-${kind}-near`]
+const COLUMN_LAYER_IDS = COLUMN_DEFS.flatMap((d) => columnLayerIds(d.kind))
+const COLUMN_POPUP: Record<string, string> = Object.fromEntries(COLUMN_DEFS.flatMap((d) => columnLayerIds(d.kind).map((id) => [id, d.popup])))
+
+const columnCache = new Map<string, Promise<Record<ColumnKind, FeatureCollection>>>()
+function loadColumns(base: string): Promise<Record<ColumnKind, FeatureCollection>> {
+  let p = columnCache.get(base)
+  if (!p) {
+    p = Promise.all(COLUMN_DEFS.map(async (d) => {
+      const res = await fetch(`${base}/${FILES[d.file]}`)
+      if (!res.ok) throw new Error(`${FILES[d.file]}: HTTP ${res.status}`)
+      return [d.kind, buildColumns(d.kind, (await res.json()) as FeatureCollection)] as const
+    })).then((e) => Object.fromEntries(e) as Record<ColumnKind, FeatureCollection>)
+    p.catch(() => columnCache.delete(base))
+    columnCache.set(base, p)
+  }
+  return p
+}
+
+/** Add the column layers (hidden: the view control shows them in 3D). Safe to call again after a style reload. */
+async function addColumns(map: maplibregl.Map, base: string): Promise<void> {
+  const cols = await loadColumns(base)
+  if (!alive(map)) return
+  for (const d of COLUMN_DEFS) {
+    const src = `ctx-col-${d.kind}`
+    if (!map.getSource(src)) map.addSource(src, { type: 'geojson', data: cols[d.kind] })
+    for (const tier of ['far', 'near'] as const) {
+      const id = `ctx-col-${d.kind}-${tier}`
+      if (map.getLayer(id)) continue
+      map.addLayer({
+        id, type: 'fill-extrusion', source: src, filter: ['==', ['get', 'tier'], tier],
+        ...(tier === 'far' ? { maxzoom: COLUMN_NEAR_FROM_ZOOM } : { minzoom: COLUMN_NEAR_FROM_ZOOM }),
+        layout: { visibility: 'none' },
+        paint: { 'fill-extrusion-color': d.color as never, 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.92 },
+      }, map.getLayer(MASK_DISTRICT) ? MASK_DISTRICT : undefined)
+    }
+  }
+}
+
 /** Topmost first: a click shows the popup of the highest feature under it. */
-const CLICKABLE = ['ctx-coalplants', 'ctx-coalmines', 'ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-landmarks', 'ctx-transport',
+const CLICKABLE = [...COLUMN_LAYER_IDS, 'ctx-coalplants', 'ctx-coalmines', 'ctx-plants', 'ctx-dams', 'ctx-monitors', 'ctx-fires', 'ctx-landmarks', 'ctx-transport',
   'ctx-power-sub', 'ctx-places-town', 'ctx-places-village', 'ctx-coalboundaries-fill', 'ctx-railways-main',
   'ctx-railways-siding', 'ctx-majorrivers-line', 'ctx-canals-line', 'ctx-rivers-line', 'ctx-water-fill', 'ctx-protected-fill',   'ctx-groundwater-fill', 'ctx-blocks-fill', 'ctx-aquifers-fill', 'ctx-seismic-fill', 'ctx-districts-fill']
 
@@ -569,6 +617,8 @@ function removeAll(map: maplibregl.Map) {
   restoreBasemap(map)
   for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
+  for (const id of COLUMN_LAYER_IDS) if (map.getLayer(id)) map.removeLayer(id)
+  for (const d of COLUMN_DEFS) if (map.getSource(`ctx-col-${d.kind}`)) map.removeSource(`ctx-col-${d.kind}`)
   for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT, 'ctx-landcover', 'ctx-nightlights']) if (map.getSource(id)) map.removeSource(id)
   removeSatellite(map)
   removeRelief(map)
@@ -1208,6 +1258,7 @@ class ViewControl implements maplibregl.IControl {
     if (this.on3D && this.selected) this.satellite = v.satellite
     this.renderLegend(v)
     this.renderSources(v)
+    this.syncColumns()
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
     const nOn = Object.values(v).filter(Boolean).length
     if (this.layerCount) this.layerCount.textContent = `${nOn} of ${CONTEXT_LAYER_DEFS.length} on`
@@ -1664,6 +1715,18 @@ class ViewControl implements maplibregl.IControl {
     }
   }
 
+  /** Columns show only in 3D, and only for layers that are on. */
+  syncColumns() {
+    const map = this.map
+    if (!alive(map)) return
+    const w = this.wanted()
+    for (const d of COLUMN_DEFS) {
+      for (const id of columnLayerIds(d.kind)) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', this.on3D && w[d.key] ? 'visible' : 'none')
+      }
+    }
+  }
+
   /** Show the bottom toolbar only while it has something to show. */
   private syncToolbar() {
     const t = this.toolbar
@@ -1703,7 +1766,7 @@ class ViewControl implements maplibregl.IControl {
       const symbols = CONTEXT_LEGEND[def.key as CityContextLayerKey]
       if (!symbols.length) continue
       any = true
-      for (const s of symbols) {
+      for (const s of symbols.filter((x) => !x.only3D || this.on3D)) {
         const row = document.createElement('div')
         row.className = 'flex items-center gap-1.5 text-[9px] font-medium text-slate-700'
         const sw = document.createElement('span')
@@ -1721,6 +1784,9 @@ class ViewControl implements maplibregl.IControl {
         } else if (s.shape === 'ring') {
           mark.className = 'block h-2 w-2 rounded-full border-[1.5px] bg-white'
           mark.style.borderColor = s.color
+        } else if (s.shape === 'column') {
+          mark.className = 'block h-2.5 w-1.5 rounded-[1px]'
+          mark.style.background = s.color
         } else if (s.shape === 'ramp') {
           mark.className = 'block h-2 w-4 rounded-[2px]'
           mark.style.background = s.color
@@ -2296,6 +2362,8 @@ class ViewControl implements maplibregl.IControl {
     if (this.panel3D) this.panel3D.style.display = ''
     this.syncToolbar()
     this.sync3DButton()
+    this.syncColumns()
+    this.renderLegend(this.wanted())
     map.on('pitch', this.onTilt)
     map.on('zoom', this.onTilt)
   }
@@ -2358,6 +2426,8 @@ class ViewControl implements maplibregl.IControl {
     if (this.panel3D) this.panel3D.style.display = 'none'
     this.syncToolbar()
     this.sync3DButton()
+    this.syncColumns()
+    this.renderLegend(this.wanted())
   }
 }
 
@@ -2413,6 +2483,7 @@ export default function CityContextLayers({
         addAll(map, data, visibleRef.current, landcover, pack.base)
         applyOnDemand(map, visibleRef.current)
         controlRef.current?.afterLayersAdded()
+        void addColumns(map, pack.base).then(() => controlRef.current?.syncColumns()).catch((err) => console.warn('[CityContextLayers] columns', err))
       } catch {
         try { removeAll(map) } catch { /* partial add: start clean next time */ }
         map.once('idle', ensure)
@@ -2462,7 +2533,7 @@ export default function CityContextLayers({
         controlRef.current.selectDistrict(String(f.properties?.name))
         return
       }
-      const node = popupNode(f.properties ?? {}, f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat), basinAt(data?.basins, e.lngLat.lng, e.lngLat.lat))
+      const node = popupNode(f.properties ?? {}, COLUMN_POPUP[f.layer.id] ?? f.layer.id, districtAt(data?.districts, e.lngLat.lng, e.lngLat.lat), basinAt(data?.basins, e.lngLat.lng, e.lngLat.lat))
       if (f.layer.id === 'ctx-places-village') attachVillageDetails(node, pack.base)
       if (in3D) showElevation(e, node)
       else popup.setLngLat(e.lngLat).setDOMContent(node).addTo(map)

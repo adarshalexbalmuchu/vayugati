@@ -7,6 +7,8 @@
  * volunteer-mapped and incomplete, and say so.
  */
 
+import { COLUMN_SCALE } from './columns'
+
 export interface ContextLayerDef {
   key: string
   label: string
@@ -168,9 +170,11 @@ export function activeSources(v: Partial<CityContextVisibility>): string[] {
 
 /** What a layer's symbols mean on the map. Colours match the renderer (CityContextLayers.tsx). */
 export interface LegendSymbol {
-  shape: 'area' | 'line' | 'dash' | 'dot' | 'ring' | 'ramp'
+  shape: 'area' | 'line' | 'dash' | 'dot' | 'ring' | 'ramp' | 'column'
   color: string
   label: string
+  /** Shown only while the map is in 3D. */
+  only3D?: boolean
 }
 
 export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
@@ -186,19 +190,26 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
   ],
   majorrivers: [{ shape: 'line', color: '#1D6FB8', label: 'Major river' }],
   basins: [{ shape: 'dash', color: '#5B7FA6', label: 'River basin or sub-basin boundary' }],
-  dams: [{ shape: 'dot', color: '#0B3C7D', label: 'Large dam' }],
+  dams: [
+    { shape: 'dot', color: '#0B3C7D', label: 'Large dam' },
+    { shape: 'column', color: '#0B3C7D', label: COLUMN_SCALE.dams.label, only3D: true },
+  ],
   places: [
     { shape: 'ring', color: '#2E2219', label: 'City or town (Census 2011)' },
     { shape: 'dot', color: '#5B4A3A', label: 'Village (Census 2011)' },
   ],
   canals: [{ shape: 'line', color: '#4FA3D9', label: 'Canal' }],
-  coalplants: [{ shape: 'dot', color: '#B23A48', label: 'Coal power plant (GEM)' }],
+  coalplants: [
+    { shape: 'dot', color: '#B23A48', label: 'Coal power plant (GEM)' },
+    { shape: 'column', color: '#B23A48', label: COLUMN_SCALE.plants.label, only3D: true },
+  ],
   coalmines: [
     { shape: 'dot', color: '#212121', label: 'Coal mine: operating' },
     { shape: 'dot', color: '#F9A825', label: 'Coal mine: proposed' },
     { shape: 'dot', color: '#8E8E8E', label: 'Coal mine: mothballed or shelved' },
     { shape: 'dot', color: '#C62828', label: 'Coal mine: closed' },
     { shape: 'area', color: '#212121', label: 'Coal mine boundary (GEM)' },
+    { shape: 'column', color: '#212121', label: COLUMN_SCALE.mines.label, only3D: true },
   ],
   seismic: [
     { shape: 'area', color: '#FFE9A8', label: 'Zone II (low)' },

@@ -146,6 +146,16 @@ fewer cores, 4 GB or less memory, or a touch screen. In the tilted state view a 
 district a click on bare ground reads its surface elevation.
 Not measured: frame rate on a real slow computer (the headless browser has no GPU); ask for a report from a real one.
 
+## 6c. Phase 2 built (7 Nov 2026)
+
+Columns in 3D for coal mines (height = capacity, 1 Mt a year = 1 km), coal plants (operating capacity, 1 MW = 8 m) and
+large dams (dam height, shown 150 times taller than real). They appear only while 3D is on and the layer is on; the flat
+symbols stay. A wide column shows in the state view and a narrow one from zoom 8.5. A feature without the figure gets no
+column and keeps its flat symbol (11 of 91 mines have no listed capacity; plants with no operating capacity; nothing is
+filled in). Each scale is written in the legend (3D only) and the three scales are not comparable with each other. Click a
+column for the same popup as the flat symbol. Code: `web/src/lib/columns.ts` (tested), `CityContextLayers.tsx`.
+MapLibre's `fill-extrusion` follows the terrain, so each column stands on the ground at its site.
+
 ## 7. Risks
 
 - Browser speed with a tilted whole state: mitigated by PMTiles, label thinning and a light mode.
