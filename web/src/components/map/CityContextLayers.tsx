@@ -2329,9 +2329,17 @@ export default function CityContextLayers({
     if (!alive(map) || !pack || !showViewControl) return
     const ctrl = new ViewControl(pack, () => visibleRef.current, (patch) => changeRef.current(patch))
     map.addControl(ctrl, 'top-left')
-    // Compass and tilt indicator: drag to tilt/turn, click to reset north.
+    // Compass and tilt indicator: drag to tilt/turn, click to reset north. It only matters once the map is tilted or
+    // turned (the district 3D view), so it is hidden while the map is flat and north is up.
     const nav = new maplibregl.NavigationControl({ showZoom: false, showCompass: true, visualizePitch: true })
     map.addControl(nav, 'bottom-right')
+    const compass = map.getContainer().querySelector('.maplibregl-ctrl-compass')?.parentElement ?? null
+    const syncCompass = () => {
+      if (compass) compass.style.display = map.getPitch() > 1 || Math.abs(map.getBearing()) > 1 ? '' : 'none'
+    }
+    syncCompass()
+    map.on('pitch', syncCompass)
+    map.on('rotate', syncCompass)
     controlRef.current = ctrl
     setChatSlot(ctrl.chatSlot)
     setResultsSlot(ctrl.resultsSlot)
@@ -2344,6 +2352,8 @@ export default function CityContextLayers({
       setChatSlot(null)
       setResultsSlot(null)
       try {
+        map.off('pitch', syncCompass)
+        map.off('rotate', syncCompass)
         map.removeControl(nav)
         map.removeControl(ctrl)
       } catch {
