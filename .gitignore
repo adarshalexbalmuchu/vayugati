@@ -35,3 +35,4 @@ data/jharkhand/sources/gem/boundaries/
 
 # FABDEM bare-earth elevation tiles (large; re-download with ingest/scripts/jharkhand/fabdem_fetch.py)
 data/jharkhand/sources/fabdem/
+data/jharkhand/processed/hydro/

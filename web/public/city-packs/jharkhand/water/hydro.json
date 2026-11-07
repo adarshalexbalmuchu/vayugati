@@ -1,0 +1,12 @@
+{
+ "west": 83.05,
+ "north": 25.6,
+ "cellDeg": 0.0008333333333333334,
+ "ncol": 5940,
+ "nrow": 4620,
+ "directions": "1 E, 2 SE, 3 S, 4 SW, 5 W, 6 NW, 7 N, 8 NE; 0 no outflow",
+ "accDecode": "drainage cells = 2 ** (byte / 10); 0 = less than snapKm2 or none",
+ "snapKm2": 1.0,
+ "streamKm2": 10.0,
+ "source": "FABDEM V1-2 (University of Bristol, CC BY-NC-SA 4.0), averaged to 90 m; India-WRIS major rivers lowered 8 m into it (stream burning); D8 flow after filling depressions (pysheds); computed by Vayu Gati"
+}

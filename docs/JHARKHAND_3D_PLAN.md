@@ -156,6 +156,37 @@ filled in). Each scale is written in the legend (3D only) and the three scales a
 column for the same popup as the flat symbol. Code: `web/src/lib/columns.ts` (tested), `CityContextLayers.tsx`.
 MapLibre's `fill-extrusion` follows the terrain, so each column stands on the ground at its site.
 
+## 6d. Phase 3, first slice: "Follow water" (7 Nov 2026)
+
+**What it is.** A *Follow water* button at the top of the Jharkhand map. Switch it on and click any point: the map shades the
+area whose water reaches that point (upstream catchment), draws the path the water takes from it until it leaves Jharkhand,
+and a card gives the area, the distance, the India-WRIS rivers along the way, the basin and the district. Works flat or in
+3D (the overlays follow the terrain). Click moves to the stream within about 500 m. Not a layer: it is a tool, so the
+layer list is unchanged. Code: `ingest/scripts/jharkhand/hydrology.py` (offline), `web/src/lib/hydro.ts` (pure, tested),
+`web/src/components/map/waterTool.ts`, the button and card in `CityContextLayers.tsx`.
+
+**Method.** FABDEM 30 m averaged to 90 m (6000 x 6000 cells for 83-88 E, 21-26 N); the 25 India-WRIS major rivers lowered 8 m
+into it (stream burning, so the flow follows mapped channels through reservoirs and flats); pits and depressions filled and
+flats resolved (pysheds); D8 flow direction and accumulation. The browser loads two files on first use (10 MB: direction and
+a sparse accumulation, `water/flowdir.bin`, `flowacc.bin`; gzip bytes in plain `.bin` files, because a `.gz` name made the
+dev server add its own Content-Encoding) and walks the grid itself (upstream by a stack search, downstream by following
+directions, about 5-30 ms). Drainage from outside the grid is cut at its edge; the card says "at least" then.
+
+**Checks (independent of the burning where it matters).**
+- India-WRIS major rivers (7,352 points): computed streams within 270 m for 93.6% of points without burning, 96.3% with
+  (this one is partly circular once burned). Weaker: Ganga 62%, Sone 79%, Dwarka 88% (wide or braided channels, flat ground).
+- Catchment area at four dams against published figures: Tilaiya 936 km2 vs about 984 (-5%), Konar 997 vs about 992 (+0.5%),
+  Tenughat 4,475 vs 4,480 (0%), Massanjore 1,875 vs about 1,859-1,869 (+1%). Without burning, Tilaiya was 236 km2 (-76%) and
+  Maithon -11%: a reservoir on a flat grid loses the river, which is why the rivers are burned in.
+  Published figures: Tilaiya and Konar from the Key Biodiversity Areas factsheet, Tenughat from Wikipedia, Massanjore from the
+  West Bengal Irrigation Department (Wikipedia gives 1,869). Maithon's catchment was not found, so it is not claimed.
+- **Known failure: Panchet.** The Damodar reads 10,830 km2 just above the Panchet reservoir (published about 10,961, -1%), but
+  from the reservoir to the dam the computed flow leaves the river (524 km2 at the dam). A 20 m burn did not fix it. Clicking
+  the last few km of the Damodar at the West Bengal border gives wrong answers. The card says the tool can go wrong at
+  reservoirs and flat plains; Panchet is the example.
+- Not done: Hydrography90m cross-check (licence unconfirmed), sub-catchment polygons, animated flow, a tool for "show only
+  the main stem". Frame rate and the first-click 10 MB download on a slow connection are untested.
+
 ## 7. Risks
 
 - Browser speed with a tilted whole state: mitigated by PMTiles, label thinning and a light mode.

@@ -5,6 +5,7 @@ import { maptilerKey } from '../../lib/basemaps'
 import { elevationAt } from '../../lib/elevation'
 import { setSelectedDistrict } from '../../lib/jhSelection'
 import { buildColumns, COLUMN_NEAR_FROM_ZOOM, type ColumnKind } from '../../lib/columns'
+import { clearWaterOverlay, followWater, WATER_LAYER_IDS, WATER_SOURCE_IDS, type WaterResult } from './waterTool'
 
 /**
  * Static context layers for a city pack. For Jharkhand the pack covers the
@@ -617,7 +618,8 @@ function removeAll(map: maplibregl.Map) {
   restoreBasemap(map)
   for (const id of [DISTRICT_SELECTED, MASK_STATE, MASK_DISTRICT]) if (map.getLayer(id)) map.removeLayer(id)
   for (const ids of Object.values(LAYERS)) for (const id of ids) if (map.getLayer(id)) map.removeLayer(id)
-  for (const id of COLUMN_LAYER_IDS) if (map.getLayer(id)) map.removeLayer(id)
+  for (const id of [...WATER_LAYER_IDS, ...COLUMN_LAYER_IDS]) if (map.getLayer(id)) map.removeLayer(id)
+  for (const id of WATER_SOURCE_IDS) if (map.getSource(id)) map.removeSource(id)
   for (const d of COLUMN_DEFS) if (map.getSource(`ctx-col-${d.kind}`)) map.removeSource(`ctx-col-${d.kind}`)
   for (const id of [...Object.values(SRC), MASK_STATE, MASK_DISTRICT, 'ctx-landcover', 'ctx-nightlights']) if (map.getSource(id)) map.removeSource(id)
   removeSatellite(map)
@@ -1193,6 +1195,14 @@ class ViewControl implements maplibregl.IControl {
   private lcMeta: LandcoverMeta | null = null
   private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
+  /** "Follow water": while on, a click on the map traces the water from that point instead of opening a popup. */
+  private waterOn = false
+  private waterBtn: HTMLButtonElement | null = null
+  private waterPanel: HTMLDivElement | null = null
+  private waterShown = false
+  private waterWrap: HTMLDivElement | null = null
+  /** Removes the water overlays from the map (set by the component that owns the map). */
+  waterClear: (() => void) | null = null
   /** The whole state in 3D (the 3D button), with or without a district open. */
   private stateMode = false
   /** Light 3D (coarser elevation, no sky) for slow computers. */
@@ -1481,6 +1491,21 @@ class ViewControl implements maplibregl.IControl {
     map.getContainer().appendChild(toolbar)
     glassify(toolbar, { tint: 0.78, distort: true })
     this.toolbar = toolbar
+    // "Follow water": a button at the top of the map and, under it, the answer for the point clicked.
+    const water = document.createElement('div')
+    water.className = 'absolute left-1/2 top-2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5'
+    const wbtn = document.createElement('button')
+    wbtn.type = 'button'
+    wbtn.addEventListener('click', () => this.toggleWater())
+    const wpanel = document.createElement('div')
+    wpanel.className = 'w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-md backdrop-blur-sm'
+    wpanel.style.display = 'none'
+    water.append(wbtn, wpanel)
+    map.getContainer().appendChild(water)
+    this.waterBtn = wbtn
+    this.waterPanel = wpanel
+    this.waterWrap = water
+    this.syncWater()
     loadProfiles(this.pack.base).then((d) => {
       this.profiles = d
       this.renderProfile()
@@ -1715,6 +1740,114 @@ class ViewControl implements maplibregl.IControl {
     }
   }
 
+  get waterActive() {
+    return this.waterOn
+  }
+
+  private toggleWater() {
+    this.waterOn = !this.waterOn
+    if (!this.waterOn) this.clearWater()
+    this.syncWater()
+  }
+
+  private syncWater() {
+    const b = this.waterBtn
+    if (!b) return
+    const on = this.waterOn
+    b.className = `focus-ring flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold shadow-sm transition ${on ? 'border-accent-500 bg-accent-500 text-white hover:bg-accent-600' : 'border-slate-300 bg-white/95 text-slate-700 hover:bg-white'}`
+    b.replaceChildren()
+    const NS = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(NS, 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    svg.setAttribute('class', 'h-3.5 w-3.5')
+    svg.setAttribute('aria-hidden', 'true')
+    const path = document.createElementNS(NS, 'path')
+    path.setAttribute('d', 'M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z')
+    path.setAttribute('fill', 'none')
+    path.setAttribute('stroke', 'currentColor')
+    path.setAttribute('stroke-width', '2')
+    path.setAttribute('stroke-linecap', 'round')
+    path.setAttribute('stroke-linejoin', 'round')
+    svg.appendChild(path)
+    b.append(svg, document.createTextNode(on ? 'Following water: click the map' : 'Follow water'))
+    b.title = on ? 'Stop following water' : 'Click a point to see where its water comes from and where it goes'
+    b.setAttribute('aria-pressed', String(on))
+    const map = this.map
+    if (alive(map)) map.getCanvas().style.cursor = on ? 'crosshair' : ''
+    if (this.waterPanel && !this.waterShown) {
+      this.waterPanel.style.display = on ? '' : 'none'
+      if (on) this.waterPanel.textContent = 'Click a point on the map. You will see the area whose water reaches it, and the path the water takes from it.'
+    }
+  }
+
+  setWaterStatus(text: string) {
+    if (!this.waterPanel) return
+    this.waterPanel.style.display = ''
+    this.waterPanel.textContent = text
+  }
+
+  showWaterError(text: string) {
+    this.setWaterStatus(text)
+  }
+
+  clearWater() {
+    this.waterClear?.()
+    this.waterShown = false
+    if (this.waterPanel) this.waterPanel.style.display = 'none'
+    this.renderSources(this.wanted())
+  }
+
+  /** The answer for the clicked point, in plain words with its caveats. */
+  showWater(r: WaterResult) {
+    const panel = this.waterPanel
+    if (!panel) return
+    this.waterShown = true
+    panel.replaceChildren()
+    const fmt = (n: number) => (n >= 100 ? Math.round(n).toLocaleString('en-IN') : n >= 10 ? n.toFixed(0) : n.toFixed(1))
+    const head = document.createElement('p')
+    head.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500'
+    head.textContent = 'Where this water comes from and goes'
+    panel.appendChild(head)
+    const row = (k: string, v: string) => {
+      const d = document.createElement('div')
+      d.className = 'flex items-baseline justify-between gap-3 py-0.5'
+      const a = document.createElement('span')
+      a.className = 'shrink-0 text-slate-500'
+      a.textContent = k
+      const b = document.createElement('span')
+      b.className = 'text-right font-medium text-slate-900'
+      b.textContent = v
+      d.append(a, b)
+      panel.appendChild(d)
+    }
+    row('Water reaching this point', `${r.areaIsLowerBound ? 'at least ' : ''}${fmt(r.areaKm2)} km² of land`)
+    const ending: Record<WaterResult['end'], string> = {
+      'leaves-state': `${fmt(r.pathKm)} km, then it leaves Jharkhand`,
+      sink: `${fmt(r.pathKm)} km, to a low point with no outlet in the data`,
+      edge: `${fmt(r.pathKm)} km, to the edge of the mapped area`,
+      limit: `${fmt(r.pathKm)} km (path cut short)`,
+    }
+    row('Then it flows', ending[r.end])
+    row('River here', r.nearRiver ?? 'no major river (a stream or hillside)')
+    if (r.rivers.length) row('Rivers on its way', r.rivers.join(' → '))
+    else row('Rivers on its way', 'none of the major rivers')
+    if (r.basin) row('River basin', r.basin)
+    if (r.district) row('District', r.district)
+    if (r.snapped) {
+      const n = document.createElement('p')
+      n.className = 'mt-1 text-[10px] text-slate-400'
+      n.textContent = 'Your click was moved to the stream beside it.'
+      panel.appendChild(n)
+    }
+    const note = document.createElement('p')
+    note.className = 'mt-1.5 border-t border-slate-200/80 pt-1.5 text-[10px] leading-snug text-slate-500'
+    note.textContent = 'A terrain-based estimate (90 m), checked against the published catchment areas of four large dams (within 5%). It does not know dams, canals, drains or pumping, and can go wrong at reservoirs and on flat plains' +
+      (r.areaIsLowerBound ? '; the catchment also continues beyond the mapped area' : '') + '. Elevation: FABDEM (University of Bristol, CC BY-NC-SA 4.0). River names and basins: India-WRIS.'
+    panel.appendChild(note)
+    panel.style.display = ''
+    this.renderSources(this.wanted())
+  }
+
   /** Columns show only in 3D, and only for layers that are on. */
   syncColumns() {
     const map = this.map
@@ -1740,6 +1873,7 @@ class ViewControl implements maplibregl.IControl {
     this.dock?.remove()
     this.toolbar?.remove()
     this.sourceBar?.remove()
+    this.waterWrap?.remove()
     this.barObserver?.disconnect()
     this.map?.getContainer().style.removeProperty('--src-bar-h')
     if (this.onCredits) this.map?.off('sourcedata', this.onCredits)
@@ -1836,7 +1970,8 @@ class ViewControl implements maplibregl.IControl {
       // a source already named in a map credit (e.g. © MapTiler, OpenStreetMap contributors) is not repeated
       .filter((n, i, all) => all.indexOf(n) === i && !have.includes(n.replace(/^© /, '').replace(/ \(.*\)$/, '').toLowerCase()))
     // The header's temperature and humidity (state and districts) come from Open-Meteo.
-    const all = [...credits, 'MapLibre', ...names, 'Header weather: Open-Meteo.com (CC BY 4.0)']
+    const water = this.waterShown ? ['FABDEM (Univ. of Bristol, CC BY-NC-SA 4.0)'] : []
+    const all = [...credits, 'MapLibre', ...names, ...water, 'Header weather: Open-Meteo.com (CC BY 4.0)']
     list.textContent = all.join('  ·  ')
     list.title = all.join(', ')
   }
@@ -2517,6 +2652,20 @@ export default function CityContextLayers({
       })
     }
     const onClick = (e: maplibregl.MapMouseEvent) => {
+      // "Follow water" is on: the click traces water instead of opening a popup.
+      const ctrl = controlRef.current
+      if (ctrl?.waterActive) {
+        ctrl.setWaterStatus('Tracing the water (the first time this loads about 10 MB of terrain data)…')
+        const look = {
+          inState: (lng: number, lat: number) => polygonAt(data?.state, lng, lat) != null,
+          district: (lng: number, lat: number) => districtAt(data?.districts, lng, lat),
+          basin: (lng: number, lat: number) => basinAt(data?.basins, lng, lat),
+        }
+        followWater(map, pack.base, e.lngLat.lng, e.lngLat.lat, look)
+          .then((r) => ('error' in r ? ctrl.showWaterError(r.error) : ctrl.showWater(r)))
+          .catch((err) => { console.warn('[CityContextLayers] water', err); ctrl.showWaterError('The flow data could not be loaded.') })
+        return
+      }
       const layers = clickable()
       const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : []
       const in3D = controlRef.current?.is3D === true
@@ -2540,6 +2689,7 @@ export default function CityContextLayers({
     }
     let hovering = false
     const onMove = (e: maplibregl.MapMouseEvent) => {
+      if (controlRef.current?.waterActive) return
       const layers = clickable()
       const hit = layers.length > 0 && map.queryRenderedFeatures(e.point, { layers }).length > 0
       // Only touch the cursor when hovering our features, so other layers' cursors are left alone.
@@ -2615,6 +2765,7 @@ export default function CityContextLayers({
     map.on('pitch', syncCompass)
     map.on('rotate', syncCompass)
     controlRef.current = ctrl
+    ctrl.waterClear = () => { if (alive(map)) clearWaterOverlay(map) }
     setChatSlot(ctrl.chatSlot)
     setResultsSlot(ctrl.resultsSlot)
     if (map.getSource(SRC.sources)) ctrl.afterLayersAdded()
