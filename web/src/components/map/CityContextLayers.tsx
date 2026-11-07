@@ -1592,9 +1592,9 @@ class ViewControl implements maplibregl.IControl {
     if (!slot || !this.dock) return
     if (side && col) {
       if (slot.parentElement !== col) col.appendChild(slot)
-      slot.className = 'h-full text-[13px] text-slate-700'
+      slot.className = 'h-full text-xs text-slate-700'
       slot.style.display = this.chatOpen ? '' : 'none'
-      col.style.width = this.chatOpen ? 'min(400px, 38vw)' : '0px'
+      col.style.width = this.chatOpen ? 'min(280px, 27vw)' : '0px'
     } else {
       if (col) col.style.width = '0px'
       if (slot.parentElement !== this.dock) this.dock.appendChild(slot)
