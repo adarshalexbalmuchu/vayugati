@@ -1585,6 +1585,30 @@ class ViewControl implements maplibregl.IControl {
     }
   }
 
+  /** Put the sources strip in a footer under the whole row (map and side column), or back on the map. */
+  setFooter(footer: HTMLElement | null) {
+    const bar = this.sourceBar
+    const map = this.map
+    if (!bar || !alive(map)) return
+    const c = map.getContainer()
+    if (footer) {
+      if (bar.parentElement !== footer) footer.appendChild(bar)
+      bar.className = 'flex w-full items-start gap-2 border-t border-slate-200/70 bg-white px-2.5 py-[3px] text-[10px] leading-[14px] text-slate-600'
+      this.barObserver?.disconnect()
+      // The map ends above the strip, so nothing on the map needs to clear it.
+      c.style.setProperty('--src-bar-h', '0px')
+      for (const q of ['.maplibregl-ctrl-bottom-right', '.maplibregl-ctrl-bottom-left']) {
+        const n = c.querySelector<HTMLElement>(q)
+        if (n) n.style.bottom = ''
+      }
+      if (this.toolbar) this.toolbar.style.bottom = '0.75rem'
+    } else if (bar.parentElement !== c) {
+      c.appendChild(bar)
+      bar.className = 'absolute inset-x-0 bottom-0 z-10 flex items-start gap-2 border-t border-slate-200/70 bg-white/85 px-2.5 py-[3px] text-[10px] leading-[14px] text-slate-600 backdrop-blur-sm'
+      this.barObserver?.observe(bar)
+    }
+  }
+
   /** Move the chat between the dock and the side column, and open or close the column. */
   private syncSide(side: boolean) {
     const slot = this.chatSlot
@@ -2204,6 +2228,7 @@ export default function CityContextLayers({
   onVisibleChange,
   showViewControl = false,
   sidePanel = null,
+  footer = null,
 }: {
   map: maplibregl.Map | null
   cityCode: string | null
@@ -2216,6 +2241,8 @@ export default function CityContextLayers({
   showViewControl?: boolean
   /** A column beside the map for the assistant (wide screens). Without it the assistant opens in the floating dock. */
   sidePanel?: HTMLElement | null
+  /** A strip under the map and the side column for the sources, across the full width. Without it the strip sits on the map. */
+  footer?: HTMLElement | null
 }) {
   const [local, setLocal] = useState<CityContextVisibility>(visibleProp)
   const visible = onVisibleChange ? visibleProp : local
@@ -2419,7 +2446,7 @@ export default function CityContextLayers({
   const [chatOpen, setChatOpen] = useState(false)
   const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null)
   const [resultsSlot, setResultsSlot] = useState<HTMLElement | null>(null)
-  useEffect(() => { controlRef.current?.setSidePanel(sidePanel); controlRef.current?.setChatOpen(chatOpen) }, [chatOpen, sidePanel])
+  useEffect(() => { controlRef.current?.setFooter(footer); controlRef.current?.setSidePanel(sidePanel); controlRef.current?.setChatOpen(chatOpen) }, [chatOpen, sidePanel, footer])
   // The map follows its container when the side column opens or closes.
   useEffect(() => {
     if (!alive(map) || typeof ResizeObserver === 'undefined') return

@@ -141,6 +141,8 @@ export default function OverviewChoroplethMap({
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null)
   /** The column to the right of the map that the assistant opens into (Jharkhand). */
   const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null)
+  /** The strip under the map and the side column, where the sources are listed across the full width (Jharkhand). */
+  const [footerSlot, setFooterSlot] = useState<HTMLElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -562,7 +564,8 @@ export default function OverviewChoroplethMap({
   return (
     // Jharkhand: the map and, to its right, a column the assistant opens into (the map narrows to make room, as a side
     // panel does). Other cities: just the map.
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full flex-col">
+    <div className="flex min-h-0 flex-1">
     <div className="relative h-full min-w-0 flex-1">
       <div ref={containerRef} className="h-full w-full" />
       <CityContextLayers
@@ -571,6 +574,7 @@ export default function OverviewChoroplethMap({
         visible={DEFAULT_CONTEXT_VISIBLE}
         showViewControl={showViewControl}
         sidePanel={sideSlot}
+        footer={footerSlot}
       />
 
       {/* Hovered ward name badge */}
@@ -662,6 +666,8 @@ export default function OverviewChoroplethMap({
       )}
     </div>
     {showViewControl && <aside ref={setSideSlot} aria-label="Ask the map" className="hidden h-full w-0 shrink-0 overflow-hidden border-l border-slate-200 bg-white transition-[width] duration-200 md:block" />}
+    </div>
+    {showViewControl && <div ref={setFooterSlot} className="shrink-0" />}
     </div>
   )
 }
