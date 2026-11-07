@@ -1298,12 +1298,9 @@ class ViewControl implements maplibregl.IControl {
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
     head.className = 'flex items-center gap-2 px-2.5 py-2'
-    const title = document.createElement('p')
-    title.className = 'shrink-0 text-base font-bold leading-none text-slate-900'
-    title.textContent = this.pack.regionLabel
-    // The district picker lives in the header, so the card needs no row of its own for it.
+    // The district picker is the card's heading: it reads "Whole Jharkhand" or the district's name, and opens the list.
     const select = document.createElement('select')
-    select.className = 'focus-ring min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-900'
+    select.className = 'focus-ring h-7 min-w-0 flex-1 cursor-pointer rounded-md border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-900 hover:bg-slate-50'
     select.title = 'Go to a district (opens in 3D)'
     select.setAttribute('aria-label', 'Go to a district (opens in 3D)')
     select.addEventListener('change', () => this.selectDistrict(select.value || null))
@@ -1325,7 +1322,7 @@ class ViewControl implements maplibregl.IControl {
       toggle.setAttribute('aria-expanded', String(open))
     }
     toggle.addEventListener('click', () => setOpen(body.style.display === 'none'))
-    head.append(title, select, toggle)
+    head.append(select, toggle)
     el.append(head, body)
     setOpen(typeof window === 'undefined' || window.innerWidth >= 640)
 
