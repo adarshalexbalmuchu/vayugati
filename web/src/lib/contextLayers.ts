@@ -77,6 +77,22 @@ export const DEFAULT_CONTEXT_VISIBLE = Object.fromEntries(
   CONTEXT_LAYER_DEFS.map((d) => [d.key, d.on]),
 ) as CityContextVisibility
 
+/** Satellite imagery, land cover and night lights are full-map pictures that cover each other, so only one of them
+ *  can be seen at a time. The one just switched on wins; the others in the same change are switched off. */
+export const BASE_IMAGES = ['satellite', 'landcover', 'nightlights'] as const satisfies readonly CityContextLayerKey[]
+export function normalizeBaseImages(
+  patch: Partial<CityContextVisibility>,
+  current: Partial<CityContextVisibility>,
+): Partial<CityContextVisibility> {
+  const on = BASE_IMAGES.filter((k) => patch[k] === true)
+  if (!on.length) return patch
+  // If a patch turns several on at once (e.g. "Defaults"), keep the first in the list that is already on, else the first.
+  const keep = on.length === 1 ? on[0] : (on.find((k) => current[k]) ?? on[0])
+  const next: Partial<CityContextVisibility> = { ...patch }
+  for (const k of BASE_IMAGES) if (k !== keep) next[k] = false
+  return next
+}
+
 /** The layer panel's key for a context layer. */
 export type ContextPanelKey = `ctx_${CityContextLayerKey}`
 export const ctxPanelKey = (k: CityContextLayerKey): ContextPanelKey => `ctx_${k}`

@@ -7,16 +7,15 @@ import { elevationAt } from '../../lib/elevation'
 /**
  * Static context layers for a city pack. For Jharkhand the pack covers the
  * whole state, every district: outlines; ESA land cover; NASA night lights;
- * satellite imagery and relief; protected areas, rivers and water;
- * towns, villages, built-up areas, schools and hospitals; railways, roads,
- * power lines; coal mines and plants, checked power plants, satellite
- * heat detections; peaks, waterfalls and dams. The list and its notes live
- * in lib/contextLayers.ts.
+ * satellite imagery and relief; protected areas, rivers, basins, canals, dams
+ * and ground water (India-WRIS); Census 2011 towns and villages; blocks and
+ * assembly constituencies; railways, roads, power lines; coal mines and
+ * plants (Global Energy Monitor), checked power plants, satellite heat
+ * detections; peaks, waterfalls, earthquake zones and aquifers. The list and
+ * its notes live in lib/contextLayers.ts.
  *
- * No block boundaries: no official block boundaries are published for
- * download, and the open ones are Census-era blocks that no longer match the
- * district. The files are built by ingest/scripts/jharkhand/build_layers.py
- * into data/jharkhand/processed/ and copied to web/public/city-packs/<pack>/.
+ * The files are built by ingest/scripts/jharkhand/build_layers.py into
+ * data/jharkhand/processed/ and copied to web/public/city-packs/<pack>/.
  * Context only: these are mapped features, not measurements.
  *
  * Renders nothing itself; it adds MapLibre sources and layers to `map` (and,
@@ -24,7 +23,7 @@ import { elevationAt } from '../../lib/elevation'
  * after every setStyle() (which wipes custom layers).
  */
 
-import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE } from '../../lib/contextLayers'
+import { CONTEXT_GROUPS, CONTEXT_LAYER_DEFS, CONTEXT_LEGEND, CONTEXT_SWATCH, DEFAULT_CONTEXT_VISIBLE, normalizeBaseImages } from '../../lib/contextLayers'
 import type { CityContextLayerKey, CityContextVisibility } from '../../lib/contextLayers'
 import { useState } from 'react'
 import MapAssistant from './MapAssistant'
@@ -910,8 +909,8 @@ const SKY: maplibregl.SkySpecification = {
 
 /** Satellite imagery and relief are added only while switched on (or while a
  *  district is in 3D, which manages them itself). */
-function applyOnDemand(map: maplibregl.Map, visible: CityContextVisibility, in3D: boolean) {
-  if (in3D || !alive(map)) return
+function applyOnDemand(map: maplibregl.Map, visible: CityContextVisibility) {
+  if (!alive(map)) return
   if (visible.satellite) ensureSatellite(map, true)
   else removeSatellite(map)
   if (visible.relief) ensureRelief(map, !visible.satellite, visible.satellite)
@@ -1069,7 +1068,11 @@ class ViewControl implements maplibregl.IControl {
   private lcMeta: LandcoverMeta | null = null
   private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
+  /** Whether the district view shows satellite imagery (remembered between districts). */
   private satellite = true
+  private satBox: HTMLInputElement | null = null
+  /** What entering 3D changed in the layer switches, to put back on leaving. */
+  private from3D: { applied: Partial<CityContextVisibility>; before: Partial<CityContextVisibility> } | null = null
 
   constructor(
     private pack: ContextPack,
@@ -1115,6 +1118,8 @@ class ViewControl implements maplibregl.IControl {
   /** Sync the checkboxes with the current visibility. */
   setVisible(v: CityContextVisibility) {
     for (const [k, input] of Object.entries(this.layerInputs)) input.checked = v[k as CityContextLayerKey]
+    if (this.satBox) this.satBox.checked = v.satellite
+    if (this.on3D) this.satellite = v.satellite
     this.renderLegend(v)
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
     if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
@@ -1348,11 +1353,9 @@ class ViewControl implements maplibregl.IControl {
     sat.type = 'checkbox'
     sat.checked = this.satellite
     sat.className = 'h-4 w-4 accent-accent-500'
-    sat.addEventListener('change', () => {
-      this.satellite = sat.checked
-      ensureSatellite(map, this.satellite)
-      ensureRelief(map, !this.satellite, this.satellite)
-    })
+    // The same switch as "Satellite imagery" in the layer card: one state, shown in both places.
+    sat.addEventListener('change', () => this.onChange({ satellite: sat.checked }))
+    this.satBox = sat
     satRow.append(satText, sat)
     panel.append(ph, hRow, satRow)
     toolbar.appendChild(panel)
@@ -1884,7 +1887,7 @@ class ViewControl implements maplibregl.IControl {
     const c = map.getContainer()
     const wide = c.clientWidth >= 768
     const padding = wide
-      ? { top: 40, bottom: 110, left: 40, right: 360 } // right: docked profile panel + map buttons
+      ? { top: 40, bottom: 110, left: 360, right: 360 } // left: layers card; right: docked profile panel + map buttons
       : { top: 60, bottom: Math.round(c.clientHeight * 0.55) + 20, left: 30, right: 30 } // bottom sheet
     const opts = { padding, pitch: 62, bearing: -25, maxZoom: 11.5 }
     const bounds: maplibregl.LngLatBoundsLike = [[w, s], [e, n]]
@@ -1929,6 +1932,14 @@ class ViewControl implements maplibregl.IControl {
     this.on3D = true
     this.prevTerrain = map.getTerrain()
     this.prevSky = map.getSky()
+    // The district view shows satellite imagery and relief: switch them on in the layer card too, so the card tells
+    // the truth, and remember what to put back on leaving.
+    const w = this.wanted()
+    const applied = normalizeBaseImages({ relief: true, satellite: this.satellite }, w)
+    const before: Partial<CityContextVisibility> = {}
+    for (const k of Object.keys(applied) as CityContextLayerKey[]) before[k] = w[k]
+    this.from3D = { applied, before }
+    this.onChange(applied)
     this.apply3D()
     if (this.panel3D) this.panel3D.style.display = ''
     this.syncToolbar()
@@ -1937,8 +1948,7 @@ class ViewControl implements maplibregl.IControl {
   private apply3D() {
     const map = this.map
     if (!alive(map)) return
-    ensureSatellite(map, this.satellite)
-    ensureRelief(map, !this.satellite, this.satellite)
+    applyOnDemand(map, { ...this.wanted(), relief: true })
     const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
     if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) map.addSource(DEM_SOURCE, demSourceSpec())
     try {
@@ -1957,16 +1967,20 @@ class ViewControl implements maplibregl.IControl {
     const map = this.map
     if (!map) return
     this.on3D = false
+    // Put back the layers entering 3D switched, unless the viewer has since changed them.
+    const f = this.from3D
+    this.from3D = null
+    if (f) {
+      const now = this.wanted()
+      const back: Partial<CityContextVisibility> = {}
+      for (const k of Object.keys(f.applied) as CityContextLayerKey[]) if (now[k] === f.applied[k] && f.before[k] !== f.applied[k]) back[k] = f.before[k]
+      if (Object.keys(back).length) this.onChange(back)
+    }
     const prev = this.prevTerrain
     const done = () => {
       try {
         map.setTerrain(prev && map.getSource(prev.source) ? prev : null)
         if (this.prevSky) map.setSky(this.prevSky)
-        const want = this.wanted()
-        if (want.satellite) ensureSatellite(map, true)
-        else removeSatellite(map)
-        if (want.relief) ensureRelief(map, !want.satellite, want.satellite)
-        else removeRelief(map)
         if (!map.getTerrain() && map.getSource(DEM_SOURCE)) map.removeSource(DEM_SOURCE)
       } catch {
         // map is being removed
@@ -1993,12 +2007,14 @@ export default function CityContextLayers({
    *  the on-map layer control keeps its own. */
   visible: CityContextVisibility
   onVisibleChange?: (patch: Partial<CityContextVisibility>) => void
-  /** Add the Jharkhand / city buttons, the district 3D picker and the heat-detection player. */
+  /** Add the layers card, the district picker (3D view and profile) and the legend. */
   showViewControl?: boolean
 }) {
   const [local, setLocal] = useState<CityContextVisibility>(visibleProp)
   const visible = onVisibleChange ? visibleProp : local
-  const change = (patch: Partial<CityContextVisibility>) => {
+  const change = (raw: Partial<CityContextVisibility>) => {
+    // Satellite, land cover and night lights cover each other: switching one on switches the others off.
+    const patch = normalizeBaseImages(raw, visibleRef.current)
     if (onVisibleChange) onVisibleChange(patch)
     else setLocal((v) => ({ ...v, ...patch }))
   }
@@ -2021,7 +2037,7 @@ export default function CityContextLayers({
       if (cancelled || !data || !alive(map) || map.getSource(SRC.sources)) return
       try {
         addAll(map, data, visibleRef.current, landcover, pack.base)
-        applyOnDemand(map, visibleRef.current, controlRef.current?.is3D === true)
+        applyOnDemand(map, visibleRef.current)
         controlRef.current?.afterLayersAdded()
       } catch {
         try { removeAll(map) } catch { /* partial add: start clean next time */ }
@@ -2059,12 +2075,14 @@ export default function CityContextLayers({
       const layers = clickable()
       const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : []
       const in3D = controlRef.current?.is3D === true
-      if (!hits.length || (in3D && hits[0].layer.id === 'ctx-districts-fill')) {
+      // queryRenderedFeatures returns topmost first. The district shading is drawn above the thematic areas and lines
+      // (blocks, ground water, aquifers, protected areas, rivers), so it would swallow their clicks: it only wins when
+      // nothing else is under the pointer.
+      const f = hits.find((h) => h.layer.id !== 'ctx-districts-fill') ?? hits[0]
+      if (!f || (in3D && f.layer.id === 'ctx-districts-fill')) {
         if (in3D) showElevation(e)
         return
       }
-      // queryRenderedFeatures returns topmost first.
-      const f = hits[0]
       if (f.layer.id === 'ctx-districts-fill' && controlRef.current) {
         controlRef.current.selectDistrict(String(f.properties?.name))
         return
@@ -2171,7 +2189,7 @@ export default function CityContextLayers({
       }
     }
     if (map.getSource(SRC.sources)) {
-      applyOnDemand(map, visible, controlRef.current?.is3D === true)
+      applyOnDemand(map, visible)
       // Basemap borders are hidden only while ours are shown.
       if (visible.districts && !hiddenBasemapBoundaries.has(map)) hideBasemapBoundaries(map)
       else if (!visible.districts) restoreBasemapBoundaries(map)
