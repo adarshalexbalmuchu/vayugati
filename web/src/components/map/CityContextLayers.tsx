@@ -1123,6 +1123,8 @@ class ViewControl implements maplibregl.IControl {
   private chatOpen = false
   /** Where the chat panel renders (React portal). */
   chatSlot: HTMLDivElement | null = null
+  /** A column beside the map the chat opens into on wide screens (instead of the floating dock). */
+  private side: HTMLElement | null = null
   private toolbar: HTMLDivElement | null = null
   private tab: 'overview' | 'nature' | 'sources' = 'overview'
   private lcLegend: HTMLDivElement | null = null
@@ -1546,7 +1548,18 @@ class ViewControl implements maplibregl.IControl {
   /** Open or close the chat in the dock. */
   setChatOpen(open: boolean) {
     this.chatOpen = open
-    if (open && this.selected) this.dockTab = 'ask'
+    if (open && this.selected && !this.sideChat()) this.dockTab = 'ask'
+    this.syncDock()
+  }
+
+  /** True when the chat lives in the side column (wide screens with a side column), not in the floating dock. */
+  private sideChat(): boolean {
+    return this.side != null && typeof window !== 'undefined' && window.innerWidth >= 768
+  }
+
+  /** Give the chat a column beside the map (or take it away). The map narrows to make room. */
+  setSidePanel(side: HTMLElement | null) {
+    this.side = side
     this.syncDock()
   }
 
@@ -1555,11 +1568,13 @@ class ViewControl implements maplibregl.IControl {
     const dock = this.dock
     if (!dock) return
     const hasD = !!this.selected
-    const hasC = this.chatOpen
+    const side = this.sideChat()
+    const hasC = this.chatOpen && !side
     dock.style.display = hasD || hasC ? '' : 'none'
+    this.syncSide(side)
     const tab: 'district' | 'ask' = !hasD ? 'ask' : !hasC ? 'district' : this.dockTab
     if (this.profileBox) this.profileBox.style.display = hasD && tab === 'district' ? '' : 'none'
-    if (this.chatSlot) this.chatSlot.style.display = hasC && tab === 'ask' ? '' : 'none'
+    if (this.chatSlot && !side) this.chatSlot.style.display = hasC && tab === 'ask' ? '' : 'none'
     if (this.dockTabs) this.dockTabs.style.display = hasD && hasC ? '' : 'none'
     const labels = { district: this.selected ?? 'District', ask: 'Ask the map' }
     for (const k of ['district', 'ask'] as const) {
@@ -1567,6 +1582,23 @@ class ViewControl implements maplibregl.IControl {
       if (!b) continue
       b.textContent = labels[k]
       b.className = `min-w-0 flex-1 truncate rounded-lg px-2 py-1.5 text-xs font-semibold transition ${tab === k ? 'bg-accent-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`
+    }
+  }
+
+  /** Move the chat between the dock and the side column, and open or close the column. */
+  private syncSide(side: boolean) {
+    const slot = this.chatSlot
+    const col = this.side
+    if (!slot || !this.dock) return
+    if (side && col) {
+      if (slot.parentElement !== col) col.appendChild(slot)
+      slot.className = 'h-full text-[13px] text-slate-700'
+      slot.style.display = this.chatOpen ? '' : 'none'
+      col.style.width = this.chatOpen ? 'min(400px, 38vw)' : '0px'
+    } else {
+      if (col) col.style.width = '0px'
+      if (slot.parentElement !== this.dock) this.dock.appendChild(slot)
+      slot.className = 'min-h-0 flex-1'
     }
   }
 
@@ -2171,6 +2203,7 @@ export default function CityContextLayers({
   visible: visibleProp,
   onVisibleChange,
   showViewControl = false,
+  sidePanel = null,
 }: {
   map: maplibregl.Map | null
   cityCode: string | null
@@ -2181,6 +2214,8 @@ export default function CityContextLayers({
   onVisibleChange?: (patch: Partial<CityContextVisibility>) => void
   /** Add the layers card, the district picker (3D view and profile) and the legend. */
   showViewControl?: boolean
+  /** A column beside the map for the assistant (wide screens). Without it the assistant opens in the floating dock. */
+  sidePanel?: HTMLElement | null
 }) {
   const [local, setLocal] = useState<CityContextVisibility>(visibleProp)
   const visible = onVisibleChange ? visibleProp : local
@@ -2384,7 +2419,15 @@ export default function CityContextLayers({
   const [chatOpen, setChatOpen] = useState(false)
   const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null)
   const [resultsSlot, setResultsSlot] = useState<HTMLElement | null>(null)
-  useEffect(() => { controlRef.current?.setChatOpen(chatOpen) }, [chatOpen])
+  useEffect(() => { controlRef.current?.setSidePanel(sidePanel); controlRef.current?.setChatOpen(chatOpen) }, [chatOpen, sidePanel])
+  // The map follows its container when the side column opens or closes.
+  useEffect(() => {
+    if (!alive(map) || typeof ResizeObserver === 'undefined') return
+    let raf = 0
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (alive(map)) map.resize() }) })
+    ro.observe(map.getContainer())
+    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+  }, [map])
   const [factsDoc, setFactsDoc] = useState<FactsDoc | null>(null)
   useEffect(() => {
     if (!pack || !showViewControl) return
@@ -2397,6 +2440,7 @@ export default function CityContextLayers({
     <MapAssistant
       container={map.getContainer()}
       slot={chatSlot}
+      docked={sidePanel != null && typeof window !== 'undefined' && window.innerWidth >= 768}
       resultsSlot={resultsSlot}
       open={chatOpen}
       onOpenChange={setChatOpen}

@@ -47,6 +47,7 @@ const label = (key: string, layers: { key: string; label: string }[]) => layers.
 export default function MapAssistant({
   container,
   slot,
+  docked = false,
   resultsSlot,
   open,
   onOpenChange,
@@ -58,6 +59,8 @@ export default function MapAssistant({
   container: HTMLElement
   /** The dock's chat slot: the chat panel renders here while open. */
   slot: HTMLElement | null
+  /** The chat fills a side column (full height) instead of a floating card. */
+  docked?: boolean
   /** The left card's answers section; on wide screens the data cards render here instead of in the chat. */
   resultsSlot: HTMLElement | null
   open: boolean
@@ -146,7 +149,7 @@ export default function MapAssistant({
   }
 
   const panel = (
-    <div className="flex h-[min(34rem,calc(100svh-15rem))] flex-col md:h-[min(34rem,calc(100svh-14rem))]">
+    <div className={docked ? 'flex h-full flex-col' : 'flex h-[min(34rem,calc(100svh-15rem))] flex-col md:h-[min(34rem,calc(100svh-14rem))]'}>
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Ask the map</p>

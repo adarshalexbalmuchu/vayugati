@@ -139,6 +139,8 @@ export default function OverviewChoroplethMap({
   const navigate = useNavigate()
   const { cityId, cityCode, map: city } = useCity()
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null)
+  /** The column to the right of the map that the assistant opens into (Jharkhand). */
+  const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapReadyRef = useRef(false)
@@ -558,13 +560,17 @@ export default function OverviewChoroplethMap({
   }, [selectedWardId])
 
   return (
-    <div className="relative h-full w-full">
+    // Jharkhand: the map and, to its right, a column the assistant opens into (the map narrows to make room, as a side
+    // panel does). Other cities: just the map.
+    <div className="flex h-full w-full">
+    <div className="relative h-full min-w-0 flex-1">
       <div ref={containerRef} className="h-full w-full" />
       <CityContextLayers
         map={mapInstance}
         cityCode={cityCode}
         visible={DEFAULT_CONTEXT_VISIBLE}
         showViewControl={showViewControl}
+        sidePanel={sideSlot}
       />
 
       {/* Hovered ward name badge */}
@@ -654,6 +660,8 @@ export default function OverviewChoroplethMap({
         </GlassSurface>
       </div>
       )}
+    </div>
+    {showViewControl && <aside ref={setSideSlot} aria-label="Ask the map" className="hidden h-full w-0 shrink-0 overflow-hidden border-l border-slate-200 bg-white transition-[width] duration-200 md:block" />}
     </div>
   )
 }
