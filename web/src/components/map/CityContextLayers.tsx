@@ -1083,6 +1083,7 @@ class ViewControl implements maplibregl.IControl {
   private layerNotes: Partial<Record<CityContextLayerKey, HTMLSpanElement>> = {}
   private srcState = new Map<string, 'loading' | 'ok' | 'failed'>()
   private layerCount: HTMLSpanElement | null = null
+  private groupUi: { keys: CityContextLayerKey[]; count: HTMLSpanElement; dots: HTMLSpanElement }[] = []
   private layersDetails: HTMLDetailsElement | null = null
   private legendList: HTMLDivElement | null = null
   private legendWrap: HTMLDetailsElement | null = null
@@ -1117,9 +1118,20 @@ class ViewControl implements maplibregl.IControl {
     this.renderLegend(v)
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
     if (this.layerCount) this.layerCount.textContent = `${Object.values(v).filter(Boolean).length} of ${CONTEXT_LAYER_DEFS.length} on`
+    // Each group's header shows what is on inside it (colour chips and a count), so a closed group still tells you.
+    for (const g of this.groupUi) {
+      const on = g.keys.filter((k) => v[k])
+      g.count.textContent = on.length ? `${on.length}/${g.keys.length}` : ''
+      g.dots.replaceChildren(...on.slice(0, 6).map((k) => {
+        const d = document.createElement('span')
+        d.className = 'inline-block h-2 w-2 rounded-sm border border-slate-300'
+        d.style.background = CONTEXT_SWATCH[k]
+        return d
+      }))
+    }
   }
 
-  /** The layer control: themed groups of checkboxes, with all / none / defaults. */
+  /** The layer control: themed groups that open one by one (closed ones still show what is on), with defaults / all off. */
   private buildLayerControl(): HTMLElement {
     const wrap = document.createElement('details')
     wrap.open = true
@@ -1127,7 +1139,7 @@ class ViewControl implements maplibregl.IControl {
     this.layersDetails = wrap
     wrap.className = 'rounded-lg border border-slate-200 bg-white'
     const sum = document.createElement('summary')
-    sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-2'
+    sum.className = 'flex cursor-pointer list-none items-center justify-between gap-2 px-2.5 py-1.5'
     const st = document.createElement('span')
     st.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
     st.textContent = 'Map layers'
@@ -1137,33 +1149,47 @@ class ViewControl implements maplibregl.IControl {
     sum.append(st, count)
     wrap.appendChild(sum)
     const inner = document.createElement('div')
-    inner.className = 'space-y-2.5 border-t border-slate-200 px-2.5 py-2.5'
+    inner.className = 'border-t border-slate-200'
     const quick = document.createElement('div')
-    quick.className = 'flex gap-1'
+    quick.className = 'flex items-center justify-end gap-3 px-2.5 py-1 text-[11px]'
     const qbtn = (label: string, patch: () => Partial<CityContextVisibility>) => {
       const b = document.createElement('button')
       b.type = 'button'
       b.textContent = label
-      b.className = 'focus-ring flex-1 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
+      b.className = 'focus-ring rounded font-medium text-accent-600 hover:underline'
       b.addEventListener('click', () => this.onChange(patch()))
       quick.appendChild(b)
     }
     const all = (on: boolean) => Object.fromEntries(CONTEXT_LAYER_DEFS.map((d) => [d.key, on])) as CityContextVisibility
     qbtn('Defaults', () => ({ ...DEFAULT_CONTEXT_VISIBLE }))
-    qbtn('All on', () => all(true))
     qbtn('All off', () => all(false))
     inner.appendChild(quick)
+    this.groupUi = []
     const defs = new Map(CONTEXT_LAYER_DEFS.map((d) => [d.key as CityContextLayerKey, d]))
     for (const g of CONTEXT_GROUPS) {
-      const sec = document.createElement('div')
-      const gl = document.createElement('p')
-      gl.className = 'mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500'
+      const sec = document.createElement('details')
+      sec.className = 'group border-t border-slate-100'
+      const gs = document.createElement('summary')
+      gs.className = 'flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50'
+      const chev = document.createElement('span')
+      chev.className = 'text-[9px] text-slate-400 transition-transform group-open:rotate-90'
+      chev.textContent = '▶'
+      const gl = document.createElement('span')
+      gl.className = 'text-xs font-semibold text-slate-800'
       gl.textContent = g.label
-      sec.appendChild(gl)
+      const dots = document.createElement('span')
+      dots.className = 'ml-auto flex items-center gap-0.5'
+      const gcount = document.createElement('span')
+      gcount.className = 'w-7 text-right text-[10px] tabular-nums text-slate-500'
+      gs.append(chev, gl, dots, gcount)
+      sec.appendChild(gs)
+      this.groupUi.push({ keys: [...g.keys], count: gcount, dots })
+      const list = document.createElement('div')
+      list.className = 'px-1.5 pb-1.5'
       for (const key of g.keys) {
         const d = defs.get(key)!
         const row = document.createElement('label')
-        row.className = 'flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-slate-50'
+        row.className = 'flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-[3px] hover:bg-slate-50'
         row.title = d.note
         const input = document.createElement('input')
         input.type = 'checkbox'
@@ -1174,14 +1200,15 @@ class ViewControl implements maplibregl.IControl {
         sw.className = 'h-2.5 w-2.5 shrink-0 rounded-sm border border-slate-300'
         sw.style.background = CONTEXT_SWATCH[key]
         const tx = document.createElement('span')
-        tx.className = 'min-w-0 flex-1 text-xs text-slate-900'
+        tx.className = 'min-w-0 flex-1 text-[12px] leading-tight text-slate-900'
         tx.textContent = d.label
         const note = document.createElement('span')
         note.className = 'shrink-0 text-[10px]'
         this.layerNotes[key] = note
         row.append(input, sw, tx, note)
-        sec.appendChild(row)
+        list.appendChild(row)
       }
+      sec.appendChild(list)
       inner.appendChild(sec)
     }
     wrap.appendChild(inner)
@@ -1196,43 +1223,32 @@ class ViewControl implements maplibregl.IControl {
 
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
-    head.className = 'flex items-center justify-between gap-2 px-3 py-2'
-    const title = document.createElement('div')
-    const t1 = document.createElement('p')
-    t1.className = 'text-[10px] font-semibold uppercase tracking-widest text-slate-500'
-    t1.textContent = 'Geospatial platform'
-    const t2 = document.createElement('p')
-    t2.className = 'text-xl font-bold leading-none text-slate-900'
-    t2.textContent = this.pack.regionLabel
-    title.append(t1, t2)
+    head.className = 'flex items-center gap-2 px-2.5 py-2'
+    const title = document.createElement('p')
+    title.className = 'shrink-0 text-base font-bold leading-none text-slate-900'
+    title.textContent = this.pack.regionLabel
+    // The district picker lives in the header, so the card needs no row of its own for it.
+    const select = document.createElement('select')
+    select.className = 'focus-ring min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-900'
+    select.title = 'Go to a district (opens in 3D)'
+    select.setAttribute('aria-label', 'Go to a district (opens in 3D)')
+    select.addEventListener('change', () => this.selectDistrict(select.value || null))
+    this.select = select
+    this.fillSelect()
     const toggle = document.createElement('button')
     toggle.type = 'button'
     toggle.className = 'focus-ring rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
     const body = document.createElement('div')
-    body.className = 'max-h-[calc(100svh-210px)] space-y-3 overflow-y-auto border-t border-slate-200 px-3 py-3'
+    body.className = 'max-h-[calc(100svh-210px)] space-y-2 overflow-y-auto border-t border-slate-200 px-2.5 py-2.5'
     const setOpen = (open: boolean) => {
       body.style.display = open ? '' : 'none'
       toggle.textContent = open ? 'Hide' : 'Show'
       toggle.setAttribute('aria-expanded', String(open))
     }
     toggle.addEventListener('click', () => setOpen(body.style.display === 'none'))
-    head.append(title, toggle)
+    head.append(title, select, toggle)
     el.append(head, body)
     setOpen(typeof window === 'undefined' || window.innerWidth >= 640)
-
-    // District picker
-    const pick = document.createElement('label')
-    pick.className = 'block'
-    const pickText = document.createElement('span')
-    pickText.className = 'mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-500'
-    pickText.textContent = 'Go to district (opens in 3D)'
-    const select = document.createElement('select')
-    select.className = 'focus-ring w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900'
-    select.addEventListener('change', () => this.selectDistrict(select.value || null))
-    pick.append(pickText, select)
-    body.appendChild(pick)
-    this.select = select
-    this.fillSelect()
 
     body.appendChild(this.buildLayerControl())
 
