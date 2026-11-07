@@ -1,7 +1,7 @@
 import { ArrowRight } from 'lucide-react'
 import { useRef } from 'react'
 import { Link } from 'react-router-dom'
-import headerSkyline from '../assets/header-skyline.jpg'
+import headerSkyline from '../assets/hero-jharkhand.jpg'
 import { DistanceCards, Pm25Chart, TrapLoop } from './charts'
 import { CAPABILITIES, LEVERS } from './content'
 import { JharkhandMap, JharkhandMapCaption } from './maps'

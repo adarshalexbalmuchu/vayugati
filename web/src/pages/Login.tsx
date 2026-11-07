@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom'
 import { LogoWordmark } from '../components/AppShell'
 import { roleHome, useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
-import headerSkyline from '../assets/header-skyline.jpg'
+import headerSkyline from '../assets/hero-jharkhand.jpg'
 
 /**
  * Login / auth surface. Scoped to this page: every colour is an explicit arbitrary-value class, not a change to
@@ -56,10 +56,10 @@ export default function Login() {
 
   return (
     <div className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-[#CFE4F6] via-[#E3EFF8] to-[#F6F1E4] px-4 pb-24 pt-8">
-      {/* The same illustrated Delhi skyline as the app header, fading up into the sky. */}
+      {/* The illustrated Jharkhand landscape (as in the app header), fading up into the sky. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-[clamp(90px,12vw,170px)] bg-cover bg-bottom bg-no-repeat"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[clamp(110px,15vw,230px)] bg-cover bg-bottom bg-no-repeat"
         style={{
           backgroundImage: `url(${headerSkyline})`,
           WebkitMaskImage: 'linear-gradient(to top, #000 55%, transparent)',

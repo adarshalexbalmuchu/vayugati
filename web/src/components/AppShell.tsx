@@ -8,6 +8,7 @@ import { fetchCityWeatherNow } from '../lib/data'
 import { initOfflineSync } from '../lib/offlineSync'
 import { useAsync } from '../lib/useAsync'
 import headerSkyline from '../assets/header-skyline.jpg'
+import headerJharkhand from '../assets/header-jharkhand.jpg'
 import DegradedDataBanner from './DegradedDataBanner'
 import { GlassFilterDefs } from './GlassSurface'
 import MobileBottomNav from './MobileNav'
@@ -252,6 +253,9 @@ function TopBar({
   onMenuClick: () => void
 }) {
   const { profile, signOut } = useAuth()
+  const { map: cityMap } = useCity()
+  // Each city has its own illustrated strip: Delhi's skyline, or Jharkhand's falls, sal forest and coalfield.
+  const headerArt = cityMap.mapFirst ? headerJharkhand : headerSkyline
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -270,7 +274,7 @@ function TopBar({
       <div
         className="relative flex h-16 items-center gap-3 bg-cover bg-no-repeat px-3 sm:px-4"
         style={{
-          backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.5) 16rem, rgba(255,255,255,0) 26rem, rgba(255,255,255,0) calc(100% - 20rem), rgba(255,255,255,0.7) 100%), url(${headerSkyline})`,
+          backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.5) 16rem, rgba(255,255,255,0) 26rem, rgba(255,255,255,0) calc(100% - 20rem), rgba(255,255,255,0.7) 100%), url(${headerArt})`,
           backgroundPosition: 'center, center 85%',
           backgroundSize: 'cover, cover',
         }}
