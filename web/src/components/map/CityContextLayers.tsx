@@ -1082,6 +1082,24 @@ const nf = new Intl.NumberFormat('en-IN')
 const nf1 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 })
 const NA = 'NA'
 
+/** A small chevron (points down; add `group-open:rotate-180` or rotate it yourself for the open state). */
+function chevronIcon(cls: string): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 12 12')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('class', cls)
+  const path = document.createElementNS(NS, 'path')
+  path.setAttribute('d', 'M2.5 4.5 6 8l3.5-3.5')
+  path.setAttribute('fill', 'none')
+  path.setAttribute('stroke', 'currentColor')
+  path.setAttribute('stroke-width', '1.6')
+  path.setAttribute('stroke-linecap', 'round')
+  path.setAttribute('stroke-linejoin', 'round')
+  svg.appendChild(path)
+  return svg
+}
+
 /** Jharkhand / city buttons, a district picker that shows the chosen
  *  district in 3D (terrain, relief shading and satellite imagery, the rest
  *  of the state dimmed), and a day-by-day player for the satellite heat
@@ -1293,12 +1311,17 @@ class ViewControl implements maplibregl.IControl {
     this.fillSelect()
     const toggle = document.createElement('button')
     toggle.type = 'button'
-    toggle.className = 'focus-ring rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
+    toggle.className = 'focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50'
+    const toggleIcon = chevronIcon('h-3.5 w-3.5 transition-transform')
+    toggle.appendChild(toggleIcon)
     const body = document.createElement('div')
     body.className = 'max-h-[max(14rem,calc(100svh-24rem))] space-y-2 overflow-y-auto border-t border-slate-200 px-2.5 py-2.5'
     const setOpen = (open: boolean) => {
       body.style.display = open ? '' : 'none'
-      toggle.textContent = open ? 'Hide' : 'Show'
+      // The arrow points up while the card is open (click to close) and down while it is closed (click to open).
+      toggleIcon.style.transform = open ? 'rotate(180deg)' : ''
+      toggle.title = open ? 'Close the layers panel' : 'Open the layers panel'
+      toggle.setAttribute('aria-label', toggle.title)
       toggle.setAttribute('aria-expanded', String(open))
     }
     toggle.addEventListener('click', () => setOpen(body.style.display === 'none'))
@@ -1412,14 +1435,17 @@ class ViewControl implements maplibregl.IControl {
     const legend = document.createElement('details')
     legend.open = true
     // Its own box under the layers card, in the same column (the card is compact, so there is room).
-    legend.className = 'relative w-full rounded-lg px-2.5 py-1.5 text-slate-700'
+    legend.className = 'group relative w-full rounded-lg px-2.5 py-1.5 text-slate-700'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
     const lst = document.createElement('span')
     lst.className = 'text-[9px] font-bold uppercase tracking-widest text-slate-700'
     lst.textContent = 'Legend'
-    lsum.appendChild(lst)
+    // An arrow on the right shows that the box opens and closes with a click: it points down when closed, up when open.
+    const lchev = chevronIcon('h-3 w-3 shrink-0 text-slate-500 transition-transform group-open:rotate-180')
+    lsum.title = 'Click to open or close the legend'
+    lsum.append(lst, lchev)
     const lbody = document.createElement('div')
     lbody.className = 'mt-1 max-h-[min(32svh,17rem)] space-y-1.5 overflow-y-auto'
     this.legendList = document.createElement('div')
