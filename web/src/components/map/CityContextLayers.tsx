@@ -924,11 +924,23 @@ const HILLSHADE_LAYER = 'ctx-hillshade'
 const SAT_SOURCE = 'ctx-satellite'
 const SAT_LAYER = 'ctx-satellite'
 
+/** Light 3D: coarser elevation tiles (fewer, smaller downloads and less drawing) for slow computers. */
+let lightDem = false
+const DEM_MAXZOOM = () => (lightDem ? 9 : 14)
+
+/** A slow computer or a phone: start with the light 3D. */
+function lowEndDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { deviceMemory?: number }
+  return (nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) <= 4 ||
+    (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches)
+}
+
 function demSourceSpec(): maplibregl.RasterDEMSourceSpecification {
   const key = maptilerKey()
   if (key) {
     // MapTiler Terrain RGB v2: a global 30 m-class elevation model.
-    return { type: 'raster-dem', url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`, tileSize: 512, maxzoom: 14 }
+    return { type: 'raster-dem', url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`, tileSize: 512, maxzoom: DEM_MAXZOOM() }
   }
   // Keyless fallback: AWS Open Data Terrain Tiles (SRTM and other public DEMs).
   return {
@@ -936,7 +948,7 @@ function demSourceSpec(): maplibregl.RasterDEMSourceSpecification {
     tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
     encoding: 'terrarium',
     tileSize: 256,
-    maxzoom: 14,
+    maxzoom: DEM_MAXZOOM(),
     attribution: 'Elevation: AWS Terrain Tiles (SRTM and others)',
   }
 }
@@ -1131,6 +1143,12 @@ class ViewControl implements maplibregl.IControl {
   private lcMeta: LandcoverMeta | null = null
   private profiles: ProfilesDoc | null = null
   private exaggeration = EXAGGERATION_3D
+  /** The whole state in 3D (the 3D button), with or without a district open. */
+  private stateMode = false
+  /** Light 3D (coarser elevation, no sky) for slow computers. */
+  private light = lowEndDevice()
+  private demMax = 0
+  private btn3D: HTMLButtonElement | null = null
   /** Whether the district view shows satellite imagery (remembered between districts). */
   private satellite = true
   private satBox: HTMLInputElement | null = null
@@ -1187,7 +1205,7 @@ class ViewControl implements maplibregl.IControl {
   setVisible(v: CityContextVisibility) {
     for (const [k, input] of Object.entries(this.layerInputs)) input.checked = v[k as CityContextLayerKey]
     if (this.satBox) this.satBox.checked = v.satellite
-    if (this.on3D) this.satellite = v.satellite
+    if (this.on3D && this.selected) this.satellite = v.satellite
     this.renderLegend(v)
     this.renderSources(v)
     for (const k of Object.keys(this.layerNotes)) this.updateNote(k as CityContextLayerKey)
@@ -1349,7 +1367,14 @@ class ViewControl implements maplibregl.IControl {
       toggle.setAttribute('aria-expanded', String(open))
     }
     toggle.addEventListener('click', () => setOpen(body.style.display === 'none'))
-    head.append(select, toggle)
+    // The 3D button: the whole state tilted over terrain; off returns to the flat map.
+    const btn3D = document.createElement('button')
+    btn3D.type = 'button'
+    btn3D.textContent = '3D'
+    btn3D.addEventListener('click', () => this.toggleState3D())
+    this.btn3D = btn3D
+    this.sync3DButton()
+    head.append(select, btn3D, toggle)
     el.append(head, body)
     setOpen(typeof window === 'undefined' || window.innerWidth >= 640)
 
@@ -1451,7 +1476,20 @@ class ViewControl implements maplibregl.IControl {
     sat.addEventListener('change', () => this.onChange({ satellite: sat.checked }))
     this.satBox = sat
     satRow.append(satText, sat)
-    panel.append(ph, hRow, satRow)
+    // Light 3D for slow computers: coarser elevation tiles and no sky.
+    const lightRow = document.createElement('label')
+    lightRow.className = 'flex cursor-pointer items-center gap-2'
+    lightRow.title = 'Coarser terrain and no sky: smoother on slow computers'
+    const lightText = document.createElement('span')
+    lightText.className = 'font-medium text-slate-700'
+    lightText.textContent = 'Light'
+    const lightBox = document.createElement('input')
+    lightBox.type = 'checkbox'
+    lightBox.checked = this.light
+    lightBox.className = 'h-4 w-4 accent-accent-500'
+    lightBox.addEventListener('change', () => { this.light = lightBox.checked; if (this.on3D) this.apply3D() })
+    lightRow.append(lightText, lightBox)
+    panel.append(ph, hRow, satRow, lightRow)
     toolbar.appendChild(panel)
     this.panel3D = panel
 
@@ -1813,7 +1851,13 @@ class ViewControl implements maplibregl.IControl {
     this.syncDock()
     if (f) {
       if (!this.on3D) this.enter3D()
+      else this.districtLook(true)
       this.goToBounds(bboxOf(f.geometry))
+    } else if (this.stateMode) {
+      // The 3D button is on: the whole state stays tilted.
+      if (!this.on3D) this.enter3D()
+      else this.districtLook(false)
+      if (fly) this.goToState()
     } else {
       if (this.on3D) this.leave3D()
       if (fly) {
@@ -2154,16 +2198,96 @@ class ViewControl implements maplibregl.IControl {
     if (this.on3D) this.apply3D()
   }
 
+  /** The 3D button: the whole state tilted over terrain, or back to the flat map. */
+  private toggleState3D() {
+    if (this.on3D) {
+      this.stateMode = false
+      if (this.selected) this.selectDistrict(null)
+      else {
+        this.leave3D()
+        // Leaving 3D by the button flies back to the flat state view.
+        const map = this.map
+        const [w, s, e, n] = this.pack.regionBounds
+        if (alive(map)) map.fitBounds([[w, s], [e, n]], { padding: 30, pitch: 0, bearing: 0, duration: 1000 })
+      }
+    } else {
+      this.stateMode = true
+      this.enter3D()
+      this.goToState()
+    }
+    this.sync3DButton()
+  }
+
+  private sync3DButton() {
+    const b = this.btn3D
+    if (!b) return
+    const on = this.on3D
+    b.className = `focus-ring h-7 shrink-0 rounded-md border px-2 text-[11px] font-bold transition ${on ? 'border-accent-500 bg-accent-500 text-white hover:bg-accent-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`
+    b.title = on ? 'Back to the flat map' : 'Tilt the whole state over terrain (3D)'
+    b.setAttribute('aria-pressed', String(on))
+  }
+
+  /** Tilt and fit the whole state in the space the panels leave free. */
+  private goToState() {
+    const map = this.map
+    if (!alive(map)) return
+    const wide = map.getContainer().clientWidth >= 768
+    const [w, s, e, n] = this.pack.regionBounds
+    // fitBounds fits the flat footprint, which leaves a tilted state small: zoom in a little more than the fit.
+    const cam = map.cameraForBounds([[w, s], [e, n]], {
+      padding: wide ? { top: 20, bottom: 40, left: 360, right: 20 } : { top: 30, bottom: 110, left: 10, right: 10 },
+    })
+    if (cam?.center) {
+      map.easeTo({ center: cam.center, zoom: Math.min(8.6, (cam.zoom ?? 6.5) + 0.2), pitch: 58, bearing: -10, duration: 1400 })
+    }
+  }
+
+  /** Switching between a district and the whole state while in 3D: the district view shows satellite imagery; the whole
+   *  state keeps the viewer's own base picture. */
+  private districtLook(on: boolean) {
+    const f = this.from3D
+    if (!f) return
+    const w = this.wanted()
+    const keys = ['satellite', 'landcover', 'nightlights'] as const
+    if (on) {
+      const p = normalizeBaseImages({ satellite: this.satellite }, w)
+      for (const k of keys) if (!(k in f.before)) f.before[k] = w[k]
+      Object.assign(f.applied, p)
+      this.onChange(p)
+    } else {
+      const back: Partial<CityContextVisibility> = {}
+      for (const k of keys) {
+        if (k in f.applied && w[k] === f.applied[k] && f.before[k] !== f.applied[k]) back[k] = f.before[k]
+        delete f.applied[k]
+        delete f.before[k]
+      }
+      if (Object.keys(back).length) this.onChange(back)
+    }
+  }
+
+  /** Fewer labels while the map is tilted over the whole state: boundary names add little there and crowd the far edge. */
+  private applyThinning(flat: boolean) {
+    const map = this.map
+    if (!alive(map)) return
+    const tilted = !flat && map.getPitch() > 25 && map.getZoom() < 9
+    for (const [id, shown] of [['ctx-basins-label', 0.9], ['ctx-blocks-label', 1], ['ctx-assembly-label', 1], ['ctx-landmarks-label', 1]] as const) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'text-opacity', tilted ? 0 : shown)
+    }
+  }
+
+  private onTilt = () => this.applyThinning(false)
+
   private enter3D() {
     const map = this.map
     if (!map) return
     this.on3D = true
+    lightDem = this.light
     this.prevTerrain = map.getTerrain()
     this.prevSky = map.getSky()
-    // The district view shows satellite imagery and relief: switch them on in the layer card too, so the card tells
-    // the truth, and remember what to put back on leaving.
+    // The 3D view shows relief (and, inside a district, satellite imagery): switch them on in the layer card too, so the
+    // card tells the truth, and remember what to put back on leaving.
     const w = this.wanted()
-    const applied = normalizeBaseImages({ relief: true, satellite: this.satellite }, w)
+    const applied = normalizeBaseImages(this.selected ? { relief: true, satellite: this.satellite } : { relief: true }, w)
     const before: Partial<CityContextVisibility> = {}
     for (const k of Object.keys(applied) as CityContextLayerKey[]) before[k] = w[k]
     this.from3D = { applied, before }
@@ -2171,16 +2295,28 @@ class ViewControl implements maplibregl.IControl {
     this.apply3D()
     if (this.panel3D) this.panel3D.style.display = ''
     this.syncToolbar()
+    this.sync3DButton()
+    map.on('pitch', this.onTilt)
+    map.on('zoom', this.onTilt)
   }
 
   private apply3D() {
     const map = this.map
     if (!alive(map)) return
+    lightDem = this.light
     applyOnDemand(map, { ...this.wanted(), relief: true })
     const source = map.getSource(MAPVIEW_DEM_SOURCE) ? MAPVIEW_DEM_SOURCE : DEM_SOURCE
-    if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) map.addSource(DEM_SOURCE, demSourceSpec())
+    // Light mode changes how fine the elevation tiles are: start the source again.
+    if (source === DEM_SOURCE && map.getSource(DEM_SOURCE) && this.demMax !== DEM_MAXZOOM()) {
+      try { map.setTerrain(null) } catch { /* nothing to remove */ }
+      map.removeSource(DEM_SOURCE)
+    }
+    if (source === DEM_SOURCE && !map.getSource(DEM_SOURCE)) {
+      map.addSource(DEM_SOURCE, demSourceSpec())
+      this.demMax = DEM_MAXZOOM()
+    }
     try {
-      map.setSky(SKY)
+      map.setSky(this.light ? (this.prevSky ?? ({} as maplibregl.SkySpecification)) : SKY)
     } catch {
       // older styles without sky support
     }
@@ -2195,6 +2331,9 @@ class ViewControl implements maplibregl.IControl {
     const map = this.map
     if (!map) return
     this.on3D = false
+    map.off('pitch', this.onTilt)
+    map.off('zoom', this.onTilt)
+    this.applyThinning(true)
     // Put back the layers entering 3D switched, unless the viewer has since changed them.
     const f = this.from3D
     this.from3D = null
@@ -2218,6 +2357,7 @@ class ViewControl implements maplibregl.IControl {
     else done()
     if (this.panel3D) this.panel3D.style.display = 'none'
     this.syncToolbar()
+    this.sync3DButton()
   }
 }
 
@@ -2309,11 +2449,12 @@ export default function CityContextLayers({
       const layers = clickable()
       const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : []
       const in3D = controlRef.current?.is3D === true
+      const inDistrict = controlRef.current?.selectedName != null
       // queryRenderedFeatures returns topmost first. The district shading is drawn above the thematic areas and lines
       // (blocks, ground water, aquifers, protected areas, rivers), so it would swallow their clicks: it only wins when
       // nothing else is under the pointer.
       const f = hits.find((h) => h.layer.id !== 'ctx-districts-fill') ?? hits[0]
-      if (!f || (in3D && f.layer.id === 'ctx-districts-fill')) {
+      if (!f || (inDistrict && f.layer.id === 'ctx-districts-fill')) {
         if (in3D) showElevation(e)
         return
       }

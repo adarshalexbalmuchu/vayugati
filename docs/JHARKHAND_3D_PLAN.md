@@ -134,6 +134,18 @@ air-quality values (40 km global, not validated in India) as a clearly labelled 
   Decision: PMTiles is a modest speed gain, not a priority; do it for places only, lossless, if loading feels slow.
 - Installed for the work: `tippecanoe` and `pmtiles` (Homebrew). deck.gl and `pmtiles` (npm) were only tested, not added.
 
+## 6b. Phase 1 built (7 Nov 2026)
+
+A **3D** button in the map card (beside the layers button) tilts the whole state over terrain (pitch 58, hillshade on); on
+again returns to the flat map. A district can still be opened from inside it, and "Whole state" then returns to the tilted
+state, not to flat. Entering 3D switches relief on in the layer card (the card tells the truth); the district view also
+switches satellite on and land cover off (full-map pictures cover each other); leaving puts back what 3D changed unless
+the viewer changed it since. While the map is tilted and zoomed out, basin, block, constituency and landmark names are
+hidden. **Light** (3D bar): coarser elevation tiles (zoom 9 instead of 14) and no sky; on by default on computers with 4 or
+fewer cores, 4 GB or less memory, or a touch screen. In the tilted state view a click on a district opens it; inside a
+district a click on bare ground reads its surface elevation.
+Not measured: frame rate on a real slow computer (the headless browser has no GPU); ask for a report from a real one.
+
 ## 7. Risks
 
 - Browser speed with a tilted whole state: mitigated by PMTiles, label thinning and a light mode.
