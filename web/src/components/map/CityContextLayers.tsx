@@ -1652,7 +1652,8 @@ class ViewControl implements maplibregl.IControl {
     const names = [...activeSources(v), ...(this.selected ? DISTRICT_PROFILE_SOURCES : [])]
       // a source already named in a map credit (e.g. © MapTiler, OpenStreetMap contributors) is not repeated
       .filter((n, i, all) => all.indexOf(n) === i && !have.includes(n.replace(/^© /, '').replace(/ \(.*\)$/, '').toLowerCase()))
-    const all = [...credits, 'MapLibre', ...names]
+    // The header's temperature and humidity (Dhanbad area) come from MET Norway.
+    const all = [...credits, 'MapLibre', ...names, 'Header weather: MET Norway (CC BY 4.0)']
     list.textContent = all.join('  ·  ')
     list.title = all.join(', ')
   }

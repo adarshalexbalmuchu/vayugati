@@ -65,6 +65,10 @@ function HeaderWeather() {
   const { cityId, map: city } = useCity()
   const { data } = useAsync(() => fetchCityWeatherNow(cityId), [tick, cityId], { cacheKey: 'header-weather', staleAfterMs: 15 * 60_000 })
   if (!data || (data.tempC == null && data.humidity == null)) return null
+  // The weather ingest covers the Dhanbad-Jharia ward grid only, so on the Jharkhand map the figure is for that area,
+  // not the whole state: say so.
+  const place = city.mapFirst ? 'Dhanbad–Jharia coalfield' : city.label
+  const cityShort = city.mapFirst ? 'Dhanbad' : null
   const asOf = new Date(data.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   const label = [
     data.tempC != null ? `${Math.round(data.tempC)}°C` : null,
@@ -73,9 +77,10 @@ function HeaderWeather() {
   return (
     <div
       className="hidden items-center gap-2.5 rounded-lg bg-white/75 px-2.5 py-1.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm backdrop-blur-sm md:flex"
-      title={`${city.label} now: ${label}. Median of ${data.wards} wards, Open-Meteo, as of ${asOf}.`}
-      aria-label={`${city.label} weather now: ${label}`}
+      title={`${place} now: ${label}. Median of ${data.wards} grid cells, MET Norway forecast model (CC BY 4.0), as of ${asOf}. A model value, not a thermometer reading.`}
+      aria-label={`${place} weather now: ${label}`}
     >
+      {cityShort && <span className="text-[10px] font-medium text-slate-500">{cityShort}</span>}
       {data.tempC != null && (
         <span className="flex items-center gap-1">
           <Thermometer className="h-3.5 w-3.5 text-orange-500" aria-hidden />
