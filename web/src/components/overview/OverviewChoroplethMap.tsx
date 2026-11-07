@@ -277,10 +277,13 @@ export default function OverviewChoroplethMap({
       dragRotate: false,
     })
 
-    map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'bottom-right',
-    )
+    // The Jharkhand map has no +/- buttons (scroll, pinch and double-click zoom; the compass appears in 3D).
+    if (!showViewControl) {
+      map.addControl(
+        new maplibregl.NavigationControl({ showCompass: false }),
+        'bottom-right',
+      )
+    }
     map.on('error', (e) => console.warn('[OverviewMap]', e.error ?? e))
 
     const addLayers = () => {
