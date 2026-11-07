@@ -17,6 +17,8 @@ function gitShortSha(): string {
 
 export default defineConfig({
   plugins: [react()],
+  // MapLibre 6 starts its worker from a file next to the library (new URL(..., import.meta.url)); pre-bundling breaks that path.
+  optimizeDeps: { exclude: ['maplibre-gl'] },
   define: {
     __BUILD_SHA__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? gitShortSha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),

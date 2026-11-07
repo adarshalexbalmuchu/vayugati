@@ -115,6 +115,25 @@ forecast", lists its inputs and sources, and states its limits.
 air-quality values (40 km global, not validated in India) as a clearly labelled reference. A plume simulation only as
 "illustrative" until measured data can check it.
 
+## 6a. Phase 0 results (7 Nov 2026)
+
+- **MapLibre 4.7.1 to 6.16: done** (`6c2e3b7` and the worker fix below). Needed: namespace import
+  (`import * as maplibregl`), and, because v6 starts its worker from a separate file that bundlers do not find, a one-time
+  `setWorkerUrl` through Vite's worker bundling (`web/src/lib/maplibreSetup.ts`, imported first in `main.tsx`) plus
+  `optimizeDeps.exclude: ['maplibre-gl']` in `vite.config.ts`. Without the setup the map stops with "Worker failed to
+  load", in dev and in the production build. Checked in a headless browser, dev and production: all 26 layers, district 3D,
+  popups, side panel, no errors. The Delhi map page and the incident picker compile on v6 but were not opened.
+- **Columns on terrain: MapLibre's own `fill-extrusion` follows the terrain** (a 1,500 m column on Parasnath stands on the
+  summit, one on the lowland stands on the lowland). **deck.gl's `ColumnLayer` does not** (both columns start at sea level,
+  so the summit one is mostly buried). Decision: columns use `fill-extrusion` with small circle polygons. deck.gl stays
+  out until we need moving particles, and then only after testing `TerrainExtension`.
+- **PMTiles:** for the 32,073-point places layer, a lossless PMTiles file (`tippecanoe -Z6 -z12 -r1 --no-feature-limit
+  --no-tile-size-limit`) shows the state view in about 100-140 ms against 330-440 ms for GeoJSON; the file is 7.2 MB
+  against 6.3 MB raw (0.86 MB gzipped), so there is no download gain, and memory is about the same. **Default tippecanoe
+  settings silently drop about 80% of the villages at zoom 11. Never use dropping for data we show as complete.**
+  Decision: PMTiles is a modest speed gain, not a priority; do it for places only, lossless, if loading feels slow.
+- Installed for the work: `tippecanoe` and `pmtiles` (Homebrew). deck.gl and `pmtiles` (npm) were only tested, not added.
+
 ## 7. Risks
 
 - Browser speed with a tilted whole state: mitigated by PMTiles, label thinning and a light mode.
