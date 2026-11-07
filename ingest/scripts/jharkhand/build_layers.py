@@ -1287,6 +1287,9 @@ def pack() -> None:
         feats = json.load(open(OUT / state_name))["features"]
         across = [f for f in json.load(open(OUT / local_name))["features"]
                   if not state.contains(make_valid(shape(f["geometry"])).representative_point())]
+        if out_name == "sources.geojson":  # only the checked power plants and works are published; mapped mine and industry areas are not
+            feats = [f for f in feats if f["properties"].get("checked")]
+            across = [f for f in across if f["properties"].get("checked")]
         with open(web / out_name, "w") as fh:
             json.dump(_round(_fc(feats + across)), fh, separators=(",", ":"), ensure_ascii=False)
         print(f"pack {out_name}: {len(feats)} in Jharkhand + {len(across)} across the border")

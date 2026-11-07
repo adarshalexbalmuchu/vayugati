@@ -55,10 +55,8 @@ export const CONTEXT_LAYER_DEFS = [
     note: '91 of the 151 Jharkhand coal mines in Global Energy Monitor\u2019s Global Coal Mine Tracker (August 2026 release, CC BY 4.0): owner, status, capacity and output. Only mines the tracker places exactly are drawn; the 60 it places only approximately are left out, and 2 rows with coordinates outside the state were dropped. It lists mines of 1 million tonnes a year or more and some smaller ones, so it is not a complete list. Mine boundaries are shown where the tracker has them.' },
   { key: 'coalplants', label: 'Coal power plants (Global Energy Monitor)', on: false,
     note: 'The 15 coal-fired power plants of Jharkhand in Global Energy Monitor\u2019s Global Coal Plant Tracker (July 2026 release, CC BY 4.0), with owner, unit capacities and start years. Includes captive plants of steel and other works.' },
-  { key: 'mines', label: 'Mining and quarry areas', on: false,
-    note: 'Mining and quarry areas drawn by OpenStreetMap volunteers (3 Nov 2026). Not official lease boundaries; many are missing (e.g. large parts of the North Karanpura coalfield).' },
-  { key: 'industry', label: 'Industry and power plants', on: false,
-    note: 'Industrial land from OpenStreetMap (purple). Yellow dots: power plants and large works whose names and operators were checked (Nov 2026).' },
+  { key: 'industry', label: 'Power plants and large works (checked)', on: false,
+    note: 'Power plants and large works whose names and operators were checked by Vayu Gati (Nov 2026); positions from OpenStreetMap, capacity from the Central Electricity Authority list via the WRI Global Power Plant Database (2019-20 data, so it can lag).' },
   { key: 'fires', label: 'Satellite heat detections', on: false,
     note: 'NASA FIRMS VIIRS detections over Jharkhand and its border areas, last 5 days. Each dot is a 375 m pixel that read unusually hot: a surface coal fire, industrial heat or open burning. Not a measured fire area.' },
   { key: 'seismic', label: 'Earthquake zones', on: false,
@@ -96,7 +94,7 @@ export const CONTEXT_GROUPS: { label: string; keys: CityContextLayerKey[] }[] = 
   { label: 'Hazards', keys: ['seismic'] },
   { label: 'People', keys: ['places'] },
   { label: 'Transport and energy', keys: ['railways', 'roads', 'power'] },
-  { label: 'Industry and fires', keys: ['coalmines', 'coalplants', 'mines', 'industry', 'fires'] },
+  { label: 'Industry and fires', keys: ['coalmines', 'coalplants', 'industry', 'fires'] },
 ]
 
 export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
@@ -105,7 +103,7 @@ export const CONTEXT_SWATCH: Record<CityContextLayerKey, string> = {
   majorrivers: '#1D6FB8', basins: '#5B7FA6', dams: '#0B3C7D',
   canals: '#4FA3D9', coalmines: '#212121', coalplants: '#B23A48', aquifers: '#8FB8A8', seismic: '#F08A4B', groundwater: '#E8B93C', monitors: '#00796B', blocks: '#7A7A7A', constituencies: '#7E57C2',
   places: '#5B4A3A', railways: '#2B2B2B', roads: '#C0392B',
-  power: '#8E44AD', mines: '#3D3D3D', industry: '#9B6BD1', fires: '#E4572E',
+  power: '#8E44AD', industry: '#9B6BD1', fires: '#E4572E',
 }
 
 /** What a layer's symbols mean on the map. Colours match the renderer (CityContextLayers.tsx). */
@@ -181,9 +179,7 @@ export const CONTEXT_LEGEND: Record<CityContextLayerKey, LegendSymbol[]> = {
     { shape: 'line', color: '#8E44AD', label: 'Power line' },
     { shape: 'dot', color: '#8E44AD', label: 'Substation' },
   ],
-  mines: [{ shape: 'area', color: '#3D3D3D', label: 'Mining or quarry area (mapped)' }],
   industry: [
-    { shape: 'area', color: '#9B6BD1', label: 'Industrial land (mapped)' },
     { shape: 'dot', color: '#FFBF00', label: 'Power plant or large works (checked)' },
   ],
   fires: [{ shape: 'dot', color: '#E4572E', label: 'Satellite heat detection' }],

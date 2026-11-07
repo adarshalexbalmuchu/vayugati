@@ -192,5 +192,8 @@ sources, and then only the records it is confident about. Applied so far:
   mines rated Approximate (seen 5 to 24 km from any mapped mine) and 2 with coordinates outside the state are left out.
 - Removed as incomplete and easily read as the whole picture: mapped forest (use land cover and ISFR), mapped built-up
   areas (use land cover), schools and hospitals (246 schools against tens of thousands) and brick kilns.
-- Kept with their source named, because what they show is physical and not a count: OpenStreetMap mining and industrial
-  areas, roads of the main classes, railways, power lines, streams, peaks and waterfalls.
+- Removed (7 Nov 2026): the OpenStreetMap mining, quarry and industrial areas (1,405 and 729 shapes, almost none named,
+  no owners, large parts of the coalfields missing). The pack's `sources.geojson` now holds only the 13 checked power
+  plants and works.
+- Kept with their source named, because what they show is physical and not a count: roads of the main classes,
+  railways, power lines, streams, peaks and waterfalls.
