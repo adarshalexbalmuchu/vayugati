@@ -1218,8 +1218,12 @@ class ViewControl implements maplibregl.IControl {
 
   onAdd(map: maplibregl.Map) {
     this.map = map
+    // One column: the layers card, with the legend box under it.
+    const root = document.createElement('div')
+    root.className = 'maplibregl-ctrl flex w-[min(320px,calc(100vw-32px))] flex-col gap-2 text-xs text-slate-700'
     const el = document.createElement('div')
-    el.className = 'maplibregl-ctrl relative w-[min(320px,calc(100vw-32px))] overflow-hidden rounded-lg text-xs text-slate-700'
+    el.className = 'relative w-full overflow-hidden rounded-lg'
+    root.appendChild(el)
 
     // Header: title and collapse toggle (collapsed on small screens, where the card would cover the map).
     const head = document.createElement('div')
@@ -1239,7 +1243,7 @@ class ViewControl implements maplibregl.IControl {
     toggle.type = 'button'
     toggle.className = 'focus-ring rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50'
     const body = document.createElement('div')
-    body.className = 'max-h-[calc(100svh-210px)] space-y-2 overflow-y-auto border-t border-slate-200 px-2.5 py-2.5'
+    body.className = 'max-h-[max(14rem,calc(100svh-24rem))] space-y-2 overflow-y-auto border-t border-slate-200 px-2.5 py-2.5'
     const setOpen = (open: boolean) => {
       body.style.display = open ? '' : 'none'
       toggle.textContent = open ? 'Hide' : 'Show'
@@ -1357,8 +1361,8 @@ class ViewControl implements maplibregl.IControl {
     // Legend: what the symbols of the layers that are on mean (the land-cover key appears here too)
     const legend = document.createElement('details')
     legend.open = true
-    // A floating box on the map, at the top beside the layers card (not part of it).
-    legend.className = 'absolute bottom-24 left-2 z-10 w-fit max-w-[min(230px,calc(100vw-1rem))] rounded-lg px-2 py-1.5 text-slate-700 md:bottom-auto md:left-[342px] md:top-[10px]'
+    // Its own box under the layers card, in the same column (the card is compact, so there is room).
+    legend.className = 'relative w-full rounded-lg px-2.5 py-1.5 text-slate-700'
     this.legendWrap = legend
     const lsum = document.createElement('summary')
     lsum.className = 'flex cursor-pointer list-none items-center justify-between gap-3'
@@ -1367,14 +1371,14 @@ class ViewControl implements maplibregl.IControl {
     lst.textContent = 'Legend'
     lsum.appendChild(lst)
     const lbody = document.createElement('div')
-    lbody.className = 'mt-1 max-h-[min(55svh,26rem)] space-y-1.5 overflow-y-auto'
+    lbody.className = 'mt-1 max-h-[min(32svh,17rem)] space-y-1.5 overflow-y-auto'
     this.legendList = document.createElement('div')
     this.legendList.className = 'space-y-[3px]'
     const lc = document.createElement('div')
     lc.style.display = 'none'
     lbody.append(this.legendList, lc)
     legend.append(lsum, lbody)
-    map.getContainer().appendChild(legend)
+    root.appendChild(legend)
     glassify(legend, { tint: 0.78, distort: true })
     this.lcLegend = lc
     this.renderLegend(this.wanted())
@@ -1386,8 +1390,8 @@ class ViewControl implements maplibregl.IControl {
     map.on('styledata', this.reapply)
     map.on('style.load', this.onStyleLoad)
     glassify(el, { tint: 0.78 })
-    this.el = el
-    return el
+    this.el = root
+    return root
   }
 
   private opened = false
@@ -1449,7 +1453,6 @@ class ViewControl implements maplibregl.IControl {
   onRemove() {
     this.dock?.remove()
     this.toolbar?.remove()
-    this.legendWrap?.remove()
     this.map?.off('styledata', this.reapply)
     this.map?.off('style.load', this.onStyleLoad)
     if (this.on3D) this.leave3D()
